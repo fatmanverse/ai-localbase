@@ -56,6 +56,12 @@ SAVE_TAR=1 bash scripts/linux/build_images.sh
 
 ---
 
+### CentOS 7 / EL7 说明
+项目脚本会自动识别老版本 glibc，并在 `x64` 环境下载 **glibc-2.17 兼容的 Node.js 二进制**。
+如果仍然失败，建议直接使用 Docker 完成前端构建。
+
+---
+
 ## 默认推荐配置
 
 - Chat：`qwen2.5:7b`

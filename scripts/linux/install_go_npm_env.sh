@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec bash "$0" "$@"
+fi
 set -euo pipefail
 
 GO_VERSION="${GO_VERSION:-1.25.0}"
@@ -32,6 +35,32 @@ case "${ARCH_RAW}" in
     ;;
 esac
 
+version_lt() {
+  local current="$1"
+  local target="$2"
+  [[ "${current}" != "${target}" && "$(printf '%s
+%s
+' "${current}" "${target}" | sort -V | head -n1)" == "${current}" ]]
+}
+
+get_glibc_version() {
+  if command -v getconf >/dev/null 2>&1; then
+    local value
+    value="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}')"
+    if [[ -n "${value}" ]]; then
+      echo "${value}"
+      return 0
+    fi
+  fi
+
+  if command -v ldd >/dev/null 2>&1; then
+    ldd --version 2>&1 | head -n1 | grep -oE '[0-9]+\.[0-9]+' | head -n1
+    return 0
+  fi
+
+  return 1
+}
+
 install_base_packages() {
   if command -v apt-get >/dev/null 2>&1; then
     ${SUDO} apt-get update
@@ -57,10 +86,34 @@ install_go() {
   ${SUDO} ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
 }
 
-install_node() {
+resolve_node_package() {
+  local glibc_version=""
+  glibc_version="$(get_glibc_version || true)"
+
   local node_pkg="node-v${NODE_VERSION}-linux-${NODE_ARCH}"
   local node_url="https://nodejs.org/dist/v${NODE_VERSION}/${node_pkg}.tar.xz"
+
+  if [[ "${NODE_ARCH}" == "x64" && -n "${glibc_version}" ]] && version_lt "${glibc_version}" "2.28"; then
+    node_pkg="node-v${NODE_VERSION}-linux-${NODE_ARCH}-glibc-217"
+    node_url="https://unofficial-builds.nodejs.org/download/release/v${NODE_VERSION}/${node_pkg}.tar.xz"
+    echo "==> 检测到 glibc ${glibc_version}，自动切换到 Node.js glibc-2.17 兼容包" >&2
+  elif [[ "${NODE_ARCH}" != "x64" && -n "${glibc_version}" ]] && version_lt "${glibc_version}" "2.28"; then
+    echo "当前系统 glibc 版本为 ${glibc_version}，且架构为 ${NODE_ARCH}。官方 Node.js ${NODE_VERSION} 预编译包可能无法运行。" >&2
+    echo "建议改用较新的 Linux 发行版，或直接使用 Docker 构建前端。" >&2
+    exit 1
+  fi
+
+  printf '%s|%s
+' "${node_pkg}" "${node_url}"
+}
+
+install_node() {
+  local package_info
+  package_info="$(resolve_node_package)"
+  local node_pkg="${package_info%%|*}"
+  local node_url="${package_info##*|}"
   local node_tar="/tmp/${node_pkg}.tar.xz"
+
   echo "==> 安装 Node.js ${NODE_VERSION} (${NODE_ARCH})"
   curl -fsSL "${node_url}" -o "${node_tar}"
   ${SUDO} mkdir -p /usr/local/lib/nodejs

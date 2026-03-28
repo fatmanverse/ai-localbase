@@ -87,3 +87,26 @@ bash scripts/linux/build_images.sh
 ```
 
 如果脚本提示 Docker daemon 不可用，请先启动 Docker 服务。
+
+---
+
+## 6. CentOS 7 / EL7 上 Node 启动失败
+
+### 常见报错
+- `GLIBC_2.27 not found`
+- `GLIBC_2.28 not found`
+- `GLIBCXX_3.4.21 not found`
+
+### 原因
+系统自带的 glibc / libstdc++ 太旧，无法运行官方 Node 20 Linux 二进制。
+
+### 现在的处理方式
+项目脚本会自动识别老版本 glibc，并在 `x64` 环境切换到 **glibc-2.17 兼容的 Node.js 包**。
+
+请直接重新执行：
+
+```bash
+bash scripts/linux/install_go_npm_env.sh
+```
+
+如果仍然失败，建议直接改用 Docker 完成构建。
