@@ -1,5 +1,25 @@
 # RELEASE NOTES
 
+## v0.4.7 增量更新
+
+### FAQ 回写知识库
+
+- 新增接口：`POST /api/service-desk/analytics/faq-candidates/:id/publish-to-kb`
+- FAQ 候选现在可以直接生成 Markdown 文档并写入指定知识库
+- 服务端会在写入后立刻完成索引，避免再手工上传
+- 前端治理台新增“发布到知识库”按钮、目标知识库选择和文档名输入
+
+### 静态验证
+
+```bash
+cd backend && PATH=/usr/local/go/bin:$PATH go test ./...
+cd frontend && npm run build
+```
+
+结果：**通过**。
+
+---
+
 ## v0.4.6 增量更新
 
 ### 治理台能力增强

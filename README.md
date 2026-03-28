@@ -260,6 +260,14 @@ curl -X POST http://localhost:8080/api/service-desk/analytics/faq-candidates/<id
   -d '{"question":"Redis 的核心特点是什么？","answer":"Redis 适合高性能缓存、结构化数据读写和快速恢复场景。","publishedBy":"ops-faq-publisher","note":"已整理为 FAQ 草稿，待审核后同步到帮助中心"}'
 ```
 
+把 FAQ 草稿直接回写到知识库：
+
+```bash
+curl -X POST http://localhost:8080/api/service-desk/analytics/faq-candidates/<id>/publish-to-kb \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"Redis 的核心特点是什么？","answer":"Redis 适合高性能缓存、结构化数据读写和快速恢复场景。","publishedBy":"ops-faq-publisher","note":"已整理为 FAQ 草稿并同步知识库","knowledgeBaseId":"<kbId>","documentName":"FAQ-Redis-核心特点.md"}'
+```
+
 重建索引：
 
 ```bash
@@ -301,6 +309,7 @@ http://localhost:5173/ops
 - 导出当前视图
 - 导出本周周报
 - 一键生成 FAQ 草稿
+- 一键发布到知识库
 
 ---
 

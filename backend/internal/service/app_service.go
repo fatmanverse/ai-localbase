@@ -6,6 +6,8 @@ import (
 	"hash/fnv"
 	"log"
 	"math"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -1069,6 +1071,60 @@ func (s *AppService) AddDocument(knowledgeBaseID string, document model.Document
 		log.Printf("failed to persist document state: %v", err)
 	}
 	return document
+}
+
+func (s *AppService) CreateGeneratedMarkdownDocument(knowledgeBaseID, documentName, markdown string) (model.Document, error) {
+	if s == nil {
+		return model.Document{}, fmt.Errorf("app service is nil")
+	}
+	knowledgeBaseID, err := s.ResolveKnowledgeBaseID(knowledgeBaseID)
+	if err != nil {
+		return model.Document{}, err
+	}
+	content := strings.TrimSpace(markdown)
+	if content == "" {
+		return model.Document{}, fmt.Errorf("generated markdown content is required")
+	}
+	if err := os.MkdirAll(s.serverConfig.UploadDir, 0o755); err != nil {
+		return model.Document{}, fmt.Errorf("create upload dir: %w", err)
+	}
+	name := strings.TrimSpace(documentName)
+	if name == "" {
+		name = fmt.Sprintf("FAQ-%s.md", time.Now().UTC().Format("20060102-150405"))
+	}
+	if !strings.HasSuffix(strings.ToLower(name), ".md") {
+		name += ".md"
+	}
+	storedName := fmt.Sprintf("%d_%s", util.NowUnixNano(), util.SanitizeFilename(name))
+	if !strings.HasSuffix(strings.ToLower(storedName), ".md") {
+		storedName += ".md"
+	}
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	destination := filepath.Join(s.serverConfig.UploadDir, storedName)
+	payload := []byte(content)
+	if err := os.WriteFile(destination, payload, 0o644); err != nil {
+		return model.Document{}, fmt.Errorf("write generated markdown file: %w", err)
+	}
+	document := model.Document{
+		ID:              util.NextID("doc"),
+		KnowledgeBaseID: knowledgeBaseID,
+		Name:            name,
+		Size:            int64(len(payload)),
+		SizeLabel:       util.FormatFileSize(int64(len(payload))),
+		UploadedAt:      util.NowRFC3339(),
+		Status:          "processing",
+		Path:            destination,
+		ContentPreview:  "",
+	}
+	indexed, err := s.IndexDocument(document)
+	if err != nil {
+		_ = os.Remove(destination)
+		_ = util.RemoveDocumentArtifacts(destination)
+		return model.Document{}, err
+	}
+	return indexed, nil
 }
 
 func reportIndexProgress(onProgress func(stage string, progress int, message string), stage string, progress int, message string) {

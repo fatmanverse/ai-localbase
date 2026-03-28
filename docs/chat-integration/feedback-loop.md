@@ -114,10 +114,25 @@ POST /api/service-desk/analytics/faq-candidates/:id/publish
 - 把高赞回答整理成标准 FAQ 问答
 - 保存整理人、整理时间与备注
 - 同时返回一份 Markdown FAQ 草稿，方便继续审核或同步到帮助中心
+- 如需一步到位，也可以直接回写成知识库文档
 
 FAQ 候选列表还支持：
 
 - `publishedOnly=true`：只看已整理过 FAQ 文稿的候选项
+
+### FAQ 直接回写知识库
+
+新增接口：
+
+```http
+POST /api/service-desk/analytics/faq-candidates/:id/publish-to-kb
+```
+
+用途：
+
+- 在生成 FAQ 草稿的同时，直接写入指定知识库
+- 服务端会自动生成 Markdown 文档并立刻完成索引
+- 前端治理台可以直接选择目标知识库和文档名
 
 ### 治理周报
 

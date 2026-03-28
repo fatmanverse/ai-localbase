@@ -227,6 +227,7 @@
 .ops-card-editor input,
 .ops-card-editor textarea,
 .ops-publish-editor input,
+.ops-publish-editor select,
 .ops-publish-editor textarea {
   min-height: 40px;
   border-radius: 10px;

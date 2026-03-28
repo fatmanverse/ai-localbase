@@ -15,6 +15,8 @@ interface FAQPublishDraft {
   answer: string
   publishedBy: string
   note: string
+  knowledgeBaseId: string
+  documentName: string
 }
 
 interface FAQCandidate {
@@ -102,6 +104,20 @@ interface PublishFAQCandidateResponse {
   export: AnalyticsExportResponse
 }
 
+interface PublishedKnowledgeBaseDocument {
+  id: string
+  knowledgeBaseId: string
+  name: string
+  status: string
+  contentPreview: string
+}
+
+interface PublishFAQToKnowledgeBaseResponse {
+  candidate: FAQCandidate
+  export: AnalyticsExportResponse
+  document: PublishedKnowledgeBaseDocument
+}
+
 interface APIResponse<T> {
   success: boolean
   data?: T
@@ -186,6 +202,13 @@ function getExportScope(tab: GovernanceTab) {
   return 'feedback'
 }
 
+function buildDefaultFAQDocumentName(question?: string) {
+  const trimmed = question?.trim() ?? ''
+  if (!trimmed) return ''
+  const title = Array.from(trimmed).slice(0, 48).join('')
+  return `FAQ-${title}.md`
+}
+
 function buildDraftMap<T extends { id: string; owner?: string; note?: string }>(items: T[]): Record<string, GovernanceDraft> {
   return items.reduce<Record<string, GovernanceDraft>>((accumulator, item) => {
     accumulator[item.id] = {
@@ -198,11 +221,14 @@ function buildDraftMap<T extends { id: string; owner?: string; note?: string }>(
 
 function buildPublishDraftMap(items: FAQCandidate[]): Record<string, FAQPublishDraft> {
   return items.reduce<Record<string, FAQPublishDraft>>((accumulator, item) => {
+    const question = item.publishedQuestion || item.questionText || ''
     accumulator[item.id] = {
-      question: item.publishedQuestion || item.questionText || '',
+      question,
       answer: item.publishedAnswer || item.answerText || '',
       publishedBy: item.publishedBy || item.owner || '',
       note: item.publishNote || item.note || '',
+      knowledgeBaseId: item.knowledgeBaseId || '',
+      documentName: buildDefaultFAQDocumentName(question),
     }
     return accumulator
   }, {})
@@ -230,6 +256,7 @@ export default function OperationsConsolePage() {
   const [batchUpdating, setBatchUpdating] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [publishingId, setPublishingId] = useState('')
+  const [publishingToKnowledgeBaseId, setPublishingToKnowledgeBaseId] = useState('')
   const [error, setError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [summary, setSummary] = useState<AnalyticsSummary>(emptySummary)
@@ -388,12 +415,12 @@ export default function OperationsConsolePage() {
   const updatePublishDraft = useCallback((id: string, field: keyof FAQPublishDraft, value: string) => {
     setPublishDrafts((current) => ({
       ...current,
-      [id]: { ...(current[id] ?? { question: '', answer: '', publishedBy: '', note: '' }), [field]: value },
+      [id]: { ...(current[id] ?? { question: '', answer: '', publishedBy: '', note: '', knowledgeBaseId: '', documentName: '' }), [field]: value },
     }))
   }, [])
 
   const getPublishDraft = useCallback((id: string): FAQPublishDraft => (
-    publishDrafts[id] ?? { question: '', answer: '', publishedBy: '', note: '' }
+    publishDrafts[id] ?? { question: '', answer: '', publishedBy: '', note: '', knowledgeBaseId: '', documentName: '' }
   ), [publishDrafts])
 
   const updateItemStatus = useCallback(async (tab: EditableGovernanceTab, id: string, status: string) => {
@@ -458,6 +485,33 @@ export default function OperationsConsolePage() {
       setError(getErrorMessage(publishError, 'FAQ 草稿生成失败'))
     } finally {
       setPublishingId('')
+    }
+  }, [getPublishDraft, loadGovernanceData])
+
+  const publishFAQToKnowledgeBase = useCallback(async (item: FAQCandidate) => {
+    const draft = getPublishDraft(item.id)
+    setPublishingToKnowledgeBaseId(item.id)
+    setError('')
+    setActionMessage('')
+    try {
+      const result = await requestJSON<PublishFAQToKnowledgeBaseResponse>(`${API_BASE_PATH}/api/service-desk/analytics/faq-candidates/${item.id}/publish-to-kb`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: draft.question,
+          answer: draft.answer,
+          publishedBy: draft.publishedBy,
+          note: draft.note,
+          knowledgeBaseId: draft.knowledgeBaseId,
+          documentName: draft.documentName,
+        }),
+      })
+      setActionMessage(`FAQ 已写入知识库文档：${result.document.name}`)
+      await loadGovernanceData()
+    } catch (publishError) {
+      setError(getErrorMessage(publishError, 'FAQ 发布到知识库失败'))
+    } finally {
+      setPublishingToKnowledgeBaseId('')
     }
   }, [getPublishDraft, loadGovernanceData])
 
@@ -553,7 +607,7 @@ export default function OperationsConsolePage() {
           <div className="ops-console-eyebrow">Operations Console</div>
           <h1>知识库治理工作台</h1>
           <p>
-            这里给运营、交付和知识库维护同学一个最简单可用的治理入口。你可以直接查看 FAQ 候选、知识缺口、低质量回答和差评明细，顺手补责任人、处理备注、导出当前视图，并把高赞回答整理成正式 FAQ 草稿。
+            这里给运营、交付和知识库维护同学一个最简单可用的治理入口。你可以直接查看 FAQ 候选、知识缺口、低质量回答和差评明细，顺手补责任人、处理备注、导出当前视图，把高赞回答整理成正式 FAQ 草稿，或者直接发布回知识库。
           </p>
         </div>
         <div className="ops-console-summary-card">
@@ -739,6 +793,19 @@ export default function OperationsConsolePage() {
                   <span>整理人</span>
                   <input value={publishDraft.publishedBy} onChange={(event) => updatePublishDraft(item.id, 'publishedBy', event.target.value)} placeholder="例如 ops-faq" />
                 </label>
+                <label>
+                  <span>发布知识库</span>
+                  <select value={publishDraft.knowledgeBaseId} onChange={(event) => updatePublishDraft(item.id, 'knowledgeBaseId', event.target.value)}>
+                    <option value="">请选择知识库</option>
+                    {knowledgeBases.map((knowledgeBase) => (
+                      <option key={knowledgeBase.id} value={knowledgeBase.id}>{knowledgeBase.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>文档名</span>
+                  <input value={publishDraft.documentName} onChange={(event) => updatePublishDraft(item.id, 'documentName', event.target.value)} placeholder="例如 FAQ-Redis核心特点.md" />
+                </label>
                 <label className="is-answer">
                   <span>FAQ 标准回答</span>
                   <textarea value={publishDraft.answer} onChange={(event) => updatePublishDraft(item.id, 'answer', event.target.value)} rows={4} placeholder="整理后的最终 FAQ 回答内容" />
@@ -757,8 +824,11 @@ export default function OperationsConsolePage() {
                 <button type="button" className="ops-primary-button" disabled={updatingId === item.id} onClick={() => void saveItemDraft('faq', item.id)}>
                   保存责任人 / 备注
                 </button>
-                <button type="button" className="ops-refresh-button" disabled={publishingId === item.id} onClick={() => void publishFAQCandidate(item)}>
+                <button type="button" className="ops-refresh-button" disabled={publishingId === item.id || publishingToKnowledgeBaseId === item.id} onClick={() => void publishFAQCandidate(item)}>
                   {publishingId === item.id ? '生成中...' : '生成 FAQ 草稿'}
+                </button>
+                <button type="button" className="ops-secondary-button" disabled={publishingId === item.id || publishingToKnowledgeBaseId === item.id} onClick={() => void publishFAQToKnowledgeBase(item)}>
+                  {publishingToKnowledgeBaseId === item.id ? '发布中...' : '发布到知识库'}
                 </button>
               </div>
             </article>

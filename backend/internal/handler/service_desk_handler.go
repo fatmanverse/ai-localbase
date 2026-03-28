@@ -257,6 +257,24 @@ func (h *AppHandler) PublishServiceDeskFAQCandidate(c *gin.Context) {
 	writeAPISuccess(c, http.StatusOK, result)
 }
 
+func (h *AppHandler) PublishServiceDeskFAQCandidateToKnowledgeBase(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
+	var req model.PublishFAQToKnowledgeBaseRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", "invalid faq publish-to-kb request body")
+		return
+	}
+	result, err := h.serviceDeskService.PublishFAQCandidateToKnowledgeBase(c.Param("id"), req)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "publish_faq_candidate_to_kb_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, result)
+}
+
 func (h *AppHandler) GetServiceDeskWeeklyReport(c *gin.Context) {
 	if h.serviceDeskService == nil {
 		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")

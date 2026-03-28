@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"ai-localbase/internal/model"
 	"ai-localbase/internal/util"
@@ -189,23 +190,52 @@ func (s *ServiceDeskService) UpdateFAQCandidateStatus(id string, req model.Analy
 }
 
 func (s *ServiceDeskService) PublishFAQCandidate(id string, req model.PublishFAQCandidateRequest) (*model.PublishFAQCandidateResponse, error) {
+	candidate, export, err := s.publishFAQCandidateBase(id, req.Question, req.Answer, req.PublishedBy, req.Note)
+	if err != nil {
+		return nil, err
+	}
+	return &model.PublishFAQCandidateResponse{Candidate: *candidate, Export: export}, nil
+}
+
+func (s *ServiceDeskService) PublishFAQCandidateToKnowledgeBase(id string, req model.PublishFAQToKnowledgeBaseRequest) (*model.PublishFAQToKnowledgeBaseResponse, error) {
+	candidate, export, err := s.publishFAQCandidateBase(id, req.Question, req.Answer, req.PublishedBy, req.Note)
+	if err != nil {
+		return nil, err
+	}
+	if s == nil || s.appService == nil {
+		return nil, fmt.Errorf("app service is not configured")
+	}
+	targetKnowledgeBaseID, err := s.appService.ResolveKnowledgeBaseID(firstNonEmpty(strings.TrimSpace(req.KnowledgeBaseID), strings.TrimSpace(candidate.KnowledgeBaseID)))
+	if err != nil {
+		return nil, err
+	}
+	documentName := buildFAQKnowledgeBaseDocumentName(strings.TrimSpace(req.DocumentName), strings.TrimSpace(candidate.PublishedQuestion), strings.TrimSpace(candidate.QuestionText))
+	document, err := s.appService.CreateGeneratedMarkdownDocument(targetKnowledgeBaseID, documentName, export.Content)
+	if err != nil {
+		return nil, err
+	}
+	candidate.KnowledgeBaseID = targetKnowledgeBaseID
+	return &model.PublishFAQToKnowledgeBaseResponse{Candidate: *candidate, Export: export, Document: document}, nil
+}
+
+func (s *ServiceDeskService) publishFAQCandidateBase(id, questionInput, answerInput, publishedByInput, noteInput string) (*model.FAQCandidate, model.AnalyticsExportResponse, error) {
 	if s == nil || s.store == nil {
-		return nil, fmt.Errorf("service desk store is not configured")
+		return nil, model.AnalyticsExportResponse{}, fmt.Errorf("service desk store is not configured")
 	}
 	current, err := s.store.getFAQCandidateByID(id)
 	if err != nil {
-		return nil, err
+		return nil, model.AnalyticsExportResponse{}, err
 	}
-	question := firstNonEmpty(strings.TrimSpace(req.Question), strings.TrimSpace(current.PublishedQuestion), strings.TrimSpace(current.QuestionText))
-	answer := firstNonEmpty(strings.TrimSpace(req.Answer), strings.TrimSpace(current.PublishedAnswer), strings.TrimSpace(current.AnswerText))
-	publishedBy := firstNonEmpty(strings.TrimSpace(req.PublishedBy), strings.TrimSpace(current.Owner), "ops-console")
-	publishNote := firstNonEmpty(strings.TrimSpace(req.Note), strings.TrimSpace(current.PublishNote), strings.TrimSpace(current.Note))
+	question := firstNonEmpty(strings.TrimSpace(questionInput), strings.TrimSpace(current.PublishedQuestion), strings.TrimSpace(current.QuestionText))
+	answer := firstNonEmpty(strings.TrimSpace(answerInput), strings.TrimSpace(current.PublishedAnswer), strings.TrimSpace(current.AnswerText))
+	publishedBy := firstNonEmpty(strings.TrimSpace(publishedByInput), strings.TrimSpace(current.Owner), "ops-console")
+	publishNote := firstNonEmpty(strings.TrimSpace(noteInput), strings.TrimSpace(current.PublishNote), strings.TrimSpace(current.Note))
 	candidate, err := s.store.PublishFAQCandidate(id, question, answer, publishedBy, publishNote)
 	if err != nil {
-		return nil, err
+		return nil, model.AnalyticsExportResponse{}, err
 	}
 	export := buildFAQCandidateExport(*candidate, s.knowledgeBaseNameByID(candidate.KnowledgeBaseID))
-	return &model.PublishFAQCandidateResponse{Candidate: *candidate, Export: export}, nil
+	return candidate, export, nil
 }
 
 func (s *ServiceDeskService) UpdateKnowledgeGapStatus(id string, req model.AnalyticsStatusUpdateRequest) (*model.KnowledgeGap, error) {
@@ -473,6 +503,33 @@ func renderWeeklyReportMarkdown(report model.GovernanceWeeklyReport) string {
 	builder.WriteString("\n## 低质量回答\n\n")
 	builder.WriteString(renderLowQualityAnswersMarkdown(report.TopLowQualityAnswers, report.KnowledgeBaseName))
 	return builder.String()
+}
+
+func buildFAQKnowledgeBaseDocumentName(explicitName, question, fallbackQuestion string) string {
+	name := strings.TrimSpace(explicitName)
+	if name == "" {
+		name = firstNonEmpty(strings.TrimSpace(question), strings.TrimSpace(fallbackQuestion))
+		if name == "" {
+			name = fmt.Sprintf("FAQ-%s", time.Now().UTC().Format("20060102-150405"))
+		} else {
+			name = "FAQ-" + truncateRunes(name, 48)
+		}
+	}
+	if !strings.HasSuffix(strings.ToLower(name), ".md") {
+		name += ".md"
+	}
+	return name
+}
+
+func truncateRunes(value string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(strings.TrimSpace(value))
+	if len(runes) <= limit {
+		return string(runes)
+	}
+	return string(runes[:limit])
 }
 
 func buildFAQCandidateExport(candidate model.FAQCandidate, knowledgeBaseName string) model.AnalyticsExportResponse {

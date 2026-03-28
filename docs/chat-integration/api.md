@@ -438,6 +438,58 @@ Content-Type: application/json
 - 该接口会把整理后的 FAQ 文稿保存到候选项中，并返回一份可直接下载的 Markdown 草稿
 - `publishedOnly=true` 可用于只筛选已经整理过 FAQ 文稿的候选项
 
+### 7.5.1 直接发布到知识库
+
+```http
+POST /api/service-desk/analytics/faq-candidates/:id/publish-to-kb
+Content-Type: application/json
+```
+
+```json
+{
+  "question": "Redis 的核心特点是什么？",
+  "answer": "Redis 适合高性能缓存、结构化数据读写和快速恢复场景。",
+  "publishedBy": "ops-faq-publisher",
+  "note": "已整理为 FAQ 草稿并同步知识库",
+  "knowledgeBaseId": "kb-1",
+  "documentName": "FAQ-Redis-核心特点.md"
+}
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "candidate": {
+      "id": "faq-1",
+      "publishedQuestion": "Redis 的核心特点是什么？",
+      "publishedBy": "ops-faq-publisher"
+    },
+    "export": {
+      "scope": "faq-candidate",
+      "format": "markdown",
+      "fileName": "faq-candidate-kb-1-20250329.md",
+      "mimeType": "text/markdown; charset=utf-8",
+      "content": "# FAQ 草稿..."
+    },
+    "document": {
+      "id": "doc-101",
+      "knowledgeBaseId": "kb-1",
+      "name": "FAQ-Redis-核心特点.md",
+      "status": "indexed",
+      "contentPreview": "FAQ 草稿..."
+    }
+  }
+}
+```
+
+适用场景：
+- 运维 / 交付同学已经把 FAQ 文稿整理好，希望直接回写到知识库
+- 希望把高赞回答快速转成知识库里的 Markdown 文档，避免人工复制
+- 让 FAQ 候选 -> FAQ 草稿 -> 知识库文档形成最小闭环
+
 ### 7.6 获取治理周报
 
 ```http

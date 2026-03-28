@@ -240,6 +240,15 @@ type PublishFAQCandidateRequest struct {
 	Note        string `json:"note,omitempty"`
 }
 
+type PublishFAQToKnowledgeBaseRequest struct {
+	Question        string `json:"question,omitempty"`
+	Answer          string `json:"answer,omitempty"`
+	PublishedBy     string `json:"publishedBy,omitempty"`
+	Note            string `json:"note,omitempty"`
+	KnowledgeBaseID string `json:"knowledgeBaseId,omitempty"`
+	DocumentName    string `json:"documentName,omitempty"`
+}
+
 type AnalyticsExportOptions struct {
 	Scope  string `json:"scope"`
 	Format string `json:"format,omitempty"`
@@ -257,6 +266,12 @@ type AnalyticsExportResponse struct {
 type PublishFAQCandidateResponse struct {
 	Candidate FAQCandidate            `json:"candidate"`
 	Export    AnalyticsExportResponse `json:"export"`
+}
+
+type PublishFAQToKnowledgeBaseResponse struct {
+	Candidate FAQCandidate            `json:"candidate"`
+	Export    AnalyticsExportResponse `json:"export"`
+	Document  Document                `json:"document"`
 }
 
 type GovernanceWeeklyReport struct {

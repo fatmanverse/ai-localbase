@@ -842,6 +842,42 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 		t.Fatalf("expected faq publish response to include markdown export, got %+v", publishPayload)
 	}
 
+	faqPublishToKBResp := performJSONRequest(t, engine, http.MethodPost, fmt.Sprintf("/api/service-desk/analytics/faq-candidates/%s/publish-to-kb", faqList.Items[0].ID), map[string]any{
+		"question":        "Redis 的核心特点是什么？",
+		"answer":          "Redis 适合高性能缓存、结构化数据读写和快速恢复场景。",
+		"publishedBy":     "ops-faq-publisher",
+		"note":            "已整理为 FAQ 草稿并同步知识库",
+		"knowledgeBaseId": knowledgeBaseID,
+		"documentName":    "FAQ-Redis-核心特点.md",
+	})
+	if faqPublishToKBResp.Code != http.StatusOK {
+		t.Fatalf("expected faq publish-to-kb status 200, got %d, body=%s", faqPublishToKBResp.Code, faqPublishToKBResp.Body.String())
+	}
+	var faqPublishToKBResult model.APIResponse
+	decodeJSONResponse(t, faqPublishToKBResp.Body.Bytes(), &faqPublishToKBResult)
+	faqPublishToKBData, _ := json.Marshal(faqPublishToKBResult.Data)
+	var publishToKBPayload model.PublishFAQToKnowledgeBaseResponse
+	decodeJSONResponse(t, faqPublishToKBData, &publishToKBPayload)
+	if publishToKBPayload.Document.ID == "" || publishToKBPayload.Document.Status != "indexed" || !strings.Contains(publishToKBPayload.Document.Name, "FAQ-Redis") {
+		t.Fatalf("expected generated knowledge base document after publish-to-kb, got %+v", publishToKBPayload)
+	}
+
+	documentsResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/knowledge-bases/%s/documents", knowledgeBaseID), nil, "")
+	if documentsResp.Code != http.StatusOK {
+		t.Fatalf("expected documents list status 200, got %d, body=%s", documentsResp.Code, documentsResp.Body.String())
+	}
+	var documentsResult struct {
+		KnowledgeBaseID string           `json:"knowledgeBaseId"`
+		Items           []model.Document `json:"items"`
+	}
+	decodeJSONResponse(t, documentsResp.Body.Bytes(), &documentsResult)
+	if len(documentsResult.Items) == 0 {
+		t.Fatalf("expected publish-to-kb to create a knowledge base document, got %+v", documentsResult.Items)
+	}
+	if documentsResult.Items[0].ID != publishToKBPayload.Document.ID {
+		t.Fatalf("expected generated document to appear in knowledge base list, got %+v", documentsResult.Items)
+	}
+
 	weeklyReportResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/weekly-report?knowledgeBaseId=%s", knowledgeBaseID), nil, "")
 	if weeklyReportResp.Code != http.StatusOK {
 		t.Fatalf("expected weekly report status 200, got %d, body=%s", weeklyReportResp.Code, weeklyReportResp.Body.String())
