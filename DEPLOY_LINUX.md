@@ -91,3 +91,35 @@ REGISTRY_PREFIX=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase TAG=$(git rev-
 - Ollama URL：`http://host.docker.internal:11434`
 
 如果你切换了 Embedding 模型，请重建索引。
+
+### 模型容灾建议
+
+建议至少为聊天模型和向量模型各配置 1 个备用项：
+
+1. 主模型：本机 Ollama
+2. 备用模型：同机更大模型，或另一套 OpenAI Compatible 接口
+3. 只有全部候选不可用时，系统才会向用户返回失败提示
+
+前端设置页中，备用模型支持：
+
+```text
+qwen2.5:14b
+openai-compatible | https://api.example.com/v1 | gpt-4o-mini | sk-***
+```
+
+说明：
+- 仅写模型名：继承主 Provider / Base URL / API Key
+- 完整写法：`provider | baseUrl | model | apiKey`
+
+---
+
+## 工单机器人 Demo
+
+### 打开前端演示页
+```text
+http://localhost:5173/?mode=service-desk-demo
+```
+
+### 查看对外聊天接口文档
+- `docs/chat-integration/api.md`
+- `docs/chat-integration/frontend-widget.md`

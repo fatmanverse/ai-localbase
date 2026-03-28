@@ -268,7 +268,9 @@ func newTestRouter(t *testing.T) (*http.ServeMux, string, func()) {
 		t.Fatalf("update config: %v", err)
 	}
 
-	appHandler := handler.NewAppHandler(serverConfig, appService, service.NewLLMService())
+	llmService := service.NewLLMService()
+	serviceDeskService := service.NewServiceDeskService(appService, llmService, chatHistoryStore)
+	appHandler := handler.NewAppHandler(serverConfig, appService, llmService, serviceDeskService)
 	ginEngine := NewRouter(appHandler)
 
 	mux := http.NewServeMux()
@@ -527,5 +529,112 @@ func decodeJSONResponse(t *testing.T, body []byte, target any) {
 	t.Helper()
 	if err := json.Unmarshal(body, target); err != nil {
 		t.Fatalf("decode json response: %v, body=%s", err, string(body))
+	}
+}
+
+func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
+	engine, modelBaseURL, cleanup := newTestRouter(t)
+	defer cleanup()
+
+	listResp := performRequest(t, engine, http.MethodGet, "/api/knowledge-bases", nil, "")
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", listResp.Code, listResp.Body.String())
+	}
+
+	var kbList struct {
+		Items []model.KnowledgeBase `json:"items"`
+	}
+	decodeJSONResponse(t, listResp.Body.Bytes(), &kbList)
+	knowledgeBaseID := kbList.Items[0].ID
+
+	createPayload := map[string]any{
+		"knowledgeBaseId": knowledgeBaseID,
+		"context": map[string]any{
+			"ticketId":       "INC-7788",
+			"userId":         "u-001",
+			"tenantId":       "tenant-a",
+			"sourcePlatform": "itsm-portal",
+			"category":       "账号与访问",
+		},
+	}
+	createResp := performJSONRequest(t, engine, http.MethodPost, "/api/service-desk/conversations", createPayload)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d, body=%s", createResp.Code, createResp.Body.String())
+	}
+
+	var createResult model.APIResponse
+	decodeJSONResponse(t, createResp.Body.Bytes(), &createResult)
+	conversationData, _ := json.Marshal(createResult.Data)
+	var conversation model.ServiceDeskConversation
+	decodeJSONResponse(t, conversationData, &conversation)
+	if conversation.ID == "" {
+		t.Fatal("expected service desk conversation id")
+	}
+
+	sendPayload := map[string]any{
+		"content":         "请帮我说明 Redis 的核心特点和处理建议",
+		"knowledgeBaseId": knowledgeBaseID,
+		"config": map[string]any{
+			"provider":            "ollama",
+			"baseUrl":             modelBaseURL,
+			"model":               "chat-test-model",
+			"apiKey":              "",
+			"temperature":         0.2,
+			"contextMessageLimit": 12,
+		},
+		"embedding": map[string]any{
+			"provider": "ollama",
+			"baseUrl":  modelBaseURL,
+			"model":    "embedding-test-model",
+		},
+	}
+	sendResp := performJSONRequest(t, engine, http.MethodPost, fmt.Sprintf("/api/service-desk/conversations/%s/messages", conversation.ID), sendPayload)
+	if sendResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", sendResp.Code, sendResp.Body.String())
+	}
+
+	var sendResult model.APIResponse
+	decodeJSONResponse(t, sendResp.Body.Bytes(), &sendResult)
+	sendData, _ := json.Marshal(sendResult.Data)
+	var messageResult model.SendServiceDeskMessageResponse
+	decodeJSONResponse(t, sendData, &messageResult)
+	if messageResult.AssistantMessage.ID == "" {
+		t.Fatal("expected assistant message id")
+	}
+	if !strings.Contains(messageResult.AssistantMessage.Content, "Redis") {
+		t.Fatalf("expected assistant response to mention Redis, got %q", messageResult.AssistantMessage.Content)
+	}
+
+	feedbackPayload := map[string]any{
+		"conversationId": conversation.ID,
+		"feedbackType":   "dislike",
+		"feedbackReason": "内容不完整",
+		"feedbackText":   "缺少升级人工处理建议",
+		"questionText":   "请帮我说明 Redis 的核心特点和处理建议",
+		"answerText":     messageResult.AssistantMessage.Content,
+	}
+	feedbackResp := performJSONRequest(t, engine, http.MethodPost, fmt.Sprintf("/api/service-desk/messages/%s/feedback", messageResult.AssistantMessage.ID), feedbackPayload)
+	if feedbackResp.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d, body=%s", feedbackResp.Code, feedbackResp.Body.String())
+	}
+
+	analyticsResp := performRequest(t, engine, http.MethodGet, "/api/service-desk/analytics/summary", nil, "")
+	if analyticsResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", analyticsResp.Code, analyticsResp.Body.String())
+	}
+
+	var analyticsResult model.APIResponse
+	decodeJSONResponse(t, analyticsResp.Body.Bytes(), &analyticsResult)
+	analyticsData, _ := json.Marshal(analyticsResult.Data)
+	var analytics model.ServiceDeskAnalyticsSummary
+	decodeJSONResponse(t, analyticsData, &analytics)
+	if analytics.TotalFeedbacks != 1 || analytics.DislikeCount != 1 {
+		t.Fatalf("expected analytics feedback counters to be updated, got %+v", analytics)
+	}
+	if len(analytics.KnowledgeGaps) == 0 {
+		t.Fatal("expected knowledge gap candidate after dislike feedback")
+	}
+	if len(analytics.LowQualityAnswers) == 0 {
+		t.Fatal("expected low quality answer entry after dislike feedback")
 	}
 }

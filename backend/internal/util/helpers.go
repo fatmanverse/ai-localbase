@@ -36,12 +36,15 @@ func FormatFileSize(size int64) string {
 }
 
 func ExtractContentPreview(path string) string {
-	content, err := ExtractDocumentText(path)
+	content, err := ExtractDocumentContent(path)
 	if err != nil {
 		return "暂未生成摘要"
 	}
-
-	return BuildContentPreviewFromText(content)
+	previewText := BuildDocumentRetrievalText(content)
+	if strings.TrimSpace(previewText) == "" {
+		previewText = content.Text
+	}
+	return BuildContentPreviewFromText(previewText)
 }
 
 func SanitizeFilename(name string) string {

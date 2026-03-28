@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -18,17 +17,15 @@ import (
 )
 
 func ExtractDocumentText(path string) (string, error) {
-	ext := strings.ToLower(filepath.Ext(path))
-	switch ext {
-	case ".txt", ".md":
-		return extractPlainTextFile(path)
-	case ".pdf":
-		return extractPDFText(path)
-	case ".docx":
-		return extractDOCXText(path)
-	default:
-		return "", fmt.Errorf("unsupported file type: %s", ext)
+	content, err := ExtractDocumentContent(path)
+	if err != nil {
+		return "", err
 	}
+	text := strings.TrimSpace(content.Text)
+	if text != "" {
+		return text, nil
+	}
+	return BuildDocumentRetrievalText(content), nil
 }
 
 func BuildContentPreviewFromText(text string) string {

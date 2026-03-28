@@ -1,7 +1,7 @@
 import './App.css'
 import ChatArea from './components/ChatArea'
 import Sidebar from './components/Sidebar'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 export interface ChatMessageMetadata {
   degraded?: boolean
@@ -42,6 +42,30 @@ export interface KnowledgeBase {
   createdAt: string
 }
 
+export interface UploadTask {
+  id: string
+  knowledgeBaseId: string
+  fileName: string
+  sizeBytes: number
+  sizeLabel: string
+  progress: number
+  networkProgress: number
+  status: 'queued' | 'uploading' | 'processing' | 'success' | 'error' | 'canceled'
+  backendTaskId?: string
+  stage?: string
+  detail?: string
+  uploadedDocumentId?: string
+  shouldAutoSelect?: boolean
+  error?: string
+}
+
+export interface ModelEndpointConfig {
+  provider: string
+  baseUrl: string
+  model: string
+  apiKey: string
+}
+
 export interface ChatConfig {
   provider: 'ollama' | 'openai-compatible'
   baseUrl: string
@@ -49,6 +73,7 @@ export interface ChatConfig {
   apiKey: string
   temperature: number
   contextMessageLimit: number
+  candidates: ModelEndpointConfig[]
 }
 
 export interface EmbeddingConfig {
@@ -56,6 +81,7 @@ export interface EmbeddingConfig {
   baseUrl: string
   model: string
   apiKey: string
+  candidates: ModelEndpointConfig[]
 }
 
 export interface AppConfig {
@@ -120,18 +146,26 @@ export const recommendedConfig: AppConfig = {
     apiKey: '',
     temperature: 0.2,
     contextMessageLimit: 12,
+    candidates: [],
   },
   embedding: {
     provider: 'ollama',
     baseUrl: 'http://localhost:11434',
     model: 'nomic-embed-text',
     apiKey: '',
+    candidates: [],
   },
 }
 
 const cloneAppConfig = (config: AppConfig): AppConfig => ({
-  chat: { ...config.chat },
-  embedding: { ...config.embedding },
+  chat: {
+    ...config.chat,
+    candidates: (config.chat.candidates ?? []).map((item) => ({ ...item })),
+  },
+  embedding: {
+    ...config.embedding,
+    candidates: (config.embedding.candidates ?? []).map((item) => ({ ...item })),
+  },
 })
 
 const createId = () =>
@@ -193,8 +227,21 @@ interface BackendConversation {
   }>
 }
 
-interface UploadResponse {
-  uploaded: BackendDocumentItem
+interface BackendUploadTask {
+  id: string
+  knowledgeBaseId: string
+  documentId: string
+  fileName: string
+  fileSize: number
+  fileSizeLabel: string
+  status: 'processing' | 'success' | 'error' | 'canceled'
+  stage: string
+  progress: number
+  message?: string
+  error?: string
+  createdAt: string
+  updatedAt: string
+  uploaded?: BackendDocumentItem
 }
 
 interface ReindexKnowledgeBaseResponse {
@@ -271,6 +318,138 @@ const extractErrorMessage = async (response: Response) => {
   }
 }
 
+const formatUploadFileSize = (size: number) => {
+  if (size < 1024) {
+    return `${size} B`
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`
+  }
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const extractXHRErrorMessage = (xhr: XMLHttpRequest) => {
+  try {
+    const payload = JSON.parse(xhr.responseText) as ApiErrorResponse
+    return payload.error || `请求失败：${xhr.status}`
+  } catch {
+    return `请求失败：${xhr.status}`
+  }
+}
+
+const UPLOAD_TRANSPORT_PROGRESS_WEIGHT = 35
+const UPLOAD_PROCESS_PROGRESS_WEIGHT = 100 - UPLOAD_TRANSPORT_PROGRESS_WEIGHT
+
+const clampProgress = (progress: number) =>
+  Math.max(0, Math.min(100, Math.round(progress)))
+
+const mapTransportProgress = (progress: number) =>
+  clampProgress((Math.max(0, Math.min(100, progress)) / 100) * UPLOAD_TRANSPORT_PROGRESS_WEIGHT)
+
+const mapBackendTaskProgress = (progress: number) =>
+  clampProgress(
+    UPLOAD_TRANSPORT_PROGRESS_WEIGHT +
+      (Math.max(0, Math.min(100, progress)) / 100) * UPLOAD_PROCESS_PROGRESS_WEIGHT,
+  )
+
+const resolveUploadStageLabel = (stage?: string) => {
+  switch (stage) {
+    case 'uploaded':
+      return '文件已上传，等待开始解析'
+    case 'queued':
+      return '任务已创建，准备开始解析'
+    case 'extracting_content':
+      return '开始解析文档正文、提取图片并处理 OCR'
+    case 'preparing_index_text':
+      return '正在整理正文、图片说明与 OCR 文本'
+    case 'chunking':
+      return '正在切分文档内容'
+    case 'embedding':
+      return '正在生成向量并准备入库'
+    case 'indexing':
+      return '正在写入向量索引'
+    case 'finalizing':
+      return '正在保存文档状态'
+    case 'completed':
+      return '文档处理完成，已可用于检索'
+    case 'canceled':
+      return '上传任务已取消'
+    case 'failed':
+      return '文档处理失败'
+    default:
+      return '服务端正在处理文档'
+  }
+}
+
+const normalizeUploadTaskStatus = (task: BackendUploadTask): UploadTask['status'] => {
+  if (task.status === 'success' || task.status === 'error' || task.status === 'canceled') {
+    return task.status
+  }
+  if (task.stage === 'uploaded' || task.stage === 'queued') {
+    return 'queued'
+  }
+  return 'processing'
+}
+
+const normalizeUploadTaskFromBackend = (
+  task: BackendUploadTask,
+): Partial<UploadTask> => ({
+  backendTaskId: task.id,
+  status: normalizeUploadTaskStatus(task),
+  progress: mapBackendTaskProgress(task.progress),
+  networkProgress: 100,
+  stage: task.stage,
+  detail: task.message || resolveUploadStageLabel(task.stage),
+  uploadedDocumentId: task.uploaded?.id,
+  error:
+    task.status === 'error'
+      ? task.error || task.message || '文档处理失败'
+      : task.status === 'canceled'
+        ? task.error || task.message || '上传任务已取消'
+        : undefined,
+})
+
+const uploadKnowledgeBaseDocument = (
+  knowledgeBaseId: string,
+  file: File,
+  onProgress: (progress: number) => void,
+  onRequestCreated?: (xhr: XMLHttpRequest) => void,
+) =>
+  new Promise<BackendUploadTask>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${API_BASE_PATH}/api/knowledge-bases/${knowledgeBaseId}/document-uploads`)
+    onRequestCreated?.(xhr)
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || event.total <= 0) {
+        return
+      }
+      onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)))
+    }
+
+    xhr.onerror = () => reject(new Error('网络异常，上传失败'))
+    xhr.onabort = () => {
+      const abortError = new Error('UPLOAD_ABORTED')
+      abortError.name = 'UploadAbortError'
+      reject(abortError)
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as BackendUploadTask)
+        } catch {
+          reject(new Error('上传成功，但任务响应解析失败'))
+        }
+        return
+      }
+      reject(new Error(extractXHRErrorMessage(xhr)))
+    }
+
+    const formData = new FormData()
+    formData.append('file', file)
+    xhr.send(formData)
+  })
+
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
@@ -289,6 +468,12 @@ function App() {
   const [configSaveError, setConfigSaveError] = useState<string | null>(null)
   const [configSaveSuccess, setConfigSaveSuccess] = useState<string | null>(null)
   const [reindexingKnowledgeBaseId, setReindexingKnowledgeBaseId] = useState<string | null>(null)
+  const [uploadTasksByKnowledgeBase, setUploadTasksByKnowledgeBase] = useState<Record<string, UploadTask[]>>({})
+  const uploadTaskFilesRef = useRef<Record<string, File>>({})
+  const uploadTaskXhrRef = useRef<Record<string, XMLHttpRequest>>({})
+  const uploadTaskPollTimerRef = useRef<Record<string, number>>({})
+  const uploadTasksByKnowledgeBaseRef = useRef<Record<string, UploadTask[]>>({})
+  const canceledUploadTaskIdsRef = useRef<Set<string>>(new Set())
 
   const loadConversationDetail = async (conversationId: string): Promise<Conversation> => {
     const response = await fetch(`${API_BASE_PATH}/api/conversations/${conversationId}`)
@@ -327,6 +512,23 @@ function App() {
       ) ?? null
     )
   }, [selectedDocumentId, selectedKnowledgeBase])
+
+  useEffect(() => {
+    uploadTasksByKnowledgeBaseRef.current = uploadTasksByKnowledgeBase
+  }, [uploadTasksByKnowledgeBase])
+
+  useEffect(() => () => {
+    Object.values(uploadTaskPollTimerRef.current).forEach((timer) => {
+      window.clearTimeout(timer)
+    })
+    Object.values(uploadTaskXhrRef.current).forEach((xhr) => {
+      try {
+        xhr.abort()
+      } catch {
+        // ignore abort errors during cleanup
+      }
+    })
+  }, [])
 
   useEffect(() => {
     const bootstrapApp = async () => {
@@ -634,6 +836,18 @@ function App() {
 
         return nextKnowledgeBases
       })
+      setUploadTasksByKnowledgeBase((prev) => {
+        ;(prev[knowledgeBaseId] ?? []).forEach((task) => {
+          stopPollingUploadTask(task.id)
+          delete uploadTaskFilesRef.current[task.id]
+          delete uploadTaskXhrRef.current[task.id]
+          canceledUploadTaskIdsRef.current.delete(task.id)
+        })
+        const next = { ...prev }
+        delete next[knowledgeBaseId]
+        uploadTasksByKnowledgeBaseRef.current = next
+        return next
+      })
     } catch (error) {
       const message =
         error instanceof Error ? error.message : '删除知识库失败，请稍后重试。'
@@ -654,52 +868,366 @@ function App() {
     setSelectedDocumentId(documentId)
   }
 
+  const updateUploadTask = (
+    knowledgeBaseId: string,
+    taskId: string,
+    patch: Partial<UploadTask>,
+  ) => {
+    setUploadTasksByKnowledgeBase((prev) => {
+      const next = {
+        ...prev,
+        [knowledgeBaseId]: (prev[knowledgeBaseId] ?? []).map((task) =>
+          task.id === taskId ? { ...task, ...patch } : task,
+        ),
+      }
+      uploadTasksByKnowledgeBaseRef.current = next
+      return next
+    })
+  }
+
+  function stopPollingUploadTask(taskId: string) {
+    const timer = uploadTaskPollTimerRef.current[taskId]
+    if (typeof timer === 'number') {
+      window.clearTimeout(timer)
+      delete uploadTaskPollTimerRef.current[taskId]
+    }
+  }
+
+  function upsertUploadedDocument(knowledgeBaseId: string, document: BackendDocumentItem) {
+    const normalizedDocument = normalizeDocument(document)
+    setKnowledgeBases((prev) =>
+      prev.map((knowledgeBase) =>
+        knowledgeBase.id === knowledgeBaseId
+          ? {
+              ...knowledgeBase,
+              documents: [
+                normalizedDocument,
+                ...knowledgeBase.documents.filter((item) => item.id !== normalizedDocument.id),
+              ],
+            }
+          : knowledgeBase,
+      ),
+    )
+    return normalizedDocument
+  }
+
+  function applyBackendUploadTask(
+    knowledgeBaseId: string,
+    taskId: string,
+    backendTask: BackendUploadTask,
+  ) {
+    updateUploadTask(knowledgeBaseId, taskId, normalizeUploadTaskFromBackend(backendTask))
+
+    if (backendTask.uploaded) {
+      const uploadedDocument = upsertUploadedDocument(knowledgeBaseId, backendTask.uploaded)
+      const currentTask = uploadTasksByKnowledgeBaseRef.current[knowledgeBaseId]?.find(
+        (item) => item.id === taskId,
+      )
+      if (backendTask.status === 'success' && currentTask?.shouldAutoSelect) {
+        setSelectedKnowledgeBaseId(knowledgeBaseId)
+        setSelectedDocumentId(uploadedDocument.id)
+      }
+    }
+
+    if (backendTask.status === 'success') {
+      delete uploadTaskFilesRef.current[taskId]
+      canceledUploadTaskIdsRef.current.delete(taskId)
+    }
+
+    if (
+      backendTask.status === 'success' ||
+      backendTask.status === 'error' ||
+      backendTask.status === 'canceled'
+    ) {
+      stopPollingUploadTask(taskId)
+      delete uploadTaskXhrRef.current[taskId]
+    }
+  }
+
+  function scheduleUploadTaskPoll(
+    knowledgeBaseId: string,
+    taskId: string,
+    backendTaskId: string,
+    delayMs = 900,
+  ) {
+    stopPollingUploadTask(taskId)
+    uploadTaskPollTimerRef.current[taskId] = window.setTimeout(() => {
+      void pollUploadTask(knowledgeBaseId, taskId, backendTaskId)
+    }, delayMs)
+  }
+
+  async function pollUploadTask(
+    knowledgeBaseId: string,
+    taskId: string,
+    backendTaskId: string,
+  ) {
+    if (canceledUploadTaskIdsRef.current.has(taskId)) {
+      stopPollingUploadTask(taskId)
+      return
+    }
+
+    try {
+      const response = await fetch(
+        `${API_BASE_PATH}/api/knowledge-bases/${knowledgeBaseId}/document-uploads/${backendTaskId}`,
+      )
+      if (!response.ok) {
+        throw new Error(await extractErrorMessage(response))
+      }
+
+      const backendTask = (await response.json()) as BackendUploadTask
+      applyBackendUploadTask(knowledgeBaseId, taskId, backendTask)
+
+      if (backendTask.status === 'processing') {
+        scheduleUploadTaskPoll(knowledgeBaseId, taskId, backendTaskId)
+      }
+    } catch (error) {
+      if (canceledUploadTaskIdsRef.current.has(taskId)) {
+        stopPollingUploadTask(taskId)
+        return
+      }
+
+      const message =
+        error instanceof Error ? error.message : '任务状态查询失败，正在自动重试。'
+      updateUploadTask(knowledgeBaseId, taskId, {
+        status: 'processing',
+        detail: `任务状态查询失败，正在重试：${message}`,
+      })
+      scheduleUploadTaskPoll(knowledgeBaseId, taskId, backendTaskId, 1800)
+    }
+  }
+
+  const clearFinishedUploadTasks = (knowledgeBaseId: string) => {
+    setUploadTasksByKnowledgeBase((prev) => {
+      const removableTasks = (prev[knowledgeBaseId] ?? []).filter(
+        (task) => task.status === 'success' || task.status === 'canceled',
+      )
+      removableTasks.forEach((task) => {
+        stopPollingUploadTask(task.id)
+        delete uploadTaskFilesRef.current[task.id]
+        delete uploadTaskXhrRef.current[task.id]
+        canceledUploadTaskIdsRef.current.delete(task.id)
+      })
+      const next = {
+        ...prev,
+        [knowledgeBaseId]: (prev[knowledgeBaseId] ?? []).filter(
+          (task) => task.status !== 'success' && task.status !== 'canceled',
+        ),
+      }
+      uploadTasksByKnowledgeBaseRef.current = next
+      return next
+    })
+  }
+
+  const runUploadTask = async (task: UploadTask, file: File) => {
+    stopPollingUploadTask(task.id)
+
+    if (canceledUploadTaskIdsRef.current.has(task.id)) {
+      updateUploadTask(task.knowledgeBaseId, task.id, {
+        status: 'canceled',
+        stage: 'canceled',
+        detail: '上传任务已取消',
+        error: '上传任务已取消',
+      })
+      return
+    }
+
+    updateUploadTask(task.knowledgeBaseId, task.id, {
+      status: 'uploading',
+      progress: 0,
+      networkProgress: 0,
+      backendTaskId: undefined,
+      stage: 'uploading',
+      detail: '正在上传文件到服务器',
+      uploadedDocumentId: undefined,
+      error: undefined,
+    })
+
+    try {
+      const backendTask = await uploadKnowledgeBaseDocument(
+        task.knowledgeBaseId,
+        file,
+        (networkProgress) => {
+          updateUploadTask(task.knowledgeBaseId, task.id, {
+            status: 'uploading',
+            networkProgress,
+            progress: mapTransportProgress(networkProgress),
+            stage: 'uploading',
+            detail: `正在上传文件到服务器（${networkProgress}%）`,
+            error: undefined,
+          })
+        },
+        (xhr) => {
+          uploadTaskXhrRef.current[task.id] = xhr
+        },
+      )
+
+      delete uploadTaskXhrRef.current[task.id]
+      applyBackendUploadTask(task.knowledgeBaseId, task.id, backendTask)
+
+      if (backendTask.status === 'processing') {
+        scheduleUploadTaskPoll(task.knowledgeBaseId, task.id, backendTask.id, 400)
+      }
+    } catch (error) {
+      stopPollingUploadTask(task.id)
+      delete uploadTaskXhrRef.current[task.id]
+
+      if (error instanceof Error && error.name === 'UploadAbortError') {
+        updateUploadTask(task.knowledgeBaseId, task.id, {
+          status: 'canceled',
+          stage: 'canceled',
+          detail: '上传任务已取消',
+          error: '上传任务已取消',
+        })
+        return
+      }
+
+      const message =
+        error instanceof Error ? error.message : '上传文档失败，请稍后重试。'
+      updateUploadTask(task.knowledgeBaseId, task.id, {
+        status: 'error',
+        stage: 'failed',
+        detail: '文件上传失败，未进入服务端解析阶段',
+        error: message,
+      })
+    }
+  }
+
   const handleUploadFiles = async (knowledgeBaseId: string, files: FileList | null) => {
     if (!files || files.length === 0) {
       return
     }
 
-    try {
-      const uploadedDocuments: DocumentItem[] = []
+    const fileList = Array.from(files)
+    const nextTasks = fileList.map((file, index) => ({
+      id: createId(),
+      knowledgeBaseId,
+      fileName: file.name,
+      sizeBytes: file.size,
+      sizeLabel: formatUploadFileSize(file.size),
+      progress: 0,
+      networkProgress: 0,
+      status: 'queued' as const,
+      stage: 'queued',
+      detail: '等待开始上传',
+      shouldAutoSelect: index === 0,
+    }))
 
-      for (const file of Array.from(files)) {
-        const formData = new FormData()
-        formData.append('file', file)
+    nextTasks.forEach((task, index) => {
+      uploadTaskFilesRef.current[task.id] = fileList[index]
+      canceledUploadTaskIdsRef.current.delete(task.id)
+    })
 
-        const response = await fetch(
-          `${API_BASE_PATH}/api/knowledge-bases/${knowledgeBaseId}/documents`,
-          {
-            method: 'POST',
-            body: formData,
-          },
-        )
+    setUploadTasksByKnowledgeBase((prev) => {
+      const next = {
+        ...prev,
+        [knowledgeBaseId]: [...nextTasks, ...(prev[knowledgeBaseId] ?? [])],
+      }
+      uploadTasksByKnowledgeBaseRef.current = next
+      return next
+    })
 
+    setSelectedKnowledgeBaseId(knowledgeBaseId)
+    setSelectedDocumentId(null)
+
+    nextTasks.forEach((task, index) => {
+      void runUploadTask(task, fileList[index])
+    })
+  }
+
+  const handleCancelUploadTask = (knowledgeBaseId: string, taskId: string) => {
+    canceledUploadTaskIdsRef.current.add(taskId)
+    stopPollingUploadTask(taskId)
+
+    const xhr = uploadTaskXhrRef.current[taskId]
+    if (xhr) {
+      xhr.abort()
+      return
+    }
+
+    const task = uploadTasksByKnowledgeBaseRef.current[knowledgeBaseId]?.find(
+      (item) => item.id === taskId,
+    )
+
+    updateUploadTask(knowledgeBaseId, taskId, {
+      status: 'canceled',
+      stage: 'canceled',
+      detail: task?.backendTaskId ? '正在取消服务端处理任务' : '上传任务已取消',
+      error: '上传任务已取消',
+    })
+
+    if (!task?.backendTaskId) {
+      return
+    }
+
+    void fetch(
+      `${API_BASE_PATH}/api/knowledge-bases/${knowledgeBaseId}/document-uploads/${task.backendTaskId}`,
+      {
+        method: 'DELETE',
+      },
+    )
+      .then(async (response) => {
         if (!response.ok) {
           throw new Error(await extractErrorMessage(response))
         }
+        const backendTask = (await response.json()) as BackendUploadTask
+        applyBackendUploadTask(knowledgeBaseId, taskId, backendTask)
+      })
+      .catch((error) => {
+        const message =
+          error instanceof Error ? error.message : '取消上传任务失败，请稍后重试。'
+        updateUploadTask(knowledgeBaseId, taskId, {
+          status: 'canceled',
+          stage: 'canceled',
+          detail: '取消请求已发送，但服务端确认失败',
+          error: message,
+        })
+      })
+  }
 
-        const data = (await response.json()) as UploadResponse
-        uploadedDocuments.push(normalizeDocument(data.uploaded))
-      }
+  const handleRetryUploadTask = async (knowledgeBaseId: string, taskId: string) => {
+    stopPollingUploadTask(taskId)
 
-      setKnowledgeBases((prev) =>
-        prev.map((knowledgeBase) =>
-          knowledgeBase.id === knowledgeBaseId
-            ? {
-                ...knowledgeBase,
-                documents: [...uploadedDocuments, ...knowledgeBase.documents],
-              }
-            : knowledgeBase,
-        ),
-      )
-
-      setSelectedKnowledgeBaseId(knowledgeBaseId)
-      setSelectedDocumentId(uploadedDocuments[0]?.id ?? null)
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : '上传文档失败，请稍后重试。'
-      window.alert(`上传文档失败：${message}`)
+    const file = uploadTaskFilesRef.current[taskId]
+    if (!file) {
+      updateUploadTask(knowledgeBaseId, taskId, {
+        status: 'error',
+        stage: 'failed',
+        detail: '原始文件对象已失效，请重新选择文件上传。',
+        error: '原始文件对象已失效，请重新选择文件上传。',
+      })
+      return
     }
+
+    canceledUploadTaskIdsRef.current.delete(taskId)
+    const task: UploadTask = {
+      id: taskId,
+      knowledgeBaseId,
+      fileName: file.name,
+      sizeBytes: file.size,
+      sizeLabel: formatUploadFileSize(file.size),
+      progress: 0,
+      networkProgress: 0,
+      status: 'queued',
+      stage: 'queued',
+      detail: '等待重新上传',
+      shouldAutoSelect: true,
+    }
+    updateUploadTask(knowledgeBaseId, taskId, {
+      fileName: file.name,
+      sizeBytes: file.size,
+      sizeLabel: formatUploadFileSize(file.size),
+      progress: 0,
+      networkProgress: 0,
+      status: 'queued',
+      backendTaskId: undefined,
+      stage: 'queued',
+      detail: '等待重新上传',
+      uploadedDocumentId: undefined,
+      shouldAutoSelect: true,
+      error: undefined,
+    })
+
+    await runUploadTask(task, file)
   }
 
   const handleRemoveDocument = async (knowledgeBaseId: string, documentId: string) => {
@@ -1045,9 +1573,7 @@ function App() {
 
       const savedConfig = (await response.json()) as ConfigResponse
       const embeddingChanged =
-        config.embedding.provider !== savedConfig.embedding.provider ||
-        config.embedding.baseUrl !== savedConfig.embedding.baseUrl ||
-        config.embedding.model !== savedConfig.embedding.model
+        JSON.stringify(config.embedding) !== JSON.stringify(savedConfig.embedding)
 
       setConfig(savedConfig)
       setConfigSaveSuccess('配置已保存，新的聊天模型与向量模型已生效。')
@@ -1099,6 +1625,10 @@ function App() {
         onCreateKnowledgeBase={handleCreateKnowledgeBase}
         onDeleteKnowledgeBase={handleDeleteKnowledgeBase}
         onUploadFiles={handleUploadFiles}
+        uploadTasksByKnowledgeBase={uploadTasksByKnowledgeBase}
+        onCancelUploadTask={handleCancelUploadTask}
+        onRetryUploadTask={handleRetryUploadTask}
+        onClearFinishedUploadTasks={clearFinishedUploadTasks}
         onRemoveDocument={handleRemoveDocument}
         onReindexKnowledgeBase={handleReindexKnowledgeBase}
         reindexingKnowledgeBaseId={reindexingKnowledgeBaseId}

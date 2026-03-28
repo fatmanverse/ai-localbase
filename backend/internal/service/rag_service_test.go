@@ -2,6 +2,7 @@ package service
 
 import (
 	"archive/zip"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -431,4 +432,111 @@ func writeTestDOCX(path string, files map[string]string) error {
 		}
 	}
 	return zipWriter.Close()
+}
+
+func TestExtractDocumentContentFromMarkdownWithImages(t *testing.T) {
+	dir := t.TempDir()
+	imagePath := filepath.Join(dir, "step.png")
+	if err := os.WriteFile(imagePath, tinyPNG(), 0o644); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	markdownPath := filepath.Join(dir, "guide.md")
+	markdown := `# 控制台处理
+
+请先点击保存按钮，再检查权限。
+
+![保存按钮截图](step.png)
+
+如果仍失败，请联系管理员。`
+	if err := os.WriteFile(markdownPath, []byte(markdown), 0o644); err != nil {
+		t.Fatalf("write markdown: %v", err)
+	}
+
+	content, err := util.ExtractDocumentContent(markdownPath)
+	if err != nil {
+		t.Fatalf("extract document content: %v", err)
+	}
+	if len(content.Images) != 1 {
+		t.Fatalf("expected 1 image asset, got %d", len(content.Images))
+	}
+	image := content.Images[0]
+	if !image.Included {
+		t.Fatalf("expected markdown image to be included in retrieval")
+	}
+	if image.Classification == model.DocumentImageDecorative {
+		t.Fatalf("expected meaningful classification, got %s", image.Classification)
+	}
+	retrievalText := util.BuildDocumentRetrievalText(content)
+	if !strings.Contains(retrievalText, "图片ID:") {
+		t.Fatalf("expected retrieval text to contain image id, got %q", retrievalText)
+	}
+	if !strings.Contains(retrievalText, "保存按钮截图") {
+		t.Fatalf("expected retrieval text to include image alt text, got %q", retrievalText)
+	}
+}
+
+func TestBuildDocumentRetrievalTextIncludesImageKnowledge(t *testing.T) {
+	content := model.DocumentContent{
+		Text: "主文档正文。",
+		Images: []model.DocumentImageAsset{{
+			ID:             "img-test-1",
+			Included:       true,
+			Classification: model.DocumentImageFlowDiagram,
+			Description:    "图片类型：流程图/架构图；图文上下文：登录后进入审批流程。",
+			RetrievalText:  "图片ID: img-test-1\n图片类型: 流程图/架构图\n图片说明: 登录后进入审批流程。",
+		}},
+	}
+	joined := util.BuildDocumentRetrievalText(content)
+	if !strings.Contains(joined, "主文档正文") {
+		t.Fatalf("expected joined retrieval text to keep original content, got %q", joined)
+	}
+	if !strings.Contains(joined, "img-test-1") || !strings.Contains(joined, "审批流程") {
+		t.Fatalf("expected joined retrieval text to contain image knowledge, got %q", joined)
+	}
+}
+
+func TestAppServiceIndexImageDocument(t *testing.T) {
+	dir := t.TempDir()
+	imagePath := filepath.Join(dir, "dashboard.png")
+	if err := os.WriteFile(imagePath, tinyPNG(), 0o644); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+
+	service := NewAppService(nil, NewAppStateStore(""), nil, model.ServerConfig{UploadDir: dir})
+	knowledgeBases := service.ListKnowledgeBases()
+	if len(knowledgeBases) == 0 {
+		t.Fatal("expected default knowledge base")
+	}
+
+	document := model.Document{
+		ID:              "doc-image",
+		KnowledgeBaseID: knowledgeBases[0].ID,
+		Name:            "dashboard.png",
+		Path:            imagePath,
+		Status:          "processing",
+	}
+	indexed, err := service.IndexDocument(document)
+	if err != nil {
+		t.Fatalf("index image document: %v", err)
+	}
+	if indexed.ImageCount != 1 {
+		t.Fatalf("expected image count 1, got %d", indexed.ImageCount)
+	}
+	if len(indexed.Images) != 1 {
+		t.Fatalf("expected one indexed image summary, got %d", len(indexed.Images))
+	}
+	if strings.TrimSpace(indexed.ContentPreview) == "" {
+		t.Fatal("expected content preview for image document")
+	}
+	if indexed.Status != "indexed" && indexed.Status != "ready" {
+		t.Fatalf("expected indexed or ready status, got %s", indexed.Status)
+	}
+}
+
+func tinyPNG() []byte {
+	data, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0VcAAAAASUVORK5CYII=")
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

@@ -33,20 +33,29 @@ type HealthResponse struct {
 	Config map[string]string `json:"config"`
 }
 
-type ChatConfig struct {
-	Provider            string  `json:"provider"`
-	BaseURL             string  `json:"baseUrl"`
-	Model               string  `json:"model"`
-	APIKey              string  `json:"apiKey"`
-	Temperature         float64 `json:"temperature"`
-	ContextMessageLimit int     `json:"contextMessageLimit"`
-}
-
-type EmbeddingConfig struct {
+type ModelEndpointConfig struct {
 	Provider string `json:"provider"`
 	BaseURL  string `json:"baseUrl"`
 	Model    string `json:"model"`
 	APIKey   string `json:"apiKey"`
+}
+
+type ChatConfig struct {
+	Provider            string                `json:"provider"`
+	BaseURL             string                `json:"baseUrl"`
+	Model               string                `json:"model"`
+	APIKey              string                `json:"apiKey"`
+	Temperature         float64               `json:"temperature"`
+	ContextMessageLimit int                   `json:"contextMessageLimit"`
+	Candidates          []ModelEndpointConfig `json:"candidates,omitempty"`
+}
+
+type EmbeddingConfig struct {
+	Provider   string                `json:"provider"`
+	BaseURL    string                `json:"baseUrl"`
+	Model      string                `json:"model"`
+	APIKey     string                `json:"apiKey"`
+	Candidates []ModelEndpointConfig `json:"candidates,omitempty"`
 }
 
 type AppConfig struct {
@@ -68,15 +77,17 @@ type KnowledgeBaseInput struct {
 }
 
 type Document struct {
-	ID              string `json:"id"`
-	KnowledgeBaseID string `json:"knowledgeBaseId"`
-	Name            string `json:"name"`
-	Size            int64  `json:"size"`
-	SizeLabel       string `json:"sizeLabel"`
-	UploadedAt      string `json:"uploadedAt"`
-	Status          string `json:"status"`
-	Path            string `json:"path"`
-	ContentPreview  string `json:"contentPreview"`
+	ID              string               `json:"id"`
+	KnowledgeBaseID string               `json:"knowledgeBaseId"`
+	Name            string               `json:"name"`
+	Size            int64                `json:"size"`
+	SizeLabel       string               `json:"sizeLabel"`
+	UploadedAt      string               `json:"uploadedAt"`
+	Status          string               `json:"status"`
+	Path            string               `json:"path"`
+	ContentPreview  string               `json:"contentPreview"`
+	ImageCount      int                  `json:"imageCount,omitempty"`
+	Images          []DocumentImageAsset `json:"images,omitempty"`
 }
 
 type UploadResponse struct {
@@ -91,19 +102,21 @@ type ChatMessage struct {
 }
 
 type ChatModelConfig struct {
-	Provider            string  `json:"provider"`
-	BaseURL             string  `json:"baseUrl"`
-	Model               string  `json:"model"`
-	APIKey              string  `json:"apiKey"`
-	Temperature         float64 `json:"temperature"`
-	ContextMessageLimit int     `json:"contextMessageLimit"`
+	Provider            string                `json:"provider"`
+	BaseURL             string                `json:"baseUrl"`
+	Model               string                `json:"model"`
+	APIKey              string                `json:"apiKey"`
+	Temperature         float64               `json:"temperature"`
+	ContextMessageLimit int                   `json:"contextMessageLimit"`
+	Candidates          []ModelEndpointConfig `json:"candidates,omitempty"`
 }
 
 type EmbeddingModelConfig struct {
-	Provider string `json:"provider"`
-	BaseURL  string `json:"baseUrl"`
-	Model    string `json:"model"`
-	APIKey   string `json:"apiKey"`
+	Provider   string                `json:"provider"`
+	BaseURL    string                `json:"baseUrl"`
+	Model      string                `json:"model"`
+	APIKey     string                `json:"apiKey"`
+	Candidates []ModelEndpointConfig `json:"candidates,omitempty"`
 }
 
 type ChatCompletionRequest struct {

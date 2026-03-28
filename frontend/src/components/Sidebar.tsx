@@ -3,6 +3,7 @@ import {
   AppConfig,
   Conversation,
   KnowledgeBase,
+  UploadTask,
 } from '../App'
 import KnowledgePanel from './knowledge/KnowledgePanel'
 import SettingsPanel from './settings/SettingsPanel'
@@ -17,7 +18,11 @@ interface SidebarProps {
   onSelectDocument: (knowledgeBaseId: string, documentId: string | null) => void
   onCreateKnowledgeBase: (name: string, description: string) => void
   onDeleteKnowledgeBase: (knowledgeBaseId: string) => void
-  onUploadFiles: (knowledgeBaseId: string, files: FileList | null) => void
+  onUploadFiles: (knowledgeBaseId: string, files: FileList | null) => Promise<void>
+  uploadTasksByKnowledgeBase: Record<string, UploadTask[]>
+  onCancelUploadTask: (knowledgeBaseId: string, taskId: string) => void
+  onRetryUploadTask: (knowledgeBaseId: string, taskId: string) => Promise<void>
+  onClearFinishedUploadTasks: (knowledgeBaseId: string) => void
   onRemoveDocument: (knowledgeBaseId: string, documentId: string) => void
   onReindexKnowledgeBase: (knowledgeBaseId: string) => Promise<void>
   reindexingKnowledgeBaseId: string | null
@@ -57,6 +62,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   onCreateKnowledgeBase,
   onDeleteKnowledgeBase,
   onUploadFiles,
+  uploadTasksByKnowledgeBase,
+  onCancelUploadTask,
+  onRetryUploadTask,
+  onClearFinishedUploadTasks,
   onRemoveDocument,
   onReindexKnowledgeBase,
   reindexingKnowledgeBaseId,
@@ -305,6 +314,10 @@ const Sidebar: React.FC<SidebarProps> = ({
         onCreateKnowledgeBase={onCreateKnowledgeBase}
         onDeleteKnowledgeBase={onDeleteKnowledgeBase}
         onUploadFiles={onUploadFiles}
+        uploadTasksByKnowledgeBase={uploadTasksByKnowledgeBase}
+        onCancelUploadTask={onCancelUploadTask}
+        onRetryUploadTask={onRetryUploadTask}
+        onClearFinishedUploadTasks={onClearFinishedUploadTasks}
         onRemoveDocument={onRemoveDocument}
         onReindexKnowledgeBase={onReindexKnowledgeBase}
         reindexingKnowledgeBaseId={reindexingKnowledgeBaseId}

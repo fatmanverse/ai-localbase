@@ -14,6 +14,7 @@ func NewRouter(appHandler *handler.AppHandler) *gin.Engine {
 
 	r.GET("/", appHandler.Root)
 	r.GET("/health", appHandler.Health)
+	r.GET("/api/assets/*path", appHandler.ServeAsset)
 	r.POST("/upload", appHandler.Upload)
 
 	api := r.Group("/api")
@@ -29,8 +30,22 @@ func NewRouter(appHandler *handler.AppHandler) *gin.Engine {
 		api.DELETE("/knowledge-bases/:id", appHandler.DeleteKnowledgeBase)
 		api.GET("/knowledge-bases/:id/documents", appHandler.ListDocuments)
 		api.POST("/knowledge-bases/:id/documents", appHandler.UploadToKnowledgeBase)
+		api.POST("/knowledge-bases/:id/document-uploads", appHandler.StartAsyncUploadToKnowledgeBase)
+		api.GET("/knowledge-bases/:id/document-uploads/:taskId", appHandler.GetUploadTask)
+		api.DELETE("/knowledge-bases/:id/document-uploads/:taskId", appHandler.CancelUploadTask)
 		api.POST("/knowledge-bases/:id/reindex", appHandler.ReindexKnowledgeBase)
 		api.DELETE("/knowledge-bases/:id/documents/:documentId", appHandler.DeleteDocument)
+
+		serviceDesk := api.Group("/service-desk")
+		{
+			serviceDesk.POST("/conversations", appHandler.CreateServiceDeskConversation)
+			serviceDesk.GET("/conversations/:id", appHandler.GetServiceDeskConversation)
+			serviceDesk.GET("/conversations/:id/messages", appHandler.ListServiceDeskConversationMessages)
+			serviceDesk.POST("/conversations/:id/messages", appHandler.SendServiceDeskMessage)
+			serviceDesk.POST("/conversations/:id/messages/stream", appHandler.StreamServiceDeskMessage)
+			serviceDesk.POST("/messages/:id/feedback", appHandler.SubmitServiceDeskFeedback)
+			serviceDesk.GET("/analytics/summary", appHandler.GetServiceDeskAnalyticsSummary)
+		}
 	}
 
 	v1 := r.Group("/v1")

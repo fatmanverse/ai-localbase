@@ -1,0 +1,323 @@
+.service-desk-widget-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.96));
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+}
+
+.service-desk-context-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.service-desk-context-label,
+.section-caption {
+  color: #94a3b8;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.service-desk-context-bar h2 {
+  margin: 6px 0 0;
+  font-size: 24px;
+  color: #f8fafc;
+}
+
+.service-desk-context-badges,
+.service-desk-sources,
+.service-desk-feedback-summary,
+.service-desk-quick-prompt-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.service-desk-badge,
+.service-desk-source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.86);
+  color: #e2e8f0;
+  font-size: 13px;
+}
+
+.service-desk-badge.muted {
+  color: #94a3b8;
+}
+
+.service-desk-quick-prompts,
+.service-desk-message-list,
+.service-desk-composer {
+  background: rgba(15, 23, 42, 0.5);
+  border-radius: 20px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.service-desk-quick-prompt-list button,
+.feedback-actions button,
+.feedback-panel button,
+.service-desk-composer button {
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.service-desk-quick-prompt-list button {
+  padding: 10px 14px;
+  background: rgba(37, 99, 235, 0.16);
+  color: #dbeafe;
+}
+
+.service-desk-quick-prompt-list button:hover,
+.feedback-actions button:hover,
+.feedback-panel button:hover,
+.service-desk-composer button:hover {
+  transform: translateY(-1px);
+}
+
+.service-desk-empty-state {
+  padding: 28px;
+  border-radius: 20px;
+  background: rgba(30, 41, 59, 0.55);
+  color: #cbd5e1;
+}
+
+.service-desk-empty-state h3 {
+  color: #f8fafc;
+  margin-bottom: 10px;
+}
+
+.service-desk-message-list {
+  min-height: 360px;
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.service-desk-message {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.service-desk-message.user {
+  align-items: flex-end;
+}
+
+.service-desk-message.assistant {
+  align-items: flex-start;
+}
+
+.service-desk-message-bubble {
+  max-width: min(100%, 760px);
+  border-radius: 18px;
+  padding: 16px 18px;
+  background: rgba(30, 41, 59, 0.72);
+  color: #e2e8f0;
+}
+
+.service-desk-message.user .service-desk-message-bubble {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.95), rgba(14, 165, 233, 0.9));
+  color: white;
+}
+
+.service-desk-message-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 10px;
+}
+
+.service-desk-message.user .service-desk-message-meta {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.service-desk-markdown p,
+.service-desk-markdown ul,
+.service-desk-markdown ol,
+.service-desk-markdown blockquote,
+.service-desk-markdown h2,
+.service-desk-markdown h3,
+.service-desk-markdown h4 {
+  margin: 0 0 10px;
+}
+
+.service-desk-markdown h2,
+.service-desk-markdown h3,
+.service-desk-markdown h4 {
+  color: #f8fafc;
+}
+
+.service-desk-plain-text {
+  white-space: pre-wrap;
+}
+
+.feedback-composer {
+  max-width: min(100%, 760px);
+  padding-left: 4px;
+}
+
+.feedback-headline {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.feedback-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.feedback-actions button,
+.feedback-panel button,
+.service-desk-composer button {
+  padding: 10px 14px;
+  background: #2563eb;
+  color: white;
+}
+
+.feedback-actions button.secondary,
+.feedback-submit-row button.secondary,
+.feedback-panel button.selected {
+  background: rgba(51, 65, 85, 0.86);
+  color: #e2e8f0;
+}
+
+.feedback-panel {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.feedback-reason-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.feedback-panel textarea,
+.service-desk-composer textarea {
+  width: 100%;
+  resize: vertical;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(2, 6, 23, 0.64);
+  color: #e2e8f0;
+  padding: 12px 14px;
+  font: inherit;
+}
+
+.feedback-submit-row,
+.service-desk-composer-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.service-desk-typing,
+.service-desk-error-banner,
+.service-desk-notice-banner {
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-size: 14px;
+}
+
+.service-desk-typing {
+  background: rgba(37, 99, 235, 0.12);
+  color: #bfdbfe;
+}
+
+.service-desk-error-banner {
+  background: rgba(220, 38, 38, 0.14);
+  color: #fecaca;
+}
+
+.service-desk-notice-banner {
+  background: rgba(16, 185, 129, 0.14);
+  color: #bbf7d0;
+}
+
+@media (max-width: 768px) {
+  .service-desk-widget-shell {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .feedback-submit-row,
+  .service-desk-composer-footer,
+  .service-desk-context-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.service-desk-related-images {
+  margin-top: 14px;
+}
+
+.service-desk-related-images-title {
+  margin-bottom: 8px;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.service-desk-related-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.service-desk-related-image-card {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.service-desk-related-image-card img {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  background: rgba(2, 6, 23, 0.72);
+}
+
+.service-desk-related-image-meta {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.service-desk-related-image-meta p {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.5;
+}

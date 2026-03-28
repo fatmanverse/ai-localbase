@@ -1,0 +1,58 @@
+.service-desk-demo-page {
+  min-height: 100vh;
+  padding: 36px 20px 48px;
+  background:
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.18), transparent 30%),
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 28%),
+    #020617;
+}
+
+.service-desk-demo-hero {
+  max-width: 1120px;
+  margin: 0 auto 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 24px;
+  color: #e2e8f0;
+}
+
+.service-desk-demo-hero h1 {
+  font-size: clamp(32px, 4vw, 52px);
+  margin: 10px 0 16px;
+  color: #f8fafc;
+}
+
+.service-desk-demo-hero p,
+.service-desk-demo-hero li {
+  color: #cbd5e1;
+  line-height: 1.7;
+}
+
+.service-desk-demo-card {
+  border-radius: 24px;
+  padding: 22px;
+  background: rgba(15, 23, 42, 0.84);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.service-desk-demo-card code,
+.service-desk-demo-hero code {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.86);
+  color: #bfdbfe;
+}
+
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #93c5fd;
+}
+
+@media (max-width: 900px) {
+  .service-desk-demo-hero {
+    grid-template-columns: 1fr;
+  }
+}

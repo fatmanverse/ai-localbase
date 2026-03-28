@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -17,16 +18,25 @@ import (
 )
 
 type AppHandler struct {
-	serverConfig model.ServerConfig
-	appService   *service.AppService
-	llmService   *service.LLMService
+	serverConfig       model.ServerConfig
+	appService         *service.AppService
+	llmService         *service.LLMService
+	serviceDeskService *service.ServiceDeskService
+	uploadTaskService  *service.UploadTaskService
 }
 
-func NewAppHandler(serverConfig model.ServerConfig, appService *service.AppService, llmService *service.LLMService) *AppHandler {
+func NewAppHandler(serverConfig model.ServerConfig, appService *service.AppService, llmService *service.LLMService, serviceDeskService *service.ServiceDeskService, uploadTaskServices ...*service.UploadTaskService) *AppHandler {
+	var uploadTaskService *service.UploadTaskService
+	if len(uploadTaskServices) > 0 {
+		uploadTaskService = uploadTaskServices[0]
+	}
+
 	return &AppHandler{
-		serverConfig: serverConfig,
-		appService:   appService,
-		llmService:   llmService,
+		serverConfig:       serverConfig,
+		appService:         appService,
+		llmService:         llmService,
+		serviceDeskService: serviceDeskService,
+		uploadTaskService:  uploadTaskService,
 	}
 }
 
@@ -163,6 +173,47 @@ func (h *AppHandler) UploadToKnowledgeBase(c *gin.Context) {
 	h.handleUpload(c, c.Param("id"))
 }
 
+func (h *AppHandler) StartAsyncUploadToKnowledgeBase(c *gin.Context) {
+	h.handleAsyncUpload(c, c.Param("id"))
+}
+
+func (h *AppHandler) GetUploadTask(c *gin.Context) {
+	if h.uploadTaskService == nil {
+		writeError(c, http.StatusServiceUnavailable, "upload task service unavailable")
+		return
+	}
+
+	knowledgeBaseID := strings.TrimSpace(c.Param("id"))
+	taskID := strings.TrimSpace(c.Param("taskId"))
+	task, ok := h.uploadTaskService.GetTask(taskID)
+	if !ok || task.KnowledgeBaseID != knowledgeBaseID {
+		writeError(c, http.StatusNotFound, "upload task not found")
+		return
+	}
+	c.JSON(http.StatusOK, task)
+}
+
+func (h *AppHandler) CancelUploadTask(c *gin.Context) {
+	if h.uploadTaskService == nil {
+		writeError(c, http.StatusServiceUnavailable, "upload task service unavailable")
+		return
+	}
+
+	knowledgeBaseID := strings.TrimSpace(c.Param("id"))
+	taskID := strings.TrimSpace(c.Param("taskId"))
+	task, ok := h.uploadTaskService.GetTask(taskID)
+	if !ok || task.KnowledgeBaseID != knowledgeBaseID {
+		writeError(c, http.StatusNotFound, "upload task not found")
+		return
+	}
+	updated, err := h.uploadTaskService.CancelTask(taskID)
+	if err != nil {
+		writeError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, updated)
+}
+
 func (h *AppHandler) Upload(c *gin.Context) {
 	h.handleUpload(c, c.PostForm("knowledgeBaseId"))
 }
@@ -188,6 +239,7 @@ func (h *AppHandler) DeleteDocument(c *gin.Context) {
 	}
 
 	_ = os.Remove(removedDocument.Path)
+	_ = util.RemoveDocumentArtifacts(removedDocument.Path)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":         "document deleted",
@@ -415,45 +467,16 @@ func (h *AppHandler) prepareChatRequest(req model.ChatCompletionRequest) (model.
 }
 
 func (h *AppHandler) handleUpload(c *gin.Context, candidateKnowledgeBaseID string) {
-	file, err := c.FormFile("file")
-	if err != nil {
-		writeError(c, http.StatusBadRequest, "missing file field 'file'")
-		return
-	}
-
-	if err := validateUploadFile(file); err != nil {
-		writeError(c, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	knowledgeBaseID, err := h.appService.ResolveKnowledgeBaseID(candidateKnowledgeBaseID)
+	document, knowledgeBaseID, destination, err := h.prepareUploadedDocument(c, candidateKnowledgeBaseID)
 	if err != nil {
 		writeError(c, http.StatusBadRequest, err.Error())
 		return
-	}
-
-	storedName := fmt.Sprintf("%d_%s", util.NowUnixNano(), util.SanitizeFilename(file.Filename))
-	destination := filepath.Join(h.serverConfig.UploadDir, storedName)
-	if err := c.SaveUploadedFile(file, destination); err != nil {
-		writeError(c, http.StatusInternalServerError, "failed to save uploaded file")
-		return
-	}
-
-	document := model.Document{
-		ID:              util.NextID("doc"),
-		KnowledgeBaseID: knowledgeBaseID,
-		Name:            file.Filename,
-		Size:            file.Size,
-		SizeLabel:       util.FormatFileSize(file.Size),
-		UploadedAt:      util.NowRFC3339(),
-		Status:          "processing",
-		Path:            destination,
-		ContentPreview:  util.ExtractContentPreview(destination),
 	}
 
 	uploaded, err := h.appService.IndexDocument(document)
 	if err != nil {
 		_ = os.Remove(destination)
+		_ = util.RemoveDocumentArtifacts(destination)
 		writeError(c, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -466,16 +489,75 @@ func (h *AppHandler) handleUpload(c *gin.Context, candidateKnowledgeBaseID strin
 		})
 }
 
-func validateUploadFile(file *multipart.FileHeader) error {
-	ext := strings.ToLower(filepath.Ext(file.Filename))
-	allowed := map[string]struct{}{
-		".txt":  {},
-		".md":   {},
-		".pdf":  {},
-		".docx": {},
+func (h *AppHandler) handleAsyncUpload(c *gin.Context, candidateKnowledgeBaseID string) {
+	if h.uploadTaskService == nil {
+		writeError(c, http.StatusServiceUnavailable, "upload task service unavailable")
+		return
 	}
 
-	if _, ok := allowed[ext]; !ok {
+	document, _, destination, err := h.prepareUploadedDocument(c, candidateKnowledgeBaseID)
+	if err != nil {
+		writeError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	task := h.uploadTaskService.CreateTask(document)
+	if err := h.uploadTaskService.StartTask(task.ID, func(ctx context.Context, progress service.UploadTaskProgressCallback) (model.Document, error) {
+		uploaded, indexErr := h.appService.IndexDocumentWithProgress(ctx, document, progress)
+		if indexErr != nil {
+			_ = os.Remove(destination)
+			_ = util.RemoveDocumentArtifacts(destination)
+			return model.Document{}, indexErr
+		}
+		return uploaded, nil
+	}); err != nil {
+		_ = os.Remove(destination)
+		_ = util.RemoveDocumentArtifacts(destination)
+		writeError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusAccepted, task)
+}
+
+func (h *AppHandler) prepareUploadedDocument(c *gin.Context, candidateKnowledgeBaseID string) (model.Document, string, string, error) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		return model.Document{}, "", "", fmt.Errorf("missing file field 'file'")
+	}
+
+	if err := validateUploadFile(file); err != nil {
+		return model.Document{}, "", "", err
+	}
+
+	knowledgeBaseID, err := h.appService.ResolveKnowledgeBaseID(candidateKnowledgeBaseID)
+	if err != nil {
+		return model.Document{}, "", "", err
+	}
+
+	storedName := fmt.Sprintf("%d_%s", util.NowUnixNano(), util.SanitizeFilename(file.Filename))
+	destination := filepath.Join(h.serverConfig.UploadDir, storedName)
+	if err := c.SaveUploadedFile(file, destination); err != nil {
+		return model.Document{}, "", "", fmt.Errorf("failed to save uploaded file")
+	}
+
+	document := model.Document{
+		ID:              util.NextID("doc"),
+		KnowledgeBaseID: knowledgeBaseID,
+		Name:            file.Filename,
+		Size:            file.Size,
+		SizeLabel:       util.FormatFileSize(file.Size),
+		UploadedAt:      util.NowRFC3339(),
+		Status:          "processing",
+		Path:            destination,
+		ContentPreview:  "",
+	}
+	return document, knowledgeBaseID, destination, nil
+}
+
+func validateUploadFile(file *multipart.FileHeader) error {
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	if !util.IsSupportedUploadExtension(ext) {
 		return errUnsupportedFileType(ext)
 	}
 
@@ -483,8 +565,9 @@ func validateUploadFile(file *multipart.FileHeader) error {
 }
 
 func errUnsupportedFileType(ext string) error {
+	allowed := ".txt, .md, .pdf, .docx, .html, .htm, .png, .jpg, .jpeg, .webp, .gif"
 	if ext == "" {
-		return fmt.Errorf("unsupported file type: missing extension, allowed types are .txt, .md, .pdf, .docx")
+		return fmt.Errorf("unsupported file type: missing extension, allowed types are %s", allowed)
 	}
 
 	return &fileTypeError{Extension: ext}
@@ -495,7 +578,44 @@ type fileTypeError struct {
 }
 
 func (e *fileTypeError) Error() string {
-	return "unsupported file type: " + e.Extension + ", allowed types are .txt, .md, .pdf, .docx"
+	return "unsupported file type: " + e.Extension + ", allowed types are .txt, .md, .pdf, .docx, .html, .htm, .png, .jpg, .jpeg, .webp, .gif"
+}
+
+func (h *AppHandler) ServeAsset(c *gin.Context) {
+	relativePath := strings.TrimPrefix(c.Param("path"), "/")
+	if strings.TrimSpace(relativePath) == "" {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	cleaned := filepath.Clean(relativePath)
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		c.Status(http.StatusForbidden)
+		return
+	}
+	fullPath := filepath.Join(h.serverConfig.UploadDir, cleaned)
+	rootAbs, err := filepath.Abs(h.serverConfig.UploadDir)
+	if err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	fileAbs, err := filepath.Abs(fullPath)
+	if err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	if fileAbs != rootAbs && !strings.HasPrefix(fileAbs, rootAbs+string(os.PathSeparator)) {
+		c.Status(http.StatusForbidden)
+		return
+	}
+	if !util.IsImageFilePath(fileAbs) {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	if _, err := os.Stat(fileAbs); err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.File(fileAbs)
 }
 
 func buildStoredConversationMessages(messages []model.ChatMessage, assistantContent string, metadata map[string]any) []model.StoredChatMessage {

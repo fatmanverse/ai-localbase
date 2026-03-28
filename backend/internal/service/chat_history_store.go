@@ -84,6 +84,10 @@ func (s *SQLiteChatHistoryStore) init() error {
 		}
 	}
 
+	if err := s.initServiceDeskTables(); err != nil {
+		return err
+	}
+
 	return nil
 }
 

@@ -132,6 +132,7 @@ type DocumentChunk struct {
 	DocumentName    string
 	Text            string
 	Index           int
+	ImageIDs        []string
 }
 
 // SparseVector 稀疏向量（词项索引 -> 权重）
@@ -204,6 +205,7 @@ func (s *RagService) BuildDocumentChunks(document model.Document, text string) [
 			DocumentName:    document.Name,
 			Text:            part,
 			Index:           index,
+			ImageIDs:        util.ExtractImageIDsFromText(part),
 		})
 	}
 
@@ -222,6 +224,16 @@ func (s *RagService) EmbedTexts(ctx context.Context, cfg model.EmbeddingModelCon
 		return nil, nil
 	}
 
+	configs, err := normalizeEmbeddingConfigCandidates(cfg)
+	if err != nil {
+		fallback := make([][]float64, 0, len(trimmed))
+		for _, text := range trimmed {
+			fallback = append(fallback, deterministicEmbedding(text, vectorSize))
+		}
+		return fallback, nil
+	}
+	useModelCache := len(configs) == 1
+
 	all := make([][]float64, 0, len(trimmed))
 	useFallback := false
 	for i := 0; i < len(trimmed); i += embeddingBatchSize {
@@ -231,30 +243,32 @@ func (s *RagService) EmbedTexts(ctx context.Context, cfg model.EmbeddingModelCon
 		}
 		batch := trimmed[i:end]
 		if !useFallback {
-			// Check cache first; only call API for uncached texts.
 			batchVectors := make([][]float64, len(batch))
 			uncachedIdx := make([]int, 0, len(batch))
 			uncachedTexts := make([]string, 0, len(batch))
 			for j, text := range batch {
-				key := embeddingCacheKey(cfg.Provider, cfg.BaseURL, cfg.Model, text)
-				if cached := s.cache.Get(key); cached != nil {
-					batchVectors[j] = cached
-				} else {
-					uncachedIdx = append(uncachedIdx, j)
-					uncachedTexts = append(uncachedTexts, text)
+				if useModelCache {
+					key := embeddingCacheKey(cfg.Provider, cfg.BaseURL, cfg.Model, text)
+					if cached := s.cache.Get(key); cached != nil {
+						batchVectors[j] = cached
+						continue
+					}
 				}
+				uncachedIdx = append(uncachedIdx, j)
+				uncachedTexts = append(uncachedTexts, text)
 			}
 			if len(uncachedTexts) > 0 {
-				embeddings, err := s.requestEmbeddings(ctx, cfg, uncachedTexts)
-				if err == nil && len(embeddings) == len(uncachedTexts) {
+				embeddings, usedConfig, requestErr := s.requestEmbeddingsWithFailover(ctx, cfg, uncachedTexts)
+				if requestErr == nil && len(embeddings) == len(uncachedTexts) {
 					normed := normalizeEmbeddings(embeddings, vectorSize)
 					for k, idx := range uncachedIdx {
 						batchVectors[idx] = normed[k]
-						key := embeddingCacheKey(cfg.Provider, cfg.BaseURL, cfg.Model, batch[idx])
-						s.cache.Set(key, normed[k])
+						if useModelCache {
+							key := embeddingCacheKey(usedConfig.Provider, usedConfig.BaseURL, usedConfig.Model, batch[idx])
+							s.cache.Set(key, normed[k])
+						}
 					}
 				} else {
-					// first failure: fall back to deterministic for remaining batches
 					useFallback = true
 				}
 			}
@@ -279,13 +293,17 @@ func (s *RagService) BuildContext(chunks []RetrievedChunk) (string, []map[string
 	sources := make([]map[string]string, 0, len(chunks))
 	for _, chunk := range chunks {
 		lines = append(lines, fmt.Sprintf("[%s#%d] %s", chunk.DocumentName, chunk.Index+1, chunk.Text))
-		sources = append(sources, map[string]string{
+		source := map[string]string{
 			"knowledgeBaseId": chunk.KnowledgeBaseID,
 			"documentId":      chunk.DocumentID,
 			"documentName":    chunk.DocumentName,
 			"chunkId":         chunk.ID,
 			"score":           fmt.Sprintf("%.4f", chunk.Score),
-		})
+		}
+		if len(chunk.ImageIDs) > 0 {
+			source["imageIds"] = strings.Join(chunk.ImageIDs, ",")
+		}
+		sources = append(sources, source)
 	}
 
 	return strings.Join(lines, "\n\n"), sources
@@ -425,6 +443,7 @@ func (r *RagService) MultiQuerySearch(
 						DocumentName:    payloadString(item.Payload, "document_name", "未知文档"),
 						Text:            text,
 						Index:           payloadInt(item.Payload, "chunk_index"),
+						ImageIDs:        payloadStrings(item.Payload, "image_ids"),
 					},
 					Score: item.Score,
 				})
@@ -487,6 +506,96 @@ func (s *RagService) SearchHybrid(ctx context.Context, qdrant *QdrantService, kn
 		TopK:           topK,
 		Filter:         filter,
 	})
+}
+
+func normalizeEmbeddingConfigCandidates(cfg model.EmbeddingModelConfig) ([]model.EmbeddingModelConfig, error) {
+	primary, err := normalizeSingleEmbeddingConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	items := []model.EmbeddingModelConfig{primary}
+	seen := map[string]struct{}{formatEmbeddingConfigLabel(primary): {}}
+	for _, candidate := range cfg.Candidates {
+		provider := strings.TrimSpace(candidate.Provider)
+		if provider == "" {
+			provider = primary.Provider
+		}
+		modelName := strings.TrimSpace(candidate.Model)
+		if modelName == "" {
+			continue
+		}
+		baseURL := strings.TrimSpace(candidate.BaseURL)
+		if baseURL == "" {
+			baseURL = primary.BaseURL
+		}
+		apiKey := strings.TrimSpace(candidate.APIKey)
+		if apiKey == "" && provider == primary.Provider && baseURL == primary.BaseURL {
+			apiKey = primary.APIKey
+		}
+		normalized, candidateErr := normalizeSingleEmbeddingConfig(model.EmbeddingModelConfig{
+			Provider: provider,
+			BaseURL:  baseURL,
+			Model:    modelName,
+			APIKey:   apiKey,
+		})
+		if candidateErr != nil {
+			continue
+		}
+		key := formatEmbeddingConfigLabel(normalized)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		items = append(items, normalized)
+	}
+	return items, nil
+}
+
+func normalizeSingleEmbeddingConfig(cfg model.EmbeddingModelConfig) (model.EmbeddingModelConfig, error) {
+	cfg.Provider = strings.TrimSpace(cfg.Provider)
+	if cfg.Provider == "" {
+		cfg.Provider = "ollama"
+	}
+	cfg.Model = strings.TrimSpace(cfg.Model)
+	if cfg.Model == "" {
+		return model.EmbeddingModelConfig{}, fmt.Errorf("embedding model is required")
+	}
+	cfg.BaseURL = strings.TrimSpace(cfg.BaseURL)
+	if cfg.BaseURL == "" {
+		if cfg.Provider == "ollama" {
+			cfg.BaseURL = "http://localhost:11434"
+		} else {
+			cfg.BaseURL = "http://localhost:11434/v1"
+		}
+	}
+	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
+	return cfg, nil
+}
+
+func formatEmbeddingConfigLabel(cfg model.EmbeddingModelConfig) string {
+	return strings.Join([]string{
+		strings.TrimSpace(cfg.Provider),
+		strings.TrimSpace(cfg.BaseURL),
+		strings.TrimSpace(cfg.Model),
+	}, "|")
+}
+
+func (s *RagService) requestEmbeddingsWithFailover(ctx context.Context, cfg model.EmbeddingModelConfig, texts []string) ([][]float64, model.EmbeddingModelConfig, error) {
+	configs, err := normalizeEmbeddingConfigCandidates(cfg)
+	if err != nil {
+		return nil, model.EmbeddingModelConfig{}, err
+	}
+
+	attemptErrors := make([]string, 0, len(configs))
+	for _, candidate := range configs {
+		vectors, requestErr := s.requestEmbeddings(ctx, candidate, texts)
+		if requestErr == nil {
+			return vectors, candidate, nil
+		}
+		attemptErrors = append(attemptErrors, fmt.Sprintf("%s => %s", formatEmbeddingConfigLabel(candidate), requestErr.Error()))
+	}
+	return nil, model.EmbeddingModelConfig{}, fmt.Errorf("all embedding models failed: %s", strings.Join(attemptErrors, " | "))
 }
 
 func (s *RagService) requestEmbeddings(ctx context.Context, cfg model.EmbeddingModelConfig, texts []string) ([][]float64, error) {

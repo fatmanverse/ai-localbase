@@ -609,7 +609,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     },
     {
       icon: '🤖',
-      text: config.chat.model,
+      text:
+        config.chat.candidates && config.chat.candidates.length > 0
+          ? `${config.chat.model} +${config.chat.candidates.length} 备用`
+          : config.chat.model,
     },
     {
       icon: '💬',

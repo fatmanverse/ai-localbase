@@ -418,23 +418,109 @@ func normalizeBaseURLForProvider(provider string, serverConfig model.ServerConfi
 	return ollamaBaseURL
 }
 
+func normalizeConfiguredEndpoint(primary model.ModelEndpointConfig, serverConfig model.ServerConfig, defaultProvider string, defaultModel string) model.ModelEndpointConfig {
+	provider := strings.TrimSpace(primary.Provider)
+	if provider == "" {
+		provider = strings.TrimSpace(defaultProvider)
+	}
+	baseURL := strings.TrimSpace(primary.BaseURL)
+	if baseURL == "" {
+		baseURL = normalizeBaseURLForProvider(provider, serverConfig)
+	}
+	modelName := strings.TrimSpace(primary.Model)
+	if modelName == "" {
+		modelName = strings.TrimSpace(defaultModel)
+	}
+	return model.ModelEndpointConfig{
+		Provider: provider,
+		BaseURL:  baseURL,
+		Model:    modelName,
+		APIKey:   strings.TrimSpace(primary.APIKey),
+	}
+}
+
+func endpointConfigKey(cfg model.ModelEndpointConfig) string {
+	return strings.Join([]string{
+		strings.TrimSpace(cfg.Provider),
+		strings.TrimSpace(cfg.BaseURL),
+		strings.TrimSpace(cfg.Model),
+		strings.TrimSpace(cfg.APIKey),
+	}, "|")
+}
+
+func normalizeConfiguredEndpointCandidates(primary model.ModelEndpointConfig, candidates []model.ModelEndpointConfig, serverConfig model.ServerConfig) []model.ModelEndpointConfig {
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	seen := map[string]struct{}{}
+	primaryKey := endpointConfigKey(primary)
+	if primaryKey != "|||" {
+		seen[primaryKey] = struct{}{}
+	}
+
+	items := make([]model.ModelEndpointConfig, 0, len(candidates))
+	for _, candidate := range candidates {
+		provider := strings.TrimSpace(candidate.Provider)
+		if provider == "" {
+			provider = primary.Provider
+		}
+		modelName := strings.TrimSpace(candidate.Model)
+		if modelName == "" {
+			continue
+		}
+		baseURL := strings.TrimSpace(candidate.BaseURL)
+		if baseURL == "" {
+			if provider == primary.Provider && strings.TrimSpace(primary.BaseURL) != "" {
+				baseURL = primary.BaseURL
+			} else {
+				baseURL = normalizeBaseURLForProvider(provider, serverConfig)
+			}
+		}
+		normalized := model.ModelEndpointConfig{
+			Provider: provider,
+			BaseURL:  baseURL,
+			Model:    modelName,
+			APIKey:   strings.TrimSpace(candidate.APIKey),
+		}
+		key := endpointConfigKey(normalized)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		items = append(items, normalized)
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	return items
+}
+
 func recommendedAppConfig(serverConfig model.ServerConfig) model.AppConfig {
-	chatBaseURL := normalizeBaseURLForProvider(recommendedChatProvider, serverConfig)
-	embeddingBaseURL := normalizeBaseURLForProvider(recommendedEmbeddingProvider, serverConfig)
+	chatPrimary := normalizeConfiguredEndpoint(model.ModelEndpointConfig{
+		Provider: recommendedChatProvider,
+		Model:    recommendedChatModel,
+	}, serverConfig, recommendedChatProvider, recommendedChatModel)
+	embeddingPrimary := normalizeConfiguredEndpoint(model.ModelEndpointConfig{
+		Provider: recommendedEmbeddingProvider,
+		Model:    recommendedEmbeddingModel,
+	}, serverConfig, recommendedEmbeddingProvider, recommendedEmbeddingModel)
 	return model.AppConfig{
 		Chat: model.ChatConfig{
-			Provider:            recommendedChatProvider,
-			BaseURL:             chatBaseURL,
-			Model:               recommendedChatModel,
-			APIKey:              "",
+			Provider:            chatPrimary.Provider,
+			BaseURL:             chatPrimary.BaseURL,
+			Model:               chatPrimary.Model,
+			APIKey:              chatPrimary.APIKey,
 			Temperature:         recommendedChatTemperature,
 			ContextMessageLimit: recommendedContextMessageLimit,
+			Candidates:          nil,
 		},
 		Embedding: model.EmbeddingConfig{
-			Provider: recommendedEmbeddingProvider,
-			BaseURL:  embeddingBaseURL,
-			Model:    recommendedEmbeddingModel,
-			APIKey:   "",
+			Provider:   embeddingPrimary.Provider,
+			BaseURL:    embeddingPrimary.BaseURL,
+			Model:      embeddingPrimary.Model,
+			APIKey:     embeddingPrimary.APIKey,
+			Candidates: nil,
 		},
 	}
 }
@@ -444,6 +530,10 @@ func almostEqual(a, b float64) bool {
 }
 
 func isLegacyDefaultAppConfig(cfg model.AppConfig, serverConfig model.ServerConfig) bool {
+	if len(cfg.Chat.Candidates) > 0 || len(cfg.Embedding.Candidates) > 0 {
+		return false
+	}
+
 	chatProvider := strings.TrimSpace(cfg.Chat.Provider)
 	if chatProvider == "" {
 		chatProvider = recommendedChatProvider
@@ -480,18 +570,12 @@ func normalizeAppConfig(cfg model.AppConfig, serverConfig model.ServerConfig) mo
 		return recommended
 	}
 
-	chatProvider := strings.TrimSpace(cfg.Chat.Provider)
-	if chatProvider == "" {
-		chatProvider = recommended.Chat.Provider
-	}
-	chatBaseURL := strings.TrimSpace(cfg.Chat.BaseURL)
-	if chatBaseURL == "" {
-		chatBaseURL = normalizeBaseURLForProvider(chatProvider, serverConfig)
-	}
-	chatModel := strings.TrimSpace(cfg.Chat.Model)
-	if chatModel == "" {
-		chatModel = recommended.Chat.Model
-	}
+	chatPrimary := normalizeConfiguredEndpoint(model.ModelEndpointConfig{
+		Provider: cfg.Chat.Provider,
+		BaseURL:  cfg.Chat.BaseURL,
+		Model:    cfg.Chat.Model,
+		APIKey:   cfg.Chat.APIKey,
+	}, serverConfig, recommended.Chat.Provider, recommended.Chat.Model)
 	chatTemperature := cfg.Chat.Temperature
 	if chatTemperature < 0 || chatTemperature > 2 {
 		chatTemperature = recommended.Chat.Temperature
@@ -500,34 +584,32 @@ func normalizeAppConfig(cfg model.AppConfig, serverConfig model.ServerConfig) mo
 	if contextMessageLimit <= 0 || contextMessageLimit > 100 {
 		contextMessageLimit = recommended.Chat.ContextMessageLimit
 	}
+	chatCandidates := normalizeConfiguredEndpointCandidates(chatPrimary, cfg.Chat.Candidates, serverConfig)
 
-	embedProvider := strings.TrimSpace(cfg.Embedding.Provider)
-	if embedProvider == "" {
-		embedProvider = recommended.Embedding.Provider
-	}
-	embedBaseURL := strings.TrimSpace(cfg.Embedding.BaseURL)
-	if embedBaseURL == "" {
-		embedBaseURL = normalizeBaseURLForProvider(embedProvider, serverConfig)
-	}
-	embedModel := strings.TrimSpace(cfg.Embedding.Model)
-	if embedModel == "" {
-		embedModel = recommended.Embedding.Model
-	}
+	embeddingPrimary := normalizeConfiguredEndpoint(model.ModelEndpointConfig{
+		Provider: cfg.Embedding.Provider,
+		BaseURL:  cfg.Embedding.BaseURL,
+		Model:    cfg.Embedding.Model,
+		APIKey:   cfg.Embedding.APIKey,
+	}, serverConfig, recommended.Embedding.Provider, recommended.Embedding.Model)
+	embeddingCandidates := normalizeConfiguredEndpointCandidates(embeddingPrimary, cfg.Embedding.Candidates, serverConfig)
 
 	return model.AppConfig{
 		Chat: model.ChatConfig{
-			Provider:            chatProvider,
-			BaseURL:             chatBaseURL,
-			Model:               chatModel,
-			APIKey:              strings.TrimSpace(cfg.Chat.APIKey),
+			Provider:            chatPrimary.Provider,
+			BaseURL:             chatPrimary.BaseURL,
+			Model:               chatPrimary.Model,
+			APIKey:              chatPrimary.APIKey,
 			Temperature:         chatTemperature,
 			ContextMessageLimit: contextMessageLimit,
+			Candidates:          chatCandidates,
 		},
 		Embedding: model.EmbeddingConfig{
-			Provider: embedProvider,
-			BaseURL:  embedBaseURL,
-			Model:    embedModel,
-			APIKey:   strings.TrimSpace(cfg.Embedding.APIKey),
+			Provider:   embeddingPrimary.Provider,
+			BaseURL:    embeddingPrimary.BaseURL,
+			Model:      embeddingPrimary.Model,
+			APIKey:     embeddingPrimary.APIKey,
+			Candidates: embeddingCandidates,
 		},
 	}
 }
@@ -587,28 +669,18 @@ func (s *AppService) defaultBaseURL(provider string) string {
 
 func (s *AppService) UpdateConfig(req model.ConfigUpdateRequest) (model.AppConfig, error) {
 	chatProvider := strings.TrimSpace(req.Chat.Provider)
-	chatBaseURL := strings.TrimSpace(req.Chat.BaseURL)
 	chatModel := strings.TrimSpace(req.Chat.Model)
-
 	if chatProvider == "" || chatModel == "" {
 		return model.AppConfig{}, fmt.Errorf("chat provider and model are required")
-	}
-	if chatBaseURL == "" {
-		chatBaseURL = s.defaultBaseURL(chatProvider)
 	}
 	if req.Chat.Temperature < 0 || req.Chat.Temperature > 2 {
 		return model.AppConfig{}, fmt.Errorf("chat temperature must be between 0 and 2")
 	}
 
 	embedProvider := strings.TrimSpace(req.Embedding.Provider)
-	embedBaseURL := strings.TrimSpace(req.Embedding.BaseURL)
 	embedModel := strings.TrimSpace(req.Embedding.Model)
-
 	if embedProvider == "" || embedModel == "" {
 		return model.AppConfig{}, fmt.Errorf("embedding provider and model are required")
-	}
-	if embedBaseURL == "" {
-		embedBaseURL = s.defaultBaseURL(embedProvider)
 	}
 
 	contextMessageLimit := req.Chat.ContextMessageLimit
@@ -619,22 +691,24 @@ func (s *AppService) UpdateConfig(req model.ConfigUpdateRequest) (model.AppConfi
 		return model.AppConfig{}, fmt.Errorf("context message limit must be between 1 and 100")
 	}
 
-	nextConfig := model.AppConfig{
+	nextConfig := normalizeAppConfig(model.AppConfig{
 		Chat: model.ChatConfig{
 			Provider:            chatProvider,
-			BaseURL:             chatBaseURL,
+			BaseURL:             strings.TrimSpace(req.Chat.BaseURL),
 			Model:               chatModel,
 			APIKey:              strings.TrimSpace(req.Chat.APIKey),
 			Temperature:         req.Chat.Temperature,
 			ContextMessageLimit: contextMessageLimit,
+			Candidates:          req.Chat.Candidates,
 		},
 		Embedding: model.EmbeddingConfig{
-			Provider: embedProvider,
-			BaseURL:  embedBaseURL,
-			Model:    embedModel,
-			APIKey:   strings.TrimSpace(req.Embedding.APIKey),
+			Provider:   embedProvider,
+			BaseURL:    strings.TrimSpace(req.Embedding.BaseURL),
+			Model:      embedModel,
+			APIKey:     strings.TrimSpace(req.Embedding.APIKey),
+			Candidates: req.Embedding.Candidates,
 		},
-	}
+	}, s.serverConfig)
 
 	s.state.Mu.Lock()
 	previousConfig := s.state.Config
@@ -757,18 +831,42 @@ func (s *AppService) ResolveKnowledgeBaseID(candidate string) (string, error) {
 }
 
 func (s *AppService) IndexDocument(document model.Document) (model.Document, error) {
-	indexedDocument, chunks, vectors, err := s.buildIndexedDocument(document, s.currentEmbeddingConfig())
+	return s.IndexDocumentWithProgress(context.Background(), document, nil)
+}
+
+func (s *AppService) IndexDocumentWithProgress(
+	ctx context.Context,
+	document model.Document,
+	onProgress func(stage string, progress int, message string),
+) (model.Document, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	reportIndexProgress(onProgress, "extracting_content", 15, "开始解析文档正文、提取图片并处理 OCR")
+	indexedDocument, chunks, vectors, err := s.buildIndexedDocumentWithProgress(ctx, document, s.currentEmbeddingConfig(), onProgress)
 	if err != nil {
 		return model.Document{}, err
 	}
 
+	if err := ensureContextActive(ctx); err != nil {
+		return model.Document{}, err
+	}
+
 	if len(chunks) > 0 {
-		if err := s.upsertDocumentChunks(document.KnowledgeBaseID, chunks, vectors); err != nil {
+		reportIndexProgress(onProgress, "indexing", 88, "正在写入向量索引")
+		if err := s.upsertDocumentChunks(ctx, document.KnowledgeBaseID, chunks, vectors); err != nil {
 			return model.Document{}, err
 		}
 	}
 
-	return s.AddDocument(document.KnowledgeBaseID, indexedDocument), nil
+	reportIndexProgress(onProgress, "finalizing", 96, "正在保存文档状态")
+	if err := ensureContextActive(ctx); err != nil {
+		return model.Document{}, err
+	}
+	indexedDocument = s.AddDocument(document.KnowledgeBaseID, indexedDocument)
+	reportIndexProgress(onProgress, "completed", 100, "文档处理完成，已可用于检索")
+	return indexedDocument, nil
 }
 
 func (s *AppService) ReindexKnowledgeBase(knowledgeBaseID string) (model.KnowledgeBase, error) {
@@ -819,19 +917,54 @@ func (s *AppService) ReindexKnowledgeBase(knowledgeBaseID string) (model.Knowled
 }
 
 func (s *AppService) buildIndexedDocument(document model.Document, embeddingConfig model.EmbeddingModelConfig) (model.Document, []DocumentChunk, [][]float64, error) {
-	content, err := util.ExtractDocumentText(document.Path)
-	if err != nil {
-		return model.Document{}, nil, nil, fmt.Errorf("extract uploaded document text: %w", err)
+	return s.buildIndexedDocumentWithProgress(context.Background(), document, embeddingConfig, nil)
+}
+
+func (s *AppService) buildIndexedDocumentWithProgress(
+	ctx context.Context,
+	document model.Document,
+	embeddingConfig model.EmbeddingModelConfig,
+	onProgress func(stage string, progress int, message string),
+) (model.Document, []DocumentChunk, [][]float64, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ensureContextActive(ctx); err != nil {
+		return model.Document{}, nil, nil, err
 	}
 
-	chunks := s.rag.BuildDocumentChunks(document, content)
+	content, err := util.ExtractDocumentContent(document.Path)
+	if err != nil {
+		return model.Document{}, nil, nil, fmt.Errorf("extract uploaded document content: %w", err)
+	}
+
+	reportIndexProgress(onProgress, "preparing_index_text", 35, "正在整理正文、图片说明与 OCR 文本")
+	indexText := util.BuildDocumentRetrievalText(content)
+	if strings.TrimSpace(indexText) == "" {
+		indexText = content.Text
+	}
+
+	document.Images = util.BuildDocumentImageSummaries(content, s.serverConfig.UploadDir)
+	document.ImageCount = len(document.Images)
+
+	if err := ensureContextActive(ctx); err != nil {
+		return model.Document{}, nil, nil, err
+	}
+
+	reportIndexProgress(onProgress, "chunking", 55, "正在切分文档内容")
+	chunks := s.rag.BuildDocumentChunks(document, indexText)
 	if len(chunks) == 0 {
-		document.ContentPreview = util.BuildContentPreviewFromText(content)
+		document.ContentPreview = util.BuildContentPreviewFromText(indexText)
 		document.Status = "ready"
 		return document, nil, nil, nil
 	}
 
-	vectors, err := s.rag.EmbedTexts(context.Background(), embeddingConfig, chunkTexts(chunks), s.qdrantVectorSize())
+	if err := ensureContextActive(ctx); err != nil {
+		return model.Document{}, nil, nil, err
+	}
+
+	reportIndexProgress(onProgress, "embedding", 72, "正在生成向量并准备入库")
+	vectors, err := s.rag.EmbedTexts(ctx, embeddingConfig, chunkTexts(chunks), s.qdrantVectorSize())
 	if err != nil {
 		return model.Document{}, nil, nil, err
 	}
@@ -851,6 +984,25 @@ func (s *AppService) AddDocument(knowledgeBaseID string, document model.Document
 		log.Printf("failed to persist document state: %v", err)
 	}
 	return document
+}
+
+func reportIndexProgress(onProgress func(stage string, progress int, message string), stage string, progress int, message string) {
+	if onProgress == nil {
+		return
+	}
+	onProgress(stage, progress, message)
+}
+
+func ensureContextActive(ctx context.Context) error {
+	if ctx == nil {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return nil
+	}
 }
 
 func (s *AppService) DeleteDocument(knowledgeBaseID, documentID string) (model.Document, error) {
@@ -891,6 +1043,107 @@ func (s *AppService) DeleteDocument(knowledgeBaseID, documentID string) (model.D
 		return model.Document{}, err
 	}
 	return removedDocument, nil
+}
+
+func (s *AppService) ResolveRelatedImages(rawSources []map[string]string) []model.ServiceDeskImageReference {
+	if len(rawSources) == 0 {
+		return nil
+	}
+	s.state.Mu.RLock()
+	defer s.state.Mu.RUnlock()
+
+	items := make([]model.ServiceDeskImageReference, 0)
+	seen := map[string]struct{}{}
+	for _, source := range rawSources {
+		documentID := strings.TrimSpace(source["documentId"])
+		if documentID == "" {
+			continue
+		}
+		document, ok := s.findDocumentLocked(documentID)
+		if !ok {
+			continue
+		}
+		imageIDs := csvList(source["imageIds"])
+		if len(imageIDs) == 0 {
+			continue
+		}
+		imageIndex := make(map[string]model.DocumentImageAsset, len(document.Images))
+		for _, image := range document.Images {
+			imageIndex[image.ID] = image
+		}
+		for _, imageID := range imageIDs {
+			image, ok := imageIndex[imageID]
+			if !ok || !image.Included {
+				continue
+			}
+			key := document.ID + ":" + image.ID
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			items = append(items, model.ServiceDeskImageReference{
+				ID:             image.ID,
+				DocumentID:     document.ID,
+				DocumentName:   document.Name,
+				Classification: string(image.Classification),
+				Description:    image.Description,
+				PublicURL:      image.PublicURL,
+			})
+		}
+	}
+	return items
+}
+
+func (s *AppService) findDocumentLocked(documentID string) (model.Document, bool) {
+	for _, kb := range s.state.KnowledgeBases {
+		for _, document := range kb.Documents {
+			if document.ID == documentID {
+				return document, true
+			}
+		}
+	}
+	return model.Document{}, false
+}
+
+func includedDocumentImageIDs(document model.Document) []string {
+	ids := make([]string, 0, len(document.Images))
+	for _, image := range document.Images {
+		if !image.Included {
+			continue
+		}
+		ids = append(ids, image.ID)
+	}
+	return ids
+}
+
+func buildDocumentContextSummary(document model.Document, knowledgeBaseName string) string {
+	summary := fmt.Sprintf("当前问答范围为文档《%s》，所属知识库为“%s”。文档摘要：%s", document.Name, knowledgeBaseName, document.ContentPreview)
+	if document.ImageCount > 0 {
+		summary += fmt.Sprintf("。该文档还包含 %d 张已处理图片，可用于回答截图、流程图、表格图相关问题", document.ImageCount)
+	}
+	return summary
+}
+
+func csvList(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	parts := strings.Split(trimmed, ",")
+	items := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		items = append(items, value)
+	}
+	return items
 }
 
 func (s *AppService) BuildRetrievalContext(req model.ChatCompletionRequest) (string, []map[string]string, error) {
@@ -954,11 +1207,16 @@ func (s *AppService) BuildChatContext(req model.ChatCompletionRequest) (string, 
 		for _, kb := range s.state.KnowledgeBases {
 			for _, document := range kb.Documents {
 				if document.ID == req.DocumentID {
-					return fmt.Sprintf("当前问答范围为文档《%s》，所属知识库为“%s”。文档摘要：%s", document.Name, kb.Name, document.ContentPreview), []map[string]string{{
+					source := map[string]string{
 						"knowledgeBaseId": kb.ID,
 						"documentId":      document.ID,
 						"documentName":    document.Name,
-					}}, nil
+					}
+					imageIDs := includedDocumentImageIDs(document)
+					if len(imageIDs) > 0 {
+						source["imageIds"] = strings.Join(imageIDs, ",")
+					}
+					return buildDocumentContextSummary(document, kb.Name), []map[string]string{source}, nil
 				}
 			}
 		}
@@ -1034,10 +1292,11 @@ func (s *AppService) currentEmbeddingConfig() model.EmbeddingModelConfig {
 
 	normalized := normalizeAppConfig(cfg, s.serverConfig)
 	return model.EmbeddingModelConfig{
-		Provider: strings.TrimSpace(normalized.Embedding.Provider),
-		BaseURL:  strings.TrimSpace(normalized.Embedding.BaseURL),
-		Model:    strings.TrimSpace(normalized.Embedding.Model),
-		APIKey:   strings.TrimSpace(normalized.Embedding.APIKey),
+		Provider:   strings.TrimSpace(normalized.Embedding.Provider),
+		BaseURL:    strings.TrimSpace(normalized.Embedding.BaseURL),
+		Model:      strings.TrimSpace(normalized.Embedding.Model),
+		APIKey:     strings.TrimSpace(normalized.Embedding.APIKey),
+		Candidates: append([]model.ModelEndpointConfig(nil), normalized.Embedding.Candidates...),
 	}
 }
 
@@ -1054,34 +1313,58 @@ func (s *AppService) currentChatConfig() model.ChatModelConfig {
 		APIKey:              strings.TrimSpace(normalized.Chat.APIKey),
 		Temperature:         normalized.Chat.Temperature,
 		ContextMessageLimit: normalized.Chat.ContextMessageLimit,
+		Candidates:          append([]model.ModelEndpointConfig(nil), normalized.Chat.Candidates...),
 	}
 }
 
 func (s *AppService) resolveEmbeddingConfig(req model.ChatCompletionRequest) model.EmbeddingModelConfig {
+	fallback := s.currentEmbeddingConfig()
 	cfg := req.Embedding
-	cfg.Provider = strings.TrimSpace(cfg.Provider)
-	cfg.BaseURL = strings.TrimSpace(cfg.BaseURL)
-	cfg.Model = strings.TrimSpace(cfg.Model)
-	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
-	if cfg.Provider != "" && cfg.BaseURL != "" && cfg.Model != "" {
-		return cfg
+	if strings.TrimSpace(cfg.Provider) == "" || strings.TrimSpace(cfg.Model) == "" {
+		return fallback
 	}
-	return s.currentEmbeddingConfig()
+
+	primary := normalizeConfiguredEndpoint(model.ModelEndpointConfig{
+		Provider: cfg.Provider,
+		BaseURL:  cfg.BaseURL,
+		Model:    cfg.Model,
+		APIKey:   cfg.APIKey,
+	}, s.serverConfig, fallback.Provider, fallback.Model)
+	return model.EmbeddingModelConfig{
+		Provider:   primary.Provider,
+		BaseURL:    primary.BaseURL,
+		Model:      primary.Model,
+		APIKey:     primary.APIKey,
+		Candidates: normalizeConfiguredEndpointCandidates(primary, cfg.Candidates, s.serverConfig),
+	}
 }
 
 func (s *AppService) resolveChatConfig(req model.ChatCompletionRequest) model.ChatModelConfig {
+	fallback := s.currentChatConfig()
 	cfg := req.Config
-	cfg.Provider = strings.TrimSpace(cfg.Provider)
-	cfg.BaseURL = strings.TrimSpace(cfg.BaseURL)
-	cfg.Model = strings.TrimSpace(cfg.Model)
-	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
-	if cfg.Provider != "" && cfg.BaseURL != "" && cfg.Model != "" {
-		if cfg.ContextMessageLimit <= 0 {
-			cfg.ContextMessageLimit = s.currentChatConfig().ContextMessageLimit
-		}
-		return cfg
+	if strings.TrimSpace(cfg.Provider) == "" || strings.TrimSpace(cfg.Model) == "" {
+		return fallback
 	}
-	return s.currentChatConfig()
+
+	primary := normalizeConfiguredEndpoint(model.ModelEndpointConfig{
+		Provider: cfg.Provider,
+		BaseURL:  cfg.BaseURL,
+		Model:    cfg.Model,
+		APIKey:   cfg.APIKey,
+	}, s.serverConfig, fallback.Provider, fallback.Model)
+	contextMessageLimit := cfg.ContextMessageLimit
+	if contextMessageLimit <= 0 {
+		contextMessageLimit = fallback.ContextMessageLimit
+	}
+	return model.ChatModelConfig{
+		Provider:            primary.Provider,
+		BaseURL:             primary.BaseURL,
+		Model:               primary.Model,
+		APIKey:              primary.APIKey,
+		Temperature:         cfg.Temperature,
+		ContextMessageLimit: contextMessageLimit,
+		Candidates:          normalizeConfiguredEndpointCandidates(primary, cfg.Candidates, s.serverConfig),
+	}
 }
 
 func (s *AppService) ContextMessageLimit() int {
@@ -1209,17 +1492,21 @@ func (s *AppService) buildQdrantPoints(chunks []DocumentChunk, vectors [][]float
 		if index < len(vectors) {
 			copy(vector, vectors[index])
 		}
+		payload := map[string]any{
+			"knowledge_base_id": chunk.KnowledgeBaseID,
+			"document_id":       chunk.DocumentID,
+			"document_name":     chunk.DocumentName,
+			"chunk_id":          chunk.ID,
+			"chunk_index":       chunk.Index,
+			"text":              chunk.Text,
+		}
+		if len(chunk.ImageIDs) > 0 {
+			payload["image_ids"] = chunk.ImageIDs
+		}
 		points = append(points, QdrantPoint{
-			ID:     qdrantPointID(chunk.ID),
-			Vector: vector,
-			Payload: map[string]any{
-				"knowledge_base_id": chunk.KnowledgeBaseID,
-				"document_id":       chunk.DocumentID,
-				"document_name":     chunk.DocumentName,
-				"chunk_id":          chunk.ID,
-				"chunk_index":       chunk.Index,
-				"text":              chunk.Text,
-			},
+			ID:      qdrantPointID(chunk.ID),
+			Vector:  vector,
+			Payload: payload,
 		})
 	}
 	return points
@@ -1248,15 +1535,18 @@ func (s *AppService) rebuildKnowledgeBaseCollection(knowledgeBaseID string, poin
 	return nil
 }
 
-func (s *AppService) upsertDocumentChunks(knowledgeBaseID string, chunks []DocumentChunk, vectors [][]float64) error {
+func (s *AppService) upsertDocumentChunks(ctx context.Context, knowledgeBaseID string, chunks []DocumentChunk, vectors [][]float64) error {
 	if s.qdrant == nil || !s.qdrant.IsEnabled() || len(chunks) == 0 {
 		return nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	points := s.buildQdrantPoints(chunks, vectors)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	if err := s.qdrant.UpsertPoints(ctx, knowledgeBaseID, points); err != nil {
+	if err := s.qdrant.UpsertPoints(timeoutCtx, knowledgeBaseID, points); err != nil {
 		return fmt.Errorf("upsert qdrant points: %w", err)
 	}
 	return nil
@@ -1597,6 +1887,7 @@ func (s *AppService) collectCandidates(knowledgeBaseIDs []string, req model.Chat
 					DocumentName:    payloadString(item.Payload, "document_name", "未知文档"),
 					Text:            text,
 					Index:           payloadInt(item.Payload, "chunk_index"),
+					ImageIDs:        payloadStrings(item.Payload, "image_ids"),
 				},
 				Score: item.Score,
 			})
@@ -1996,5 +2287,29 @@ func payloadInt(payload map[string]any, key string) int {
 		return int(typed)
 	default:
 		return 0
+	}
+}
+
+func payloadStrings(payload map[string]any, key string) []string {
+	value, ok := payload[key]
+	if !ok {
+		return nil
+	}
+	switch typed := value.(type) {
+	case []string:
+		return append([]string(nil), typed...)
+	case []any:
+		items := make([]string, 0, len(typed))
+		for _, item := range typed {
+			text := strings.TrimSpace(fmt.Sprint(item))
+			if text != "" && text != "<nil>" {
+				items = append(items, text)
+			}
+		}
+		return items
+	case string:
+		return csvList(typed)
+	default:
+		return nil
 	}
 }

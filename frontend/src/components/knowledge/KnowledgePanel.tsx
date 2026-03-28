@@ -1,5 +1,5 @@
 import React, { ChangeEvent, useState } from 'react'
-import { KnowledgeBase } from '../../App'
+import { KnowledgeBase, UploadTask } from '../../App'
 
 interface KnowledgePanelProps {
   open: boolean
@@ -12,7 +12,11 @@ interface KnowledgePanelProps {
   onSelectDocument: (knowledgeBaseId: string, documentId: string | null) => void
   onCreateKnowledgeBase: (name: string, description: string) => void
   onDeleteKnowledgeBase: (knowledgeBaseId: string) => void
-  onUploadFiles: (knowledgeBaseId: string, files: FileList | null) => void
+  onUploadFiles: (knowledgeBaseId: string, files: FileList | null) => Promise<void>
+  uploadTasksByKnowledgeBase: Record<string, UploadTask[]>
+  onCancelUploadTask: (knowledgeBaseId: string, taskId: string) => void
+  onRetryUploadTask: (knowledgeBaseId: string, taskId: string) => Promise<void>
+  onClearFinishedUploadTasks: (knowledgeBaseId: string) => void
   onRemoveDocument: (knowledgeBaseId: string, documentId: string) => void
   onReindexKnowledgeBase: (knowledgeBaseId: string) => Promise<void>
   reindexingKnowledgeBaseId: string | null
@@ -31,6 +35,10 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
   onCreateKnowledgeBase,
   onDeleteKnowledgeBase,
   onUploadFiles,
+  uploadTasksByKnowledgeBase,
+  onCancelUploadTask,
+  onRetryUploadTask,
+  onClearFinishedUploadTasks,
   onRemoveDocument,
   onReindexKnowledgeBase,
   reindexingKnowledgeBaseId,
@@ -40,11 +48,21 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
   const [newName, setNewName] = useState('')
   const [newDescription, setNewDescription] = useState('')
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [dragOverKnowledgeBaseId, setDragOverKnowledgeBaseId] = useState<string | null>(null)
+
+  const supportedFileTypes = ['TXT', 'MD', 'PDF', 'DOCX', 'HTML', 'HTM', 'PNG', 'JPG', 'JPEG', 'WEBP', 'GIF']
 
   if (!open) return null
 
+  const handleUploadByFileList = (knowledgeBaseId: string, files: FileList | null) => {
+    if (!files || files.length === 0) {
+      return
+    }
+    void onUploadFiles(knowledgeBaseId, files)
+  }
+
   const handleFileChange = (knowledgeBaseId: string, event: ChangeEvent<HTMLInputElement>) => {
-    onUploadFiles(knowledgeBaseId, event.target.files)
+    handleUploadByFileList(knowledgeBaseId, event.target.files)
     event.target.value = ''
   }
 
@@ -73,6 +91,24 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
     if (status === 'indexed') return { text: '已索引', color: '#16a34a', bg: '#dcfce7' }
     if (status === 'processing') return { text: '处理中', color: '#d97706', bg: '#fef3c7' }
     return { text: '就绪', color: '#2563eb', bg: '#dbeafe' }
+  }
+
+  const isActiveUploadStatus = (status: UploadTask['status']) =>
+    status === 'queued' || status === 'uploading' || status === 'processing'
+
+  const getUploadTaskStatusText = (task: UploadTask) => {
+    if (task.status === 'queued') return '等待开始'
+    if (task.status === 'uploading') return `上传中 ${task.networkProgress}%`
+    if (task.status === 'processing') return `处理中 ${task.progress}%`
+    if (task.status === 'success') return '处理完成'
+    if (task.status === 'canceled') return '已取消'
+    return '处理失败'
+  }
+
+  const handleRetryFailedTasks = async (knowledgeBaseId: string, tasks: UploadTask[]) => {
+    for (const task of tasks) {
+      await onRetryUploadTask(knowledgeBaseId, task.id)
+    }
   }
 
   return (
@@ -116,6 +152,34 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                 {knowledgeBases.map((kb) => {
                   const isSelected = selectedKnowledgeBaseId === kb.id
                   const isCollapsed = collapsedKnowledgeBases[kb.id]
+                  const uploadTasks = uploadTasksByKnowledgeBase[kb.id] ?? []
+                  const activeUploadTasks = uploadTasks.filter((task) => isActiveUploadStatus(task.status))
+                  const failedUploadTasks = uploadTasks.filter((task) => task.status === 'error')
+                  const successUploadCount = uploadTasks.filter((task) => task.status === 'success').length
+                  const failedUploadCount = failedUploadTasks.length
+                  const canceledUploadCount = uploadTasks.filter((task) => task.status === 'canceled').length
+                  const totalUploadBytes = uploadTasks.reduce((sum, task) => sum + task.sizeBytes, 0)
+                  const totalUploadProgress =
+                    totalUploadBytes > 0
+                      ? Math.round(
+                          uploadTasks.reduce((sum, task) => {
+                            const progress =
+                              task.status === 'success' || task.status === 'error' || task.status === 'canceled'
+                                ? 100
+                                : task.progress
+                            return sum + task.sizeBytes * progress
+                          }, 0) / totalUploadBytes,
+                        )
+                      : 0
+                  const averageUploadProgress =
+                    activeUploadTasks.length > 0
+                      ? Math.round(
+                          activeUploadTasks.reduce((sum, task) => sum + task.progress, 0) /
+                            activeUploadTasks.length,
+                        )
+                      : 0
+                  const hasClearableTasks = successUploadCount > 0 || canceledUploadCount > 0
+                  const isDragOver = dragOverKnowledgeBaseId === kb.id
                   return (
                     <div key={kb.id} className={`kb-card${isSelected ? ' kb-card--active' : ''}`}>
                       {/* 知识库卡片头部 */}
@@ -141,7 +205,7 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                             <input
                               type="file"
                               multiple
-                              accept=".txt,.md,.pdf,.docx"
+                              accept=".txt,.md,.pdf,.docx,.html,.htm,.png,.jpg,.jpeg,.webp,.gif"
                               className="hidden-input"
                               onChange={(e) => handleFileChange(kb.id, e)}
                             />
@@ -151,8 +215,14 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                             onClick={() => {
                               void onReindexKnowledgeBase(kb.id)
                             }}
-                            disabled={kb.documents.length === 0 || reindexingKnowledgeBaseId === kb.id}
-                            title={kb.documents.length === 0 ? '当前知识库暂无文档' : '使用当前 Embedding 配置重建索引'}
+                            disabled={kb.documents.length === 0 || reindexingKnowledgeBaseId === kb.id || activeUploadTasks.length > 0}
+                            title={
+                              activeUploadTasks.length > 0
+                                ? '请等待当前上传任务完成后再重建索引'
+                                : kb.documents.length === 0
+                                  ? '当前知识库暂无文档'
+                                  : '使用当前 Embedding 配置重建索引'
+                            }
                           >
                             {reindexingKnowledgeBaseId === kb.id ? '重建中...' : '重建索引'}
                           </button>
@@ -186,13 +256,140 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                             <button
                               className="kb-delete-btn"
                               onClick={() => setDeleteConfirmId(kb.id)}
-                              title="删除知识库"
+                              title={activeUploadTasks.length > 0 ? '存在上传任务时不可删除知识库' : '删除知识库'}
+                              disabled={activeUploadTasks.length > 0}
                             >
                               🗑️
                             </button>
                           )}
                         </div>
                       </div>
+
+                      <div className="kb-upload-hint">
+                        <span className="kb-upload-hint-label">支持文件类型</span>
+                        <span className="kb-upload-hint-value">{supportedFileTypes.join(' / ')}</span>
+                      </div>
+
+                      <div
+                        className={`kb-upload-dropzone${isDragOver ? ' kb-upload-dropzone--active' : ''}`}
+                        onDragOver={(event) => {
+                          event.preventDefault()
+                          event.dataTransfer.dropEffect = 'copy'
+                          setDragOverKnowledgeBaseId(kb.id)
+                        }}
+                        onDragLeave={(event) => {
+                          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                            setDragOverKnowledgeBaseId((current) => (current === kb.id ? null : current))
+                          }
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault()
+                          setDragOverKnowledgeBaseId(null)
+                          handleUploadByFileList(kb.id, event.dataTransfer.files)
+                        }}
+                      >
+                        <div>
+                          <strong>{isDragOver ? '松开鼠标，上传到当前知识库' : '支持拖拽上传到当前知识库'}</strong>
+                          <span>也可以继续使用上方“上传”按钮进行多选上传</span>
+                        </div>
+                        <span className="kb-upload-dropzone-tag">拖拽上传</span>
+                      </div>
+
+                      {uploadTasks.length > 0 && (
+                        <div className="kb-upload-progress-list">
+                          <div className="kb-upload-summary">
+                            <div className="kb-upload-summary-main">
+                              <div className="kb-upload-summary-badges">
+                                <span className="kb-upload-summary-chip">任务 {uploadTasks.length}</span>
+                                <span className="kb-upload-summary-chip active">
+                                  进行中 {activeUploadTasks.length}
+                                  {activeUploadTasks.length > 0 ? ` · 平均 ${averageUploadProgress}%` : ''}
+                                </span>
+                                {successUploadCount > 0 ? (
+                                  <span className="kb-upload-summary-chip success">完成 {successUploadCount}</span>
+                                ) : null}
+                                {failedUploadCount > 0 ? (
+                                  <span className="kb-upload-summary-chip error">失败 {failedUploadCount}</span>
+                                ) : null}
+                                {canceledUploadCount > 0 ? (
+                                  <span className="kb-upload-summary-chip muted">取消 {canceledUploadCount}</span>
+                                ) : null}
+                              </div>
+                              <div className="kb-upload-total-progress" aria-label={`总进度 ${totalUploadProgress}%`}>
+                                <div style={{ width: `${totalUploadProgress}%` }} />
+                              </div>
+                              <div className="kb-upload-total-progress-text">批量总进度 {totalUploadProgress}%</div>
+                            </div>
+                            <div className="kb-upload-summary-actions">
+                              {activeUploadTasks.length === 0 && failedUploadTasks.length > 0 ? (
+                                <button
+                                  type="button"
+                                  className="kb-upload-clear-btn"
+                                  onClick={() => {
+                                    void handleRetryFailedTasks(kb.id, failedUploadTasks)
+                                  }}
+                                >
+                                  一键重试失败项
+                                </button>
+                              ) : null}
+                              {hasClearableTasks ? (
+                                <button
+                                  type="button"
+                                  className="kb-upload-clear-btn"
+                                  onClick={() => onClearFinishedUploadTasks(kb.id)}
+                                >
+                                  清理已完成
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          {uploadTasks.map((task) => (
+                            <div key={task.id} className={`kb-upload-progress-item kb-upload-progress-item--${task.status}`}>
+                              <div className="kb-upload-progress-top">
+                                <div>
+                                  <strong>{task.fileName}</strong>
+                                  <span>{task.sizeLabel}</span>
+                                </div>
+                                <div className="kb-upload-progress-side">
+                                  <span>{getUploadTaskStatusText(task)}</span>
+                                  <div className="kb-upload-progress-actions">
+                                    {isActiveUploadStatus(task.status) ? (
+                                      <button
+                                        type="button"
+                                        className="kb-upload-action-btn"
+                                        onClick={() => onCancelUploadTask(kb.id, task.id)}
+                                      >
+                                        取消
+                                      </button>
+                                    ) : null}
+                                    {activeUploadTasks.length === 0 && (task.status === 'error' || task.status === 'canceled') ? (
+                                      <button
+                                        type="button"
+                                        className="kb-upload-action-btn primary"
+                                        onClick={() => {
+                                          void onRetryUploadTask(kb.id, task.id)
+                                        }}
+                                      >
+                                        重试
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="kb-upload-progress-bar">
+                                <div style={{ width: `${task.progress}%` }} />
+                              </div>
+                              {task.detail ? (
+                                <p className="kb-upload-progress-detail">{task.detail}</p>
+                              ) : null}
+                              {task.status === 'error' && task.error ? (
+                                <p className="kb-upload-progress-error">{task.error}</p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
                       {/* 查询范围选择 */}
                       {isSelected && (

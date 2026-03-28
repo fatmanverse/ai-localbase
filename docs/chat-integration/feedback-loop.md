@@ -1,0 +1,102 @@
+# 反馈闭环说明
+
+## 已实现的反馈能力
+
+每条机器人回答都支持：
+
+- 👍 已解决
+- 👎 仍未解决
+- 点踩原因选择
+- 用户补充说明文本
+
+点踩原因支持：
+
+- 答非所问
+- 内容不准确
+- 内容不完整
+- 内容过时
+- 没有解决问题
+- 检索结果不相关
+- 图片文字未识别
+- 图片内容未召回
+- 图文理解不完整
+- 图片描述不准确
+- 图片信息过时
+- 其他
+
+---
+
+## 反馈存储结构
+
+反馈写入 SQLite 表：
+
+```text
+message_feedback
+```
+
+关键字段：
+
+- `conversation_id`
+- `message_id`
+- `user_id`
+- `feedback_type`
+- `feedback_reason`
+- `feedback_text`
+- `question_text`
+- `answer_text`
+- `knowledge_base_id`
+- `retrieved_context`
+- `source_documents_json`
+- `source_platform`
+- `tenant_id`
+- `ticket_id`
+- `created_at`
+
+---
+
+## 消息级追踪信息
+
+机器人回答会记录：
+
+- `knowledgeBaseId`
+- `documentId`
+- `retrievedContext`
+- `sourceDocuments`
+- `relatedImages`
+- `degraded`
+- `fallbackStrategy`
+- `upstreamError`
+
+这使得运营人员可以把“回答质量差”追溯到：
+
+- 检索召回问题
+- 文档缺失问题
+- 模型生成问题
+- 上游模型服务异常
+- 图片 OCR / 图文关联 / 图片召回问题
+
+---
+
+## 闭环流转
+
+### 高质量回答
+
+- 用户连续点赞
+- 点赞次数达到阈值后进入 FAQ 候选
+- 可在运营侧人工审核后转为标准 FAQ
+
+### 低质量回答
+
+- 用户点踩
+- 进入低质量回答清单
+- 如果原因集中为“答非所问 / 检索不相关”，优先检查检索参数与提示词
+- 如果原因集中为“不准确 / 不完整 / 过时”，优先补知识文档与 FAQ
+
+---
+
+## 运营建议
+
+- 每周查看 `analytics/summary`
+- 优先处理高频点踩的问题
+- 把高赞问题沉淀为 FAQ
+- 把高频失败问题转成知识补充任务

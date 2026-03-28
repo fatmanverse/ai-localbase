@@ -40,7 +40,9 @@ func main() {
 
 	appService := service.NewAppService(qdrantService, stateStore, chatHistoryStore, serverConfig)
 	llmService := service.NewLLMService()
-	appHandler := handler.NewAppHandler(serverConfig, appService, llmService)
+	serviceDeskService := service.NewServiceDeskService(appService, llmService, chatHistoryStore)
+	uploadTaskService := service.NewUploadTaskService()
+	appHandler := handler.NewAppHandler(serverConfig, appService, llmService, serviceDeskService, uploadTaskService)
 	r := router.NewRouter(appHandler)
 
 	log.Printf("backend server listening on :%s", serverConfig.Port)

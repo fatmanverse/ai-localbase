@@ -91,57 +91,87 @@ func NewLLMService() *LLMService {
 // ── Public methods ───────────────────────────────────────────────────────────
 
 func (s *LLMService) Chat(req model.ChatCompletionRequest) (model.ChatCompletionResponse, error) {
-	cfg, err := normalizeChatConfig(req)
+	configs, err := normalizeChatConfigCandidates(req)
 	if err != nil {
 		return model.ChatCompletionResponse{}, err
 	}
 
-	var result model.ChatCompletionResponse
-	if cfg.Provider == "ollama" {
-		result, err = s.ollamaChat(cfg, req)
-	} else {
-		result, err = s.openAIChat(cfg, req)
+	attemptErrors := make([]string, 0, len(configs))
+	for index, cfg := range configs {
+		result, callErr := s.chatWithConfig(cfg, req)
+		if callErr != nil {
+			attemptErrors = append(attemptErrors, fmt.Sprintf("%s => %s", formatChatConfigLabel(cfg), callErr.Error()))
+			continue
+		}
+		if result.Metadata == nil {
+			result.Metadata = map[string]any{}
+		}
+		if len(configs) > 1 {
+			result.Metadata["candidateCount"] = len(configs)
+			result.Metadata["activeProvider"] = cfg.Provider
+			result.Metadata["activeModel"] = cfg.Model
+			if index > 0 {
+				result.Metadata["failoverUsed"] = true
+				result.Metadata["fallbackStrategy"] = "model-failover"
+				result.Metadata["modelFailoverHistory"] = append([]string(nil), attemptErrors...)
+			}
+		}
+		return result, nil
 	}
 
-	if err != nil {
-		fallbackContent := buildModelFallbackMessage(req)
-		return model.ChatCompletionResponse{
-			ID:      "chatcmpl-fallback",
-			Object:  "chat.completion",
-			Created: time.Now().Unix(),
-			Model:   cfg.Model,
-			Choices: []model.ChatCompletionChoice{{
-				Index: 0,
-				Message: model.ChatMessage{
-					Role:    "assistant",
-					Content: fallbackContent,
-				},
-			}},
-			Metadata: map[string]any{
-				"degraded":         true,
-				"fallbackStrategy": "local-message",
-				"upstreamError":    err.Error(),
+	fallbackContent := buildModelFallbackMessage(req, configs)
+	upstreamError := strings.Join(attemptErrors, " | ")
+	if strings.TrimSpace(upstreamError) == "" {
+		upstreamError = "all configured chat models failed"
+	}
+	return model.ChatCompletionResponse{
+		ID:      "chatcmpl-fallback",
+		Object:  "chat.completion",
+		Created: time.Now().Unix(),
+		Model:   configs[0].Model,
+		Choices: []model.ChatCompletionChoice{{
+			Index: 0,
+			Message: model.ChatMessage{
+				Role:    "assistant",
+				Content: fallbackContent,
 			},
-		}, nil
-	}
-
-	return result, nil
+		}},
+		Metadata: map[string]any{
+			"degraded":             true,
+			"fallbackStrategy":     "local-message-after-failover",
+			"upstreamError":        upstreamError,
+			"candidateCount":       len(configs),
+			"modelFailoverHistory": attemptErrors,
+		},
+	}, nil
 }
 
 func (s *LLMService) StreamChat(req model.ChatCompletionRequest, onChunk func(string) error) error {
-	cfg, err := normalizeChatConfig(req)
+	configs, err := normalizeChatConfigCandidates(req)
 	if err != nil {
 		return err
 	}
 
-	if cfg.Provider == "ollama" {
-		err = s.ollamaStreamChat(cfg, req, onChunk)
-	} else {
-		err = s.openAIStreamChat(cfg, req, onChunk)
+	if len(configs) > 1 {
+		response, chatErr := s.Chat(req)
+		if chatErr != nil {
+			return chatErr
+		}
+		content := firstAssistantContentFromResponse(response)
+		if strings.TrimSpace(content) == "" {
+			return fmt.Errorf("chat model returned empty response")
+		}
+		for _, chunk := range chunkTextForStreaming(content, 160) {
+			if err := onChunk(chunk); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 
-	if err != nil {
-		fallbackContent := buildModelFallbackMessage(req)
+	cfg := configs[0]
+	if err := s.streamWithConfig(cfg, req, onChunk); err != nil {
+		fallbackContent := buildModelFallbackMessage(req, configs)
 		return onChunk(fallbackContent)
 	}
 
@@ -451,37 +481,156 @@ func (s *LLMService) ollamaStreamChat(cfg model.ChatModelConfig, req model.ChatC
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-func normalizeChatConfig(req model.ChatCompletionRequest) (model.ChatModelConfig, error) {
-	cfg := req.Config
-	if strings.TrimSpace(cfg.Model) == "" {
+func (s *LLMService) chatWithConfig(cfg model.ChatModelConfig, req model.ChatCompletionRequest) (model.ChatCompletionResponse, error) {
+	if cfg.Provider == "ollama" {
+		return s.ollamaChat(cfg, req)
+	}
+	return s.openAIChat(cfg, req)
+}
+
+func (s *LLMService) streamWithConfig(cfg model.ChatModelConfig, req model.ChatCompletionRequest, onChunk func(string) error) error {
+	if cfg.Provider == "ollama" {
+		return s.ollamaStreamChat(cfg, req, onChunk)
+	}
+	return s.openAIStreamChat(cfg, req, onChunk)
+}
+
+func normalizeChatConfigCandidates(req model.ChatCompletionRequest) ([]model.ChatModelConfig, error) {
+	primary, err := normalizeSingleChatConfig(req.Config)
+	if err != nil {
+		return nil, err
+	}
+
+	items := []model.ChatModelConfig{primary}
+	seen := map[string]struct{}{formatChatConfigLabel(primary): {}}
+	for _, candidate := range req.Config.Candidates {
+		provider := strings.TrimSpace(candidate.Provider)
+		if provider == "" {
+			provider = primary.Provider
+		}
+		modelName := strings.TrimSpace(candidate.Model)
+		if modelName == "" {
+			continue
+		}
+		baseURL := strings.TrimSpace(candidate.BaseURL)
+		if baseURL == "" {
+			baseURL = primary.BaseURL
+		}
+		apiKey := strings.TrimSpace(candidate.APIKey)
+		if apiKey == "" && provider == primary.Provider && baseURL == primary.BaseURL {
+			apiKey = primary.APIKey
+		}
+		normalized, candidateErr := normalizeSingleChatConfig(model.ChatModelConfig{
+			Provider:            provider,
+			BaseURL:             baseURL,
+			Model:               modelName,
+			APIKey:              apiKey,
+			Temperature:         primary.Temperature,
+			ContextMessageLimit: primary.ContextMessageLimit,
+		})
+		if candidateErr != nil {
+			continue
+		}
+		key := formatChatConfigLabel(normalized)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		items = append(items, normalized)
+	}
+	return items, nil
+}
+
+func normalizeSingleChatConfig(cfg model.ChatModelConfig) (model.ChatModelConfig, error) {
+	cfg.Provider = strings.TrimSpace(cfg.Provider)
+	if cfg.Provider == "" {
+		cfg.Provider = "ollama"
+	}
+	cfg.Model = strings.TrimSpace(cfg.Model)
+	if cfg.Model == "" {
 		return model.ChatModelConfig{}, fmt.Errorf("model is required")
 	}
-	if strings.TrimSpace(cfg.BaseURL) == "" {
+	cfg.BaseURL = strings.TrimSpace(cfg.BaseURL)
+	if cfg.BaseURL == "" {
 		if cfg.Provider == "ollama" {
 			cfg.BaseURL = "http://localhost:11434"
 		} else {
 			cfg.BaseURL = "http://localhost:11434/v1"
 		}
 	}
+	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
 	if cfg.Temperature <= 0 {
 		cfg.Temperature = 0.7
-	}
-	if strings.TrimSpace(cfg.Provider) == "" {
-		cfg.Provider = "ollama"
 	}
 	return cfg, nil
 }
 
-func buildModelFallbackMessage(req model.ChatCompletionRequest) string {
-	modelName := strings.TrimSpace(req.Config.Model)
-	if modelName == "" {
-		modelName = strings.TrimSpace(req.Model)
+func formatChatConfigLabel(cfg model.ChatModelConfig) string {
+	return strings.Join([]string{
+		strings.TrimSpace(cfg.Provider),
+		strings.TrimSpace(cfg.BaseURL),
+		strings.TrimSpace(cfg.Model),
+	}, "|")
+}
+
+func buildModelFallbackMessage(req model.ChatCompletionRequest, attempted []model.ChatModelConfig) string {
+	modelNames := make([]string, 0, len(attempted))
+	seen := map[string]struct{}{}
+	for _, candidate := range attempted {
+		name := strings.TrimSpace(candidate.Model)
+		if name == "" {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		modelNames = append(modelNames, name)
 	}
-	hint := ""
-	if modelName != "" {
-		hint = fmt.Sprintf("请检查模型 **%s** 是否已在 Ollama 中下载（`ollama pull %s`），或在设置中更换为可用模型。", modelName, modelName)
-	} else {
-		hint = "请在设置中配置正确的 Chat 模型。"
+	if len(modelNames) == 0 {
+		modelName := strings.TrimSpace(req.Config.Model)
+		if modelName == "" {
+			modelName = strings.TrimSpace(req.Model)
+		}
+		if modelName != "" {
+			modelNames = append(modelNames, modelName)
+		}
 	}
-	return fmt.Sprintf("⚠️ AI 模型调用失败\n\n%s", hint)
+	if len(modelNames) == 0 {
+		return "⚠️ AI 模型调用失败\n\n请在设置中配置正确的 Chat 模型。"
+	}
+	if len(modelNames) == 1 {
+		modelName := modelNames[0]
+		return fmt.Sprintf("⚠️ AI 模型调用失败\n\n请检查模型 **%s** 是否可用，或在设置中补充备用模型。", modelName)
+	}
+	return fmt.Sprintf("⚠️ AI 模型调用失败\n\n已依次尝试以下模型：**%s**。请检查这些模型或对应接口是否可用。", strings.Join(modelNames, " / "))
+}
+
+func firstAssistantContentFromResponse(response model.ChatCompletionResponse) string {
+	for _, choice := range response.Choices {
+		if content := strings.TrimSpace(choice.Message.Content); content != "" {
+			return content
+		}
+	}
+	return ""
+}
+
+func chunkTextForStreaming(content string, chunkSize int) []string {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return nil
+	}
+	if chunkSize <= 0 {
+		chunkSize = 160
+	}
+	runes := []rune(trimmed)
+	chunks := make([]string, 0, (len(runes)+chunkSize-1)/chunkSize)
+	for start := 0; start < len(runes); start += chunkSize {
+		end := start + chunkSize
+		if end > len(runes) {
+			end = len(runes)
+		}
+		chunks = append(chunks, string(runes[start:end]))
+	}
+	return chunks
 }

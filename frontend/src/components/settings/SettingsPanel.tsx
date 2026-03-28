@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AppConfig, ChatConfig, EmbeddingConfig, recommendedConfig } from '../../App'
+import { AppConfig, ChatConfig, EmbeddingConfig, ModelEndpointConfig, recommendedConfig } from '../../App'
 
 interface SettingsPanelProps {
   config: AppConfig
@@ -12,10 +12,108 @@ interface SettingsPanelProps {
 
 const normalizeContextLimit = (value: number) => Math.max(1, Math.min(100, Number(value) || 1))
 
+const cloneCandidates = (items: ModelEndpointConfig[] | undefined) =>
+  (items ?? []).map((item) => ({ ...item }))
+
 const createRecommendedConfig = (): AppConfig => ({
-  chat: { ...recommendedConfig.chat },
-  embedding: { ...recommendedConfig.embedding },
+  chat: {
+    ...recommendedConfig.chat,
+    candidates: cloneCandidates(recommendedConfig.chat.candidates),
+  },
+  embedding: {
+    ...recommendedConfig.embedding,
+    candidates: cloneCandidates(recommendedConfig.embedding.candidates),
+  },
 })
+
+const formatCandidateLines = (items: ModelEndpointConfig[] | undefined) =>
+  (items ?? [])
+    .map((item) => {
+      const provider = item.provider?.trim() ?? ''
+      const baseUrl = item.baseUrl?.trim() ?? ''
+      const model = item.model?.trim() ?? ''
+      const apiKey = item.apiKey?.trim() ?? ''
+      if (!model) {
+        return ''
+      }
+      if (!provider && !baseUrl && !apiKey) {
+        return model
+      }
+      if (!provider && baseUrl && !apiKey) {
+        return `${baseUrl} | ${model}`
+      }
+      if (!apiKey) {
+        return `${provider} | ${baseUrl} | ${model}`
+      }
+      return `${provider} | ${baseUrl} | ${model} | ${apiKey}`
+    })
+    .filter(Boolean)
+    .join('\n')
+
+const parseCandidateLines = (value: string): ModelEndpointConfig[] => {
+  const lines = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  const items: ModelEndpointConfig[] = []
+  const seen = new Set<string>()
+
+  for (const line of lines) {
+    const parts = line.split('|').map((item) => item.trim())
+    let candidate: ModelEndpointConfig | null = null
+
+    if (parts.length === 1) {
+      candidate = {
+        provider: '',
+        baseUrl: '',
+        model: parts[0],
+        apiKey: '',
+      }
+    } else if (parts.length === 2) {
+      const firstPart = parts[0]
+      candidate =
+        firstPart === 'ollama' || firstPart === 'openai-compatible'
+          ? {
+              provider: firstPart,
+              baseUrl: '',
+              model: parts[1],
+              apiKey: '',
+            }
+          : {
+              provider: '',
+              baseUrl: parts[0],
+              model: parts[1],
+              apiKey: '',
+            }
+    } else {
+      candidate = {
+        provider: parts[0] || 'ollama',
+        baseUrl: parts[1] ?? '',
+        model: parts[2] ?? '',
+        apiKey: parts[3] ?? '',
+      }
+    }
+
+    if (!candidate.model.trim()) {
+      continue
+    }
+
+    const key = [
+      candidate.provider.trim(),
+      candidate.baseUrl.trim(),
+      candidate.model.trim(),
+      candidate.apiKey.trim(),
+    ].join('|')
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    items.push(candidate)
+  }
+
+  return items
+}
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({
   config,
@@ -26,21 +124,44 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   saveSuccess,
 }) => {
   const [draftConfig, setDraftConfig] = useState<AppConfig>(config)
+  const [chatCandidatesText, setChatCandidatesText] = useState(() =>
+    formatCandidateLines(config.chat.candidates),
+  )
+  const [embeddingCandidatesText, setEmbeddingCandidatesText] = useState(() =>
+    formatCandidateLines(config.embedding.candidates),
+  )
 
   const recommendedDraft = useMemo(() => createRecommendedConfig(), [])
 
   useEffect(() => {
     setDraftConfig(config)
+    setChatCandidatesText(formatCandidateLines(config.chat.candidates))
+    setEmbeddingCandidatesText(formatCandidateLines(config.embedding.candidates))
   }, [config])
 
+  const effectiveDraftConfig = useMemo<AppConfig>(
+    () => ({
+      ...draftConfig,
+      chat: {
+        ...draftConfig.chat,
+        candidates: parseCandidateLines(chatCandidatesText),
+      },
+      embedding: {
+        ...draftConfig.embedding,
+        candidates: parseCandidateLines(embeddingCandidatesText),
+      },
+    }),
+    [chatCandidatesText, draftConfig, embeddingCandidatesText],
+  )
+
   const hasChanges = useMemo(
-    () => JSON.stringify(draftConfig) !== JSON.stringify(config),
-    [config, draftConfig],
+    () => JSON.stringify(effectiveDraftConfig) !== JSON.stringify(config),
+    [config, effectiveDraftConfig],
   )
 
   const isUsingRecommendedConfig = useMemo(
-    () => JSON.stringify(draftConfig) === JSON.stringify(recommendedDraft),
-    [draftConfig, recommendedDraft],
+    () => JSON.stringify(effectiveDraftConfig) === JSON.stringify(recommendedDraft),
+    [effectiveDraftConfig, recommendedDraft],
   )
 
   const handleChatConfigChange = <K extends keyof ChatConfig>(
@@ -70,15 +191,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   }
 
   const handleSave = async () => {
-    await onSave(draftConfig)
+    await onSave(effectiveDraftConfig)
   }
 
   const handleReset = () => {
     setDraftConfig(config)
+    setChatCandidatesText(formatCandidateLines(config.chat.candidates))
+    setEmbeddingCandidatesText(formatCandidateLines(config.embedding.candidates))
   }
 
   const handleApplyRecommended = () => {
-    setDraftConfig(createRecommendedConfig())
+    const nextConfig = createRecommendedConfig()
+    setDraftConfig(nextConfig)
+    setChatCandidatesText(formatCandidateLines(nextConfig.chat.candidates))
+    setEmbeddingCandidatesText(formatCandidateLines(nextConfig.embedding.candidates))
   }
 
   return (
@@ -174,6 +300,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 />
                 <small>限制每次发送给模型的最近消息条数，范围 1-100。</small>
               </label>
+
+              <label className="settings-field settings-field-full">
+                <span>聊天备用模型</span>
+                <textarea
+                  rows={4}
+                  value={chatCandidatesText}
+                  onChange={(event) => setChatCandidatesText(event.target.value)}
+                  placeholder={['qwen2.5:14b', 'openai-compatible | https://api.example.com/v1 | gpt-4o-mini | sk-***'].join('\n')}
+                />
+                <small>
+                  每行一个备用模型。支持仅写模型名（继承主 Provider / Base URL / API Key），或使用
+                  <code>provider | baseUrl | model | apiKey</code> 完整格式。主模型失败后会自动切换到下一项。
+                </small>
+              </label>
             </div>
           </section>
 
@@ -229,6 +369,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   onChange={(event) => handleEmbeddingConfigChange('apiKey', event.target.value)}
                   placeholder="选填"
                 />
+              </label>
+
+              <label className="settings-field settings-field-full">
+                <span>Embedding 备用模型</span>
+                <textarea
+                  rows={4}
+                  value={embeddingCandidatesText}
+                  onChange={(event) => setEmbeddingCandidatesText(event.target.value)}
+                  placeholder={['bge-m3', 'openai-compatible | https://api.example.com/v1 | text-embedding-3-small | sk-***'].join('\n')}
+                />
+                <small>
+                  每行一个备用向量模型。支持仅写模型名，或使用
+                  <code>provider | baseUrl | model | apiKey</code> 完整格式。主向量模型失败后会自动切换到下一项。
+                </small>
               </label>
             </div>
 
