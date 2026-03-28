@@ -1,14 +1,13 @@
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci
 
 COPY frontend/ .
 
 RUN npm run build
-
 
 FROM nginx:alpine
 

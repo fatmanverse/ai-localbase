@@ -1,0 +1,9 @@
+.git
+.github
+node_modules
+frontend/node_modules
+frontend/dist
+backend/data
+qdrant_storage
+artifacts
+.DS_Store

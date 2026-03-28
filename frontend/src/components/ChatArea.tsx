@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import mermaid from 'mermaid'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { AppConfig, Conversation, DocumentItem, KnowledgeBase } from '../App'
@@ -440,6 +439,18 @@ ${treeBlock.trimEnd()}\n\
   return fixed.trim()
 }
 
+
+let mermaidModulePromise: Promise<typeof import('mermaid')> | null = null
+
+const loadMermaid = async () => {
+  if (!mermaidModulePromise) {
+    mermaidModulePromise = import('mermaid')
+  }
+
+  const module = await mermaidModulePromise
+  return module.default
+}
+
 interface MermaidDiagramProps {
   chart: string
 }
@@ -457,6 +468,7 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
 
     const renderChart = async () => {
       try {
+        const mermaid = await loadMermaid()
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: 'loose',
