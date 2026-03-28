@@ -99,6 +99,66 @@ message_feedback
 
 ---
 
+## FAQ 正式化与治理周报
+
+### FAQ 草稿生成
+
+新增接口：
+
+```http
+POST /api/service-desk/analytics/faq-candidates/:id/publish
+```
+
+用途：
+
+- 把高赞回答整理成标准 FAQ 问答
+- 保存整理人、整理时间与备注
+- 同时返回一份 Markdown FAQ 草稿，方便继续审核或同步到帮助中心
+
+FAQ 候选列表还支持：
+
+- `publishedOnly=true`：只看已整理过 FAQ 文稿的候选项
+
+### 治理周报
+
+新增接口：
+
+```http
+GET /api/service-desk/analytics/weekly-report?knowledgeBaseId=kb-1
+```
+
+周报会输出：
+
+- 本周反馈摘要
+- 本周重点提醒
+- Top FAQ 候选
+- Top 知识缺口
+- Top 低质量回答
+- 一份可直接复制或导出的 Markdown 周报正文
+
+### 导出接口
+
+新增接口：
+
+```http
+GET /api/service-desk/analytics/export?scope=faq-candidates&format=markdown
+```
+
+支持导出：
+
+- `weekly-report`
+- `faq-candidates`
+- `knowledge-gaps`
+- `low-quality-answers`
+- `feedback`
+
+支持格式：
+
+- `markdown`
+- `json`
+
+---
+
 ## 普通聊天页反馈接口
 
 普通聊天页现在也支持直接提交消息反馈：
@@ -139,15 +199,11 @@ Content-Type: application/json
 
 ## 运营建议
 
-- 每周查看 `analytics/summary`，优先看待处理 FAQ、待补知识缺口、本周差评数
-- 用 `analytics/faq-candidates` 拉取高赞 FAQ 候选
-- 用 `analytics/knowledge-gaps` 筛选高频知识缺口
-- 用 `analytics/low-quality-answers` 看高频差评回答
-- 用 `analytics/feedback` 查看原始反馈明细与原因分布
-- 用 `PATCH /api/service-desk/analytics/faq-candidates/:id` 或批量接口同步状态、责任人、备注
-- 用 `PATCH /api/service-desk/analytics/knowledge-gaps/:id` 或批量接口标记知识缺口已解决
-- 用 `PATCH /api/service-desk/analytics/low-quality-answers/:id` 或批量接口标记差评回答已修复
-- 在前端 `?mode=ops-console` / `/ops` 页面直接做勾选、指派、备注和批量处理
-- 优先处理高频点踩的问题
-- 把高赞问题沉淀为 FAQ
-- 把高频失败问题转成知识补充任务
+1. 每周先看 `analytics/summary` 和 `analytics/weekly-report`，优先判断本周差评是否集中在某个知识库。
+2. 用 `analytics/faq-candidates` 拉取高赞 FAQ 候选，必要时加上 `owner`、`status`、`publishedOnly` 筛选。
+3. 对值得沉淀的问答，直接调用 `POST /api/service-desk/analytics/faq-candidates/:id/publish` 生成 FAQ 草稿。
+4. 用 `analytics/knowledge-gaps` 筛选高频知识缺口，并在备注里记录“已补文档 / 已重建索引 / 待业务确认”等动作。
+5. 用 `analytics/low-quality-answers` 看高频差评回答，把问题归因到切片、检索、答案策略或知识缺失。
+6. 用 `analytics/export` 导出当前视图，直接发给运营、交付或产品同学复盘。
+7. 在前端 `?mode=ops-console` / `/ops` 页面直接做勾选、指派、备注、导出和 FAQ 草稿整理。
+8. 优先处理高频点踩的问题，再回头补 FAQ 与图片型知识说明。

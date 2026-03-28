@@ -239,6 +239,54 @@ func (h *AppHandler) BatchUpdateServiceDeskFAQCandidates(c *gin.Context) {
 	writeAPISuccess(c, http.StatusOK, result)
 }
 
+func (h *AppHandler) PublishServiceDeskFAQCandidate(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
+	var req model.PublishFAQCandidateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", "invalid faq publish request body")
+		return
+	}
+	result, err := h.serviceDeskService.PublishFAQCandidate(c.Param("id"), req)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "publish_faq_candidate_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, result)
+}
+
+func (h *AppHandler) GetServiceDeskWeeklyReport(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
+	report, err := h.serviceDeskService.WeeklyReport(analyticsListOptionsFromQuery(c))
+	if err != nil {
+		writeAPIError(c, http.StatusInternalServerError, "weekly_report_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, report)
+}
+
+func (h *AppHandler) ExportServiceDeskAnalytics(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
+	result, err := h.serviceDeskService.ExportAnalytics(model.AnalyticsExportOptions{
+		Scope:                strings.TrimSpace(c.Query("scope")),
+		Format:               strings.TrimSpace(c.Query("format")),
+		AnalyticsListOptions: analyticsListOptionsFromQuery(c),
+	})
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "analytics_export_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, result)
+}
+
 func (h *AppHandler) UpdateServiceDeskKnowledgeGapStatus(c *gin.Context) {
 	if h.serviceDeskService == nil {
 		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
@@ -318,6 +366,10 @@ func analyticsListOptionsFromQuery(c *gin.Context) model.AnalyticsListOptions {
 			limit = parsed
 		}
 	}
+	publishedOnly := false
+	if raw := strings.TrimSpace(c.Query("publishedOnly")); raw != "" {
+		publishedOnly = strings.EqualFold(raw, "true") || raw == "1" || strings.EqualFold(raw, "yes")
+	}
 	return model.AnalyticsListOptions{
 		Limit:           limit,
 		KnowledgeBaseID: strings.TrimSpace(c.Query("knowledgeBaseId")),
@@ -326,6 +378,7 @@ func analyticsListOptionsFromQuery(c *gin.Context) model.AnalyticsListOptions {
 		FeedbackReason:  strings.TrimSpace(c.Query("feedbackReason")),
 		IssueType:       strings.TrimSpace(c.Query("issueType")),
 		Owner:           strings.TrimSpace(c.Query("owner")),
+		PublishedOnly:   publishedOnly,
 	}
 }
 

@@ -238,9 +238,26 @@ curl -s http://localhost:8080/api/service-desk/analytics/summary | jq .
 
 ```bash
 curl -s "http://localhost:8080/api/service-desk/analytics/faq-candidates?limit=20" | jq .
+curl -s "http://localhost:8080/api/service-desk/analytics/faq-candidates?limit=20&publishedOnly=true" | jq .
 curl -s "http://localhost:8080/api/service-desk/analytics/knowledge-gaps?limit=20" | jq .
 curl -s "http://localhost:8080/api/service-desk/analytics/low-quality-answers?limit=20" | jq .
 curl -s "http://localhost:8080/api/service-desk/analytics/feedback?limit=20&feedbackType=dislike" | jq .
+```
+
+查看治理周报 / 导出治理数据：
+
+```bash
+curl -s "http://localhost:8080/api/service-desk/analytics/weekly-report?knowledgeBaseId=<kbId>" | jq .
+curl -s "http://localhost:8080/api/service-desk/analytics/export?scope=weekly-report&format=markdown&knowledgeBaseId=<kbId>" | jq .
+curl -s "http://localhost:8080/api/service-desk/analytics/export?scope=faq-candidates&format=markdown&knowledgeBaseId=<kbId>&owner=ops-faq" | jq .
+```
+
+把 FAQ 候选整理成标准 FAQ 草稿：
+
+```bash
+curl -X POST http://localhost:8080/api/service-desk/analytics/faq-candidates/<id>/publish \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"Redis 的核心特点是什么？","answer":"Redis 适合高性能缓存、结构化数据读写和快速恢复场景。","publishedBy":"ops-faq-publisher","note":"已整理为 FAQ 草稿，待审核后同步到帮助中心"}'
 ```
 
 重建索引：
@@ -275,10 +292,15 @@ http://localhost:5173/ops
 
 治理页已支持：
 - 运营摘要卡片
+- 周治理报告卡片
 - 单条状态流转
 - 责任人编辑
+- 责任人筛选
 - 处理备注记录
 - 批量勾选与批量更新
+- 导出当前视图
+- 导出本周周报
+- 一键生成 FAQ 草稿
 
 ---
 

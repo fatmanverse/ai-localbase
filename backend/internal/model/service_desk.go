@@ -159,6 +159,11 @@ type FAQCandidate struct {
 	Owner              string `json:"owner,omitempty"`
 	Note               string `json:"note,omitempty"`
 	UpdatedBy          string `json:"updatedBy,omitempty"`
+	PublishedQuestion  string `json:"publishedQuestion,omitempty"`
+	PublishedAnswer    string `json:"publishedAnswer,omitempty"`
+	PublishedBy        string `json:"publishedBy,omitempty"`
+	PublishedAt        string `json:"publishedAt,omitempty"`
+	PublishNote        string `json:"publishNote,omitempty"`
 	CreatedAt          string `json:"createdAt"`
 	UpdatedAt          string `json:"updatedAt"`
 }
@@ -205,6 +210,7 @@ type AnalyticsListOptions struct {
 	FeedbackReason  string `json:"feedbackReason,omitempty"`
 	IssueType       string `json:"issueType,omitempty"`
 	Owner           string `json:"owner,omitempty"`
+	PublishedOnly   bool   `json:"publishedOnly,omitempty"`
 }
 
 type AnalyticsStatusUpdateRequest struct {
@@ -225,6 +231,44 @@ type AnalyticsBatchUpdateRequest struct {
 type AnalyticsBatchUpdateResponse struct {
 	UpdatedCount int      `json:"updatedCount"`
 	IDs          []string `json:"ids"`
+}
+
+type PublishFAQCandidateRequest struct {
+	Question    string `json:"question,omitempty"`
+	Answer      string `json:"answer,omitempty"`
+	PublishedBy string `json:"publishedBy,omitempty"`
+	Note        string `json:"note,omitempty"`
+}
+
+type AnalyticsExportOptions struct {
+	Scope  string `json:"scope"`
+	Format string `json:"format,omitempty"`
+	AnalyticsListOptions
+}
+
+type AnalyticsExportResponse struct {
+	Scope    string `json:"scope"`
+	Format   string `json:"format"`
+	FileName string `json:"fileName"`
+	MimeType string `json:"mimeType"`
+	Content  string `json:"content"`
+}
+
+type PublishFAQCandidateResponse struct {
+	Candidate FAQCandidate            `json:"candidate"`
+	Export    AnalyticsExportResponse `json:"export"`
+}
+
+type GovernanceWeeklyReport struct {
+	GeneratedAt          string                      `json:"generatedAt"`
+	KnowledgeBaseID      string                      `json:"knowledgeBaseId,omitempty"`
+	KnowledgeBaseName    string                      `json:"knowledgeBaseName,omitempty"`
+	Summary              ServiceDeskAnalyticsSummary `json:"summary"`
+	Highlights           []string                    `json:"highlights"`
+	TopFAQCandidates     []FAQCandidate              `json:"topFaqCandidates"`
+	TopKnowledgeGaps     []KnowledgeGap              `json:"topKnowledgeGaps"`
+	TopLowQualityAnswers []LowQualityAnswer          `json:"topLowQualityAnswers"`
+	Markdown             string                      `json:"markdown"`
 }
 
 type WeeklyFeedbackMetric struct {

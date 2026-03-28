@@ -43,7 +43,7 @@ func NewAppHandler(serverConfig model.ServerConfig, appService *service.AppServi
 func (h *AppHandler) Root(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"name":    "AI LocalBase Backend",
-		"version": "v0.4.5",
+		"version": "v0.4.6",
 		"status":  "running",
 	})
 }

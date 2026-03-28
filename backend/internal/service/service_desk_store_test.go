@@ -96,5 +96,12 @@ func TestInitServiceDeskTablesMigratesGovernanceColumns(t *testing.T) {
 				t.Fatalf("expected %s.%s to exist after migration", table, column)
 			}
 		}
+		if table == "faq_candidates" {
+			for _, column := range []string{"published_question", "published_answer", "published_by", "published_at", "publish_note"} {
+				if _, ok := columns[column]; !ok {
+					t.Fatalf("expected %s.%s to exist after migration", table, column)
+				}
+			}
+		}
 	}
 }

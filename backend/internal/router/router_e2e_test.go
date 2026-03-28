@@ -824,6 +824,50 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 		t.Fatalf("expected approved faq item after patch, got %+v", approvedFAQList.Items)
 	}
 
+	faqPublishResp := performJSONRequest(t, engine, http.MethodPost, fmt.Sprintf("/api/service-desk/analytics/faq-candidates/%s/publish", faqList.Items[0].ID), map[string]any{
+		"question":    "Redis 的核心特点是什么？",
+		"answer":      "Redis 适合高性能缓存、结构化数据读写和快速恢复场景。",
+		"publishedBy": "ops-faq-publisher",
+		"note":        "已整理为 FAQ 草稿",
+	})
+	if faqPublishResp.Code != http.StatusOK {
+		t.Fatalf("expected faq publish status 200, got %d, body=%s", faqPublishResp.Code, faqPublishResp.Body.String())
+	}
+	var faqPublishResult model.APIResponse
+	decodeJSONResponse(t, faqPublishResp.Body.Bytes(), &faqPublishResult)
+	faqPublishData, _ := json.Marshal(faqPublishResult.Data)
+	var publishPayload model.PublishFAQCandidateResponse
+	decodeJSONResponse(t, faqPublishData, &publishPayload)
+	if publishPayload.Candidate.PublishedBy != "ops-faq-publisher" || publishPayload.Candidate.PublishedQuestion != "Redis 的核心特点是什么？" || !strings.Contains(publishPayload.Export.Content, "FAQ 草稿") {
+		t.Fatalf("expected faq publish response to include markdown export, got %+v", publishPayload)
+	}
+
+	weeklyReportResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/weekly-report?knowledgeBaseId=%s", knowledgeBaseID), nil, "")
+	if weeklyReportResp.Code != http.StatusOK {
+		t.Fatalf("expected weekly report status 200, got %d, body=%s", weeklyReportResp.Code, weeklyReportResp.Body.String())
+	}
+	var weeklyReportResult model.APIResponse
+	decodeJSONResponse(t, weeklyReportResp.Body.Bytes(), &weeklyReportResult)
+	weeklyReportData, _ := json.Marshal(weeklyReportResult.Data)
+	var weeklyReport model.GovernanceWeeklyReport
+	decodeJSONResponse(t, weeklyReportData, &weeklyReport)
+	if !strings.Contains(weeklyReport.Markdown, "本周知识库治理周报") || len(weeklyReport.Highlights) == 0 {
+		t.Fatalf("expected weekly report markdown and highlights, got %+v", weeklyReport)
+	}
+
+	faqExportResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/export?scope=faq-candidates&format=markdown&knowledgeBaseId=%s&owner=%s", knowledgeBaseID, "ops-faq-batch"), nil, "")
+	if faqExportResp.Code != http.StatusOK {
+		t.Fatalf("expected faq export status 200, got %d, body=%s", faqExportResp.Code, faqExportResp.Body.String())
+	}
+	var faqExportResult model.APIResponse
+	decodeJSONResponse(t, faqExportResp.Body.Bytes(), &faqExportResult)
+	faqExportData, _ := json.Marshal(faqExportResult.Data)
+	var faqExport model.AnalyticsExportResponse
+	decodeJSONResponse(t, faqExportData, &faqExport)
+	if faqExport.FileName == "" || !strings.Contains(faqExport.Content, "Redis") {
+		t.Fatalf("expected faq export content, got %+v", faqExport)
+	}
+
 	gapListResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/knowledge-gaps?limit=10&knowledgeBaseId=%s", knowledgeBaseID), nil, "")
 	if gapListResp.Code != http.StatusOK {
 		t.Fatalf("expected knowledge gap list status 200, got %d, body=%s", gapListResp.Code, gapListResp.Body.String())

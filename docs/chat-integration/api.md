@@ -389,8 +389,105 @@ GET /api/service-desk/analytics/feedback?limit=50&knowledgeBaseId=kb-1&feedbackT
 - `feedbackReason`
 - `issueType`
 - `owner`
+- `publishedOnly`（仅 FAQ 候选列表生效）
 
-### 7.5 更新 FAQ / 知识缺口 / 低质量回答
+### 7.5 生成 FAQ 草稿 / 标准问答
+
+```http
+POST /api/service-desk/analytics/faq-candidates/:id/publish
+Content-Type: application/json
+```
+
+```json
+{
+  "question": "Redis 的核心特点是什么？",
+  "answer": "Redis 适合高性能缓存、结构化数据读写和快速恢复场景。",
+  "publishedBy": "ops-faq-publisher",
+  "note": "已整理为 FAQ 草稿，待审核后写入正式帮助中心"
+}
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "candidate": {
+      "id": "faq-1",
+      "questionText": "Redis 能做什么？",
+      "publishedQuestion": "Redis 的核心特点是什么？",
+      "publishedAnswer": "Redis 适合高性能缓存、结构化数据读写和快速恢复场景。",
+      "publishedBy": "ops-faq-publisher",
+      "publishedAt": "2025-03-29T12:00:00Z",
+      "publishNote": "已整理为 FAQ 草稿，待审核后写入正式帮助中心"
+    },
+    "export": {
+      "scope": "faq-candidate",
+      "format": "markdown",
+      "fileName": "faq-candidate-kb-1-20250329.md",
+      "mimeType": "text/markdown; charset=utf-8",
+      "content": "# FAQ 草稿..."
+    }
+  }
+}
+```
+
+说明：
+- 如果 `question / answer / publishedBy / note` 为空，服务端会优先回退到当前候选内容
+- 该接口会把整理后的 FAQ 文稿保存到候选项中，并返回一份可直接下载的 Markdown 草稿
+- `publishedOnly=true` 可用于只筛选已经整理过 FAQ 文稿的候选项
+
+### 7.6 获取治理周报
+
+```http
+GET /api/service-desk/analytics/weekly-report?knowledgeBaseId=kb-1
+```
+
+响应重点字段：
+
+- `generatedAt`
+- `knowledgeBaseId` / `knowledgeBaseName`
+- `summary`
+- `highlights`
+- `topFaqCandidates`
+- `topKnowledgeGaps`
+- `topLowQualityAnswers`
+- `markdown`
+
+适用场景：
+- 每周例会前快速导出治理摘要
+- 按知识库查看本周 FAQ 候选、知识缺口和差评重点
+- 给运营 / 交付同学提供统一复盘入口
+
+### 7.7 导出治理数据
+
+```http
+GET /api/service-desk/analytics/export?scope=faq-candidates&format=markdown&knowledgeBaseId=kb-1&owner=ops-faq
+```
+
+支持参数：
+
+- `scope`：`weekly-report / faq-candidates / knowledge-gaps / low-quality-answers / feedback`
+- `format`：`markdown / json`
+- 其他筛选参数与列表接口保持一致，例如 `knowledgeBaseId / status / owner / feedbackType / feedbackReason / issueType / publishedOnly`
+
+响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "scope": "faq-candidates",
+    "format": "markdown",
+    "fileName": "faq-candidates-kb-1-20250329.md",
+    "mimeType": "text/markdown; charset=utf-8",
+    "content": "# FAQ 候选导出..."
+  }
+}
+```
+
+### 7.8 更新 FAQ / 知识缺口 / 低质量回答
 
 ```http
 PATCH /api/service-desk/analytics/faq-candidates/:id
@@ -414,7 +511,7 @@ Content-Type: application/json
 - `note` 可选，用于记录处理动作
 - `updatedBy` 可选，用于保留最近操作人
 
-### 7.6 批量更新治理项
+### 7.9 批量更新治理项
 
 ```http
 PATCH /api/service-desk/analytics/faq-candidates/batch

@@ -1,5 +1,32 @@
 # RELEASE NOTES
 
+## v0.4.6 增量更新
+
+### 治理台能力增强
+
+- 新增治理周报接口：`GET /api/service-desk/analytics/weekly-report`
+- 新增治理导出接口：`GET /api/service-desk/analytics/export`
+- 新增 FAQ 草稿发布接口：`POST /api/service-desk/analytics/faq-candidates/:id/publish`
+- FAQ 候选列表支持 `publishedOnly=true` 过滤
+- 前端治理台支持责任人筛选、导出当前视图、导出本周周报和一键生成 FAQ 草稿
+
+### 运营闭环补强
+
+- FAQ 候选现在可以保存标准问题、标准回答、整理人、整理时间与备注
+- FAQ 草稿会自动导出 Markdown，方便继续审核或同步到帮助中心
+- 治理周报会汇总本周重点、FAQ 候选、知识缺口和低质量回答
+
+### 静态验证
+
+```bash
+cd backend && PATH=/usr/local/go/bin:$PATH go test ./...
+cd frontend && npm run build
+```
+
+结果：**通过**。
+
+---
+
 ## 本次版本改造概览
 
 本次版本将项目从“本地知识库聊天页”进一步收敛为一套**最简单可用**、同时具备**对外接入能力**的 AI 知识库 / 服务台机器人系统。

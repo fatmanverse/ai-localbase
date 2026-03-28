@@ -10,6 +10,13 @@ interface GovernanceDraft {
   note: string
 }
 
+interface FAQPublishDraft {
+  question: string
+  answer: string
+  publishedBy: string
+  note: string
+}
+
 interface FAQCandidate {
   id: string
   questionText: string
@@ -20,6 +27,11 @@ interface FAQCandidate {
   owner?: string
   note?: string
   updatedAt: string
+  publishedQuestion?: string
+  publishedAnswer?: string
+  publishedBy?: string
+  publishedAt?: string
+  publishNote?: string
 }
 
 interface KnowledgeGap {
@@ -67,6 +79,27 @@ interface AnalyticsSummary {
   knowledgeGapCount: number
   lowQualityOpenCount: number
   thisWeekDislikeCount: number
+}
+
+interface WeeklyReport {
+  generatedAt: string
+  knowledgeBaseId?: string
+  knowledgeBaseName?: string
+  highlights: string[]
+  markdown: string
+}
+
+interface AnalyticsExportResponse {
+  scope: string
+  format: string
+  fileName: string
+  mimeType: string
+  content: string
+}
+
+interface PublishFAQCandidateResponse {
+  candidate: FAQCandidate
+  export: AnalyticsExportResponse
 }
 
 interface APIResponse<T> {
@@ -146,6 +179,13 @@ function getGovernanceEndpoint(tab: EditableGovernanceTab) {
   return 'low-quality-answers'
 }
 
+function getExportScope(tab: GovernanceTab) {
+  if (tab === 'faq') return 'faq-candidates'
+  if (tab === 'gaps') return 'knowledge-gaps'
+  if (tab === 'low-quality') return 'low-quality-answers'
+  return 'feedback'
+}
+
 function buildDraftMap<T extends { id: string; owner?: string; note?: string }>(items: T[]): Record<string, GovernanceDraft> {
   return items.reduce<Record<string, GovernanceDraft>>((accumulator, item) => {
     accumulator[item.id] = {
@@ -156,16 +196,44 @@ function buildDraftMap<T extends { id: string; owner?: string; note?: string }>(
   }, {})
 }
 
+function buildPublishDraftMap(items: FAQCandidate[]): Record<string, FAQPublishDraft> {
+  return items.reduce<Record<string, FAQPublishDraft>>((accumulator, item) => {
+    accumulator[item.id] = {
+      question: item.publishedQuestion || item.questionText || '',
+      answer: item.publishedAnswer || item.answerText || '',
+      publishedBy: item.publishedBy || item.owner || '',
+      note: item.publishNote || item.note || '',
+    }
+    return accumulator
+  }, {})
+}
+
+function downloadTextFile(fileName: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType || 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fileName || 'export.txt'
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  URL.revokeObjectURL(url)
+}
+
 export default function OperationsConsolePage() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [ownerFilter, setOwnerFilter] = useState('')
   const [activeTab, setActiveTab] = useState<GovernanceTab>('faq')
   const [loading, setLoading] = useState(false)
   const [batchUpdating, setBatchUpdating] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [publishingId, setPublishingId] = useState('')
   const [error, setError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [summary, setSummary] = useState<AnalyticsSummary>(emptySummary)
+  const [weeklyReport, setWeeklyReport] = useState<WeeklyReport | null>(null)
   const [faqCandidates, setFaqCandidates] = useState<FAQCandidate[]>([])
   const [knowledgeGaps, setKnowledgeGaps] = useState<KnowledgeGap[]>([])
   const [lowQualityAnswers, setLowQualityAnswers] = useState<LowQualityAnswer[]>([])
@@ -173,6 +241,7 @@ export default function OperationsConsolePage() {
   const [faqDrafts, setFaqDrafts] = useState<Record<string, GovernanceDraft>>({})
   const [gapDrafts, setGapDrafts] = useState<Record<string, GovernanceDraft>>({})
   const [lowQualityDrafts, setLowQualityDrafts] = useState<Record<string, GovernanceDraft>>({})
+  const [publishDrafts, setPublishDrafts] = useState<Record<string, FAQPublishDraft>>({})
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [updatingId, setUpdatingId] = useState('')
   const [batchStatus, setBatchStatus] = useState('')
@@ -227,8 +296,12 @@ export default function OperationsConsolePage() {
       if (statusFilter && editableActiveTab) {
         listParams.set('status', statusFilter)
       }
+      if (ownerFilter.trim()) {
+        listParams.set('owner', ownerFilter.trim())
+      }
 
       const summaryPromise = requestJSON<AnalyticsSummary>(`${API_BASE_PATH}/api/service-desk/analytics/summary?${summaryParams.toString()}`)
+      const weeklyReportPromise = requestJSON<WeeklyReport>(`${API_BASE_PATH}/api/service-desk/analytics/weekly-report?${summaryParams.toString()}`)
       let listPromise: Promise<{ items: FAQCandidate[] | KnowledgeGap[] | LowQualityAnswer[] | FeedbackItem[] }>
 
       if (activeTab === 'faq') {
@@ -243,13 +316,15 @@ export default function OperationsConsolePage() {
         listPromise = requestJSON<{ items: FeedbackItem[] }>(`${API_BASE_PATH}/api/service-desk/analytics/feedback?${feedbackParams.toString()}`)
       }
 
-      const [summaryData, listData] = await Promise.all([summaryPromise, listPromise])
+      const [summaryData, weeklyReportData, listData] = await Promise.all([summaryPromise, weeklyReportPromise, listPromise])
       setSummary(summaryData)
+      setWeeklyReport(weeklyReportData)
 
       if (activeTab === 'faq') {
         const items = (listData.items ?? []) as FAQCandidate[]
         setFaqCandidates(items)
         setFaqDrafts(buildDraftMap(items))
+        setPublishDrafts(buildPublishDraftMap(items))
       } else if (activeTab === 'gaps') {
         const items = (listData.items ?? []) as KnowledgeGap[]
         setKnowledgeGaps(items)
@@ -266,7 +341,7 @@ export default function OperationsConsolePage() {
     } finally {
       setLoading(false)
     }
-  }, [activeTab, editableActiveTab, selectedKnowledgeBaseId, statusFilter])
+  }, [activeTab, editableActiveTab, ownerFilter, selectedKnowledgeBaseId, statusFilter])
 
   useEffect(() => {
     void loadKnowledgeBases()
@@ -281,7 +356,7 @@ export default function OperationsConsolePage() {
     setBatchStatus('')
     setBatchOwner('')
     setBatchNote('')
-  }, [activeTab, selectedKnowledgeBaseId, statusFilter])
+  }, [activeTab, ownerFilter, selectedKnowledgeBaseId, statusFilter])
 
   const updateDraft = useCallback((tab: EditableGovernanceTab, id: string, field: keyof GovernanceDraft, value: string) => {
     if (tab === 'faq') {
@@ -309,6 +384,17 @@ export default function OperationsConsolePage() {
     if (tab === 'gaps') return gapDrafts[id] ?? { owner: '', note: '' }
     return lowQualityDrafts[id] ?? { owner: '', note: '' }
   }, [faqDrafts, gapDrafts, lowQualityDrafts])
+
+  const updatePublishDraft = useCallback((id: string, field: keyof FAQPublishDraft, value: string) => {
+    setPublishDrafts((current) => ({
+      ...current,
+      [id]: { ...(current[id] ?? { question: '', answer: '', publishedBy: '', note: '' }), [field]: value },
+    }))
+  }, [])
+
+  const getPublishDraft = useCallback((id: string): FAQPublishDraft => (
+    publishDrafts[id] ?? { question: '', answer: '', publishedBy: '', note: '' }
+  ), [publishDrafts])
 
   const updateItemStatus = useCallback(async (tab: EditableGovernanceTab, id: string, status: string) => {
     setUpdatingId(id)
@@ -348,6 +434,32 @@ export default function OperationsConsolePage() {
       setUpdatingId('')
     }
   }, [getDraft, loadGovernanceData])
+
+  const publishFAQCandidate = useCallback(async (item: FAQCandidate) => {
+    const draft = getPublishDraft(item.id)
+    setPublishingId(item.id)
+    setError('')
+    setActionMessage('')
+    try {
+      const result = await requestJSON<PublishFAQCandidateResponse>(`${API_BASE_PATH}/api/service-desk/analytics/faq-candidates/${item.id}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: draft.question,
+          answer: draft.answer,
+          publishedBy: draft.publishedBy,
+          note: draft.note,
+        }),
+      })
+      downloadTextFile(result.export.fileName, result.export.content, result.export.mimeType)
+      setActionMessage('FAQ 草稿已生成，并已自动下载 Markdown 文件')
+      await loadGovernanceData()
+    } catch (publishError) {
+      setError(getErrorMessage(publishError, 'FAQ 草稿生成失败'))
+    } finally {
+      setPublishingId('')
+    }
+  }, [getPublishDraft, loadGovernanceData])
 
   const toggleSelected = useCallback((id: string) => {
     setSelectedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))
@@ -392,6 +504,48 @@ export default function OperationsConsolePage() {
     }
   }, [batchNote, batchOwner, batchStatus, editableActiveTab, loadGovernanceData, selectedIds])
 
+  const exportCurrentView = useCallback(async () => {
+    setExporting(true)
+    setError('')
+    setActionMessage('')
+    try {
+      const params = new URLSearchParams()
+      params.set('scope', getExportScope(activeTab))
+      params.set('format', 'markdown')
+      params.set('limit', '200')
+      if (selectedKnowledgeBaseId) params.set('knowledgeBaseId', selectedKnowledgeBaseId)
+      if (statusFilter && editableActiveTab) params.set('status', statusFilter)
+      if (ownerFilter.trim()) params.set('owner', ownerFilter.trim())
+      if (activeTab === 'feedback') params.set('feedbackType', 'dislike')
+      const result = await requestJSON<AnalyticsExportResponse>(`${API_BASE_PATH}/api/service-desk/analytics/export?${params.toString()}`)
+      downloadTextFile(result.fileName, result.content, result.mimeType)
+      setActionMessage('当前视图已导出为 Markdown')
+    } catch (exportError) {
+      setError(getErrorMessage(exportError, '导出失败'))
+    } finally {
+      setExporting(false)
+    }
+  }, [activeTab, editableActiveTab, ownerFilter, selectedKnowledgeBaseId, statusFilter])
+
+  const downloadWeeklyReport = useCallback(async () => {
+    setExporting(true)
+    setError('')
+    setActionMessage('')
+    try {
+      const params = new URLSearchParams()
+      params.set('scope', 'weekly-report')
+      params.set('format', 'markdown')
+      if (selectedKnowledgeBaseId) params.set('knowledgeBaseId', selectedKnowledgeBaseId)
+      const result = await requestJSON<AnalyticsExportResponse>(`${API_BASE_PATH}/api/service-desk/analytics/export?${params.toString()}`)
+      downloadTextFile(result.fileName, result.content, result.mimeType)
+      setActionMessage('本周治理周报已导出')
+    } catch (exportError) {
+      setError(getErrorMessage(exportError, '周报导出失败'))
+    } finally {
+      setExporting(false)
+    }
+  }, [selectedKnowledgeBaseId])
+
   return (
     <main className="ops-console-page">
       <section className="ops-console-hero">
@@ -399,7 +553,7 @@ export default function OperationsConsolePage() {
           <div className="ops-console-eyebrow">Operations Console</div>
           <h1>知识库治理工作台</h1>
           <p>
-            这里给运营、交付和知识库维护同学一个最简单可用的治理入口。你可以直接查看 FAQ 候选、知识缺口、低质量回答和差评明细，顺手补责任人、处理备注，并批量推进治理动作。
+            这里给运营、交付和知识库维护同学一个最简单可用的治理入口。你可以直接查看 FAQ 候选、知识缺口、低质量回答和差评明细，顺手补责任人、处理备注、导出当前视图，并把高赞回答整理成正式 FAQ 草稿。
           </p>
         </div>
         <div className="ops-console-summary-card">
@@ -432,6 +586,26 @@ export default function OperationsConsolePage() {
         </article>
       </section>
 
+      <section className="ops-console-report-card">
+        <div>
+          <h2>本周治理重点</h2>
+          <p>{weeklyReport ? `更新时间：${formatDate(weeklyReport.generatedAt)}` : '正在整理本周治理概览...'}</p>
+        </div>
+        <div className="ops-report-actions">
+          <button type="button" className="ops-secondary-button" onClick={() => void loadGovernanceData()} disabled={loading}>
+            {loading ? '刷新中...' : '刷新周报'}
+          </button>
+          <button type="button" className="ops-refresh-button" onClick={() => void downloadWeeklyReport()} disabled={exporting || !weeklyReport}>
+            {exporting ? '处理中...' : '导出本周周报'}
+          </button>
+        </div>
+        <ul>
+          {(weeklyReport?.highlights ?? ['当前还没有生成治理重点。']).map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </section>
+
       <section className="ops-console-toolbar">
         <label>
           <span>知识库</span>
@@ -451,10 +625,17 @@ export default function OperationsConsolePage() {
             ))}
           </select>
         </label>
+        <label>
+          <span>责任人筛选</span>
+          <input value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)} placeholder="例如 ops-zhangsan" />
+        </label>
         <div className="ops-toolbar-stat">
           <strong>{summary.totalFeedbacks}</strong>
           <span>累计反馈</span>
         </div>
+        <button type="button" className="ops-secondary-button" onClick={() => void exportCurrentView()} disabled={exporting}>
+          {exporting ? '导出中...' : '导出当前视图'}
+        </button>
         <button type="button" className="ops-refresh-button" onClick={() => void loadGovernanceData()} disabled={loading}>
           {loading ? '刷新中...' : '刷新数据'}
         </button>
@@ -522,6 +703,7 @@ export default function OperationsConsolePage() {
 
         {activeTab === 'faq' && faqCandidates.map((item) => {
           const draft = getDraft('faq', item.id)
+          const publishDraft = getPublishDraft(item.id)
           return (
             <article key={item.id} className="ops-card">
               <div className="ops-card-head">
@@ -533,6 +715,7 @@ export default function OperationsConsolePage() {
                 <span>点赞 {item.likeCount}</span>
                 <span>{resolveKnowledgeBaseName(item.knowledgeBaseId)}</span>
                 <span>{item.owner ? `责任人 ${item.owner}` : '待分配责任人'}</span>
+                {item.publishedAt ? <span>{`已整理 ${formatDate(item.publishedAt)}`}</span> : <span>尚未整理 FAQ 文稿</span>}
                 <span>{formatDate(item.updatedAt)}</span>
               </div>
               <h3>{item.questionText}</h3>
@@ -547,6 +730,24 @@ export default function OperationsConsolePage() {
                   <textarea value={draft.note} onChange={(event) => updateDraft('faq', item.id, 'note', event.target.value)} placeholder="补充一下这条 FAQ 已经如何落地" rows={3} />
                 </label>
               </div>
+              <div className="ops-publish-editor">
+                <label>
+                  <span>FAQ 标准问题</span>
+                  <input value={publishDraft.question} onChange={(event) => updatePublishDraft(item.id, 'question', event.target.value)} placeholder="整理成最终对外问题标题" />
+                </label>
+                <label>
+                  <span>整理人</span>
+                  <input value={publishDraft.publishedBy} onChange={(event) => updatePublishDraft(item.id, 'publishedBy', event.target.value)} placeholder="例如 ops-faq" />
+                </label>
+                <label className="is-answer">
+                  <span>FAQ 标准回答</span>
+                  <textarea value={publishDraft.answer} onChange={(event) => updatePublishDraft(item.id, 'answer', event.target.value)} rows={4} placeholder="整理后的最终 FAQ 回答内容" />
+                </label>
+                <label className="is-note">
+                  <span>FAQ 备注</span>
+                  <textarea value={publishDraft.note} onChange={(event) => updatePublishDraft(item.id, 'note', event.target.value)} rows={3} placeholder="例如 已整理到对外帮助中心，待审核上线" />
+                </label>
+              </div>
               <div className="ops-card-actions">
                 {statusOptions.faq.map((option) => (
                   <button key={option.value} type="button" disabled={updatingId === item.id || option.value === item.status} onClick={() => void updateItemStatus('faq', item.id, option.value)}>
@@ -555,6 +756,9 @@ export default function OperationsConsolePage() {
                 ))}
                 <button type="button" className="ops-primary-button" disabled={updatingId === item.id} onClick={() => void saveItemDraft('faq', item.id)}>
                   保存责任人 / 备注
+                </button>
+                <button type="button" className="ops-refresh-button" disabled={publishingId === item.id} onClick={() => void publishFAQCandidate(item)}>
+                  {publishingId === item.id ? '生成中...' : '生成 FAQ 草稿'}
                 </button>
               </div>
             </article>

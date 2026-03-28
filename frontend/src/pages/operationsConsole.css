@@ -65,6 +65,7 @@
 }
 
 .ops-metric-card,
+.ops-console-report-card,
 .ops-console-toolbar,
 .ops-console-tabs,
 .ops-console-batch,
@@ -100,6 +101,7 @@
   font-size: 13px;
 }
 
+.ops-console-report-card,
 .ops-console-toolbar,
 .ops-console-batch {
   display: flex;
@@ -107,6 +109,36 @@
   align-items: end;
   flex-wrap: wrap;
   padding: 20px;
+}
+
+.ops-console-report-card {
+  align-items: flex-start;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #ffffff 0%, #f5faff 100%);
+}
+
+.ops-console-report-card h2 {
+  margin: 0 0 8px;
+}
+
+.ops-console-report-card p {
+  margin: 0;
+  color: #617a96;
+}
+
+.ops-console-report-card ul {
+  margin: 0;
+  padding-left: 20px;
+  color: #33516d;
+  line-height: 1.7;
+  flex: 1 1 100%;
+}
+
+.ops-report-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .ops-console-toolbar {
@@ -120,7 +152,8 @@
 
 .ops-console-toolbar label,
 .ops-console-batch label,
-.ops-card-editor label {
+.ops-card-editor label,
+.ops-publish-editor label {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -133,7 +166,8 @@
 
 .ops-console-toolbar span,
 .ops-console-batch span,
-.ops-card-editor span {
+.ops-card-editor span,
+.ops-publish-editor span {
   font-size: 13px;
   font-weight: 600;
   color: #385571;
@@ -184,13 +218,16 @@
 }
 
 .ops-console-toolbar select,
+.ops-console-toolbar input,
 .ops-console-batch select,
 .ops-console-batch input,
 .ops-refresh-button,
 .ops-secondary-button,
 .ops-card-actions button,
 .ops-card-editor input,
-.ops-card-editor textarea {
+.ops-card-editor textarea,
+.ops-publish-editor input,
+.ops-publish-editor textarea {
   min-height: 40px;
   border-radius: 10px;
   border: 1px solid #c8d8ea;
@@ -200,7 +237,8 @@
   font: inherit;
 }
 
-.ops-card-editor textarea {
+.ops-card-editor textarea,
+.ops-publish-editor textarea {
   min-height: 96px;
   padding: 10px 12px;
   resize: vertical;
@@ -352,15 +390,18 @@
   line-height: 1.65;
 }
 
-.ops-card-editor {
+.ops-card-editor,
+.ops-publish-editor {
   display: grid;
-  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin: 14px 0;
 }
 
-.ops-card-editor label.is-note {
-  min-width: 0;
+.ops-card-editor label.is-note,
+.ops-publish-editor label.is-note,
+.ops-publish-editor label.is-answer {
+  grid-column: 1 / -1;
 }
 
 .ops-card-actions {
@@ -432,7 +473,8 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .ops-card-editor {
+  .ops-card-editor,
+  .ops-publish-editor {
     grid-template-columns: 1fr;
   }
 }

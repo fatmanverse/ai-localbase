@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -187,6 +188,26 @@ func (s *ServiceDeskService) UpdateFAQCandidateStatus(id string, req model.Analy
 	return s.store.UpdateFAQCandidateStatus(id, req)
 }
 
+func (s *ServiceDeskService) PublishFAQCandidate(id string, req model.PublishFAQCandidateRequest) (*model.PublishFAQCandidateResponse, error) {
+	if s == nil || s.store == nil {
+		return nil, fmt.Errorf("service desk store is not configured")
+	}
+	current, err := s.store.getFAQCandidateByID(id)
+	if err != nil {
+		return nil, err
+	}
+	question := firstNonEmpty(strings.TrimSpace(req.Question), strings.TrimSpace(current.PublishedQuestion), strings.TrimSpace(current.QuestionText))
+	answer := firstNonEmpty(strings.TrimSpace(req.Answer), strings.TrimSpace(current.PublishedAnswer), strings.TrimSpace(current.AnswerText))
+	publishedBy := firstNonEmpty(strings.TrimSpace(req.PublishedBy), strings.TrimSpace(current.Owner), "ops-console")
+	publishNote := firstNonEmpty(strings.TrimSpace(req.Note), strings.TrimSpace(current.PublishNote), strings.TrimSpace(current.Note))
+	candidate, err := s.store.PublishFAQCandidate(id, question, answer, publishedBy, publishNote)
+	if err != nil {
+		return nil, err
+	}
+	export := buildFAQCandidateExport(*candidate, s.knowledgeBaseNameByID(candidate.KnowledgeBaseID))
+	return &model.PublishFAQCandidateResponse{Candidate: *candidate, Export: export}, nil
+}
+
 func (s *ServiceDeskService) UpdateKnowledgeGapStatus(id string, req model.AnalyticsStatusUpdateRequest) (*model.KnowledgeGap, error) {
 	if s == nil || s.store == nil {
 		return nil, fmt.Errorf("service desk store is not configured")
@@ -220,6 +241,353 @@ func (s *ServiceDeskService) BatchUpdateLowQualityAnswers(req model.AnalyticsBat
 		return model.AnalyticsBatchUpdateResponse{}, fmt.Errorf("service desk store is not configured")
 	}
 	return s.store.BatchUpdateLowQualityAnswers(req)
+}
+
+func (s *ServiceDeskService) WeeklyReport(opts model.AnalyticsListOptions) (model.GovernanceWeeklyReport, error) {
+	if s == nil || s.store == nil {
+		return model.GovernanceWeeklyReport{}, fmt.Errorf("service desk store is not configured")
+	}
+	summary, err := s.AnalyticsSummary(model.AnalyticsListOptions{KnowledgeBaseID: opts.KnowledgeBaseID})
+	if err != nil {
+		return model.GovernanceWeeklyReport{}, err
+	}
+	topFAQ := summary.FAQCandidates
+	if len(topFAQ) > 5 {
+		topFAQ = topFAQ[:5]
+	}
+	topGaps := summary.KnowledgeGaps
+	if len(topGaps) > 5 {
+		topGaps = topGaps[:5]
+	}
+	topLowQuality := summary.LowQualityAnswers
+	if len(topLowQuality) > 5 {
+		topLowQuality = topLowQuality[:5]
+	}
+	report := model.GovernanceWeeklyReport{
+		GeneratedAt:          util.NowRFC3339(),
+		KnowledgeBaseID:      strings.TrimSpace(opts.KnowledgeBaseID),
+		KnowledgeBaseName:    s.knowledgeBaseNameByID(opts.KnowledgeBaseID),
+		Summary:              summary,
+		Highlights:           buildWeeklyHighlights(summary, topFAQ, topGaps, topLowQuality),
+		TopFAQCandidates:     topFAQ,
+		TopKnowledgeGaps:     topGaps,
+		TopLowQualityAnswers: topLowQuality,
+	}
+	report.Markdown = renderWeeklyReportMarkdown(report)
+	return report, nil
+}
+
+func (s *ServiceDeskService) ExportAnalytics(opts model.AnalyticsExportOptions) (model.AnalyticsExportResponse, error) {
+	if s == nil || s.store == nil {
+		return model.AnalyticsExportResponse{}, fmt.Errorf("service desk store is not configured")
+	}
+	scope, err := normalizeExportScope(opts.Scope)
+	if err != nil {
+		return model.AnalyticsExportResponse{}, err
+	}
+	format := normalizeExportFormat(opts.Format)
+	label := s.knowledgeBaseNameByID(opts.KnowledgeBaseID)
+	baseName := buildExportFileBase(scope, opts.KnowledgeBaseID, label)
+
+	switch scope {
+	case "weekly-report":
+		report, err := s.WeeklyReport(opts.AnalyticsListOptions)
+		if err != nil {
+			return model.AnalyticsExportResponse{}, err
+		}
+		if format == "json" {
+			content, err := marshalExportContent(report)
+			if err != nil {
+				return model.AnalyticsExportResponse{}, err
+			}
+			return model.AnalyticsExportResponse{Scope: scope, Format: format, FileName: baseName + ".json", MimeType: "application/json", Content: content}, nil
+		}
+		return model.AnalyticsExportResponse{Scope: scope, Format: format, FileName: baseName + ".md", MimeType: "text/markdown; charset=utf-8", Content: report.Markdown}, nil
+	case "faq-candidates":
+		items, err := s.ListFAQCandidates(opts.AnalyticsListOptions)
+		if err != nil {
+			return model.AnalyticsExportResponse{}, err
+		}
+		if format == "json" {
+			content, err := marshalExportContent(items)
+			if err != nil {
+				return model.AnalyticsExportResponse{}, err
+			}
+			return model.AnalyticsExportResponse{Scope: scope, Format: format, FileName: baseName + ".json", MimeType: "application/json", Content: content}, nil
+		}
+		return model.AnalyticsExportResponse{Scope: scope, Format: format, FileName: baseName + ".md", MimeType: "text/markdown; charset=utf-8", Content: renderFAQCandidatesMarkdown(items, label)}, nil
+	case "knowledge-gaps":
+		items, err := s.ListKnowledgeGaps(opts.AnalyticsListOptions)
+		if err != nil {
+			return model.AnalyticsExportResponse{}, err
+		}
+		if format == "json" {
+			content, err := marshalExportContent(items)
+			if err != nil {
+				return model.AnalyticsExportResponse{}, err
+			}
+			return model.AnalyticsExportResponse{Scope: scope, Format: format, FileName: baseName + ".json", MimeType: "application/json", Content: content}, nil
+		}
+		return model.AnalyticsExportResponse{Scope: scope, Format: format, FileName: baseName + ".md", MimeType: "text/markdown; charset=utf-8", Content: renderKnowledgeGapsMarkdown(items, label)}, nil
+	case "low-quality-answers":
+		items, err := s.ListLowQualityAnswers(opts.AnalyticsListOptions)
+		if err != nil {
+			return model.AnalyticsExportResponse{}, err
+		}
+		if format == "json" {
+			content, err := marshalExportContent(items)
+			if err != nil {
+				return model.AnalyticsExportResponse{}, err
+			}
+			return model.AnalyticsExportResponse{Scope: scope, Format: format, FileName: baseName + ".json", MimeType: "application/json", Content: content}, nil
+		}
+		return model.AnalyticsExportResponse{Scope: scope, Format: format, FileName: baseName + ".md", MimeType: "text/markdown; charset=utf-8", Content: renderLowQualityAnswersMarkdown(items, label)}, nil
+	case "feedback":
+		items, err := s.ListRecentFeedback(opts.AnalyticsListOptions)
+		if err != nil {
+			return model.AnalyticsExportResponse{}, err
+		}
+		if format == "json" {
+			content, err := marshalExportContent(items)
+			if err != nil {
+				return model.AnalyticsExportResponse{}, err
+			}
+			return model.AnalyticsExportResponse{Scope: scope, Format: format, FileName: baseName + ".json", MimeType: "application/json", Content: content}, nil
+		}
+		return model.AnalyticsExportResponse{Scope: scope, Format: format, FileName: baseName + ".md", MimeType: "text/markdown; charset=utf-8", Content: renderFeedbackMarkdown(items, label)}, nil
+	default:
+		return model.AnalyticsExportResponse{}, fmt.Errorf("unsupported export scope: %s", scope)
+	}
+}
+
+func marshalExportContent(value any) (string, error) {
+	payload, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal export content: %w", err)
+	}
+	return string(payload), nil
+}
+
+func normalizeExportScope(scope string) (string, error) {
+	trimmed := strings.ToLower(strings.TrimSpace(scope))
+	if trimmed == "" {
+		return "weekly-report", nil
+	}
+	allowed := map[string]struct{}{
+		"weekly-report":       {},
+		"faq-candidates":      {},
+		"knowledge-gaps":      {},
+		"low-quality-answers": {},
+		"feedback":            {},
+	}
+	if _, ok := allowed[trimmed]; !ok {
+		return "", fmt.Errorf("invalid export scope: %s", scope)
+	}
+	return trimmed, nil
+}
+
+func normalizeExportFormat(format string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(format))
+	if trimmed == "json" {
+		return "json"
+	}
+	return "markdown"
+}
+
+func buildExportFileBase(scope string, knowledgeBaseID string, knowledgeBaseName string) string {
+	parts := []string{"service-desk", scope}
+	if strings.TrimSpace(knowledgeBaseName) != "" {
+		parts = append(parts, sanitizeExportSegment(knowledgeBaseName))
+	} else if strings.TrimSpace(knowledgeBaseID) != "" {
+		parts = append(parts, sanitizeExportSegment(knowledgeBaseID))
+	}
+	return strings.Join(parts, "-")
+}
+
+func sanitizeExportSegment(value string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(value))
+	if trimmed == "" {
+		return "default"
+	}
+	replacer := strings.NewReplacer(" ", "-", "/", "-", "\\", "-", ":", "-", "，", "-", ",", "-", "（", "-", "）", "-", "(", "-", ")", "-")
+	trimmed = replacer.Replace(trimmed)
+	trimmed = strings.Trim(trimmed, "-")
+	if trimmed == "" {
+		return "default"
+	}
+	return trimmed
+}
+
+func (s *ServiceDeskService) knowledgeBaseNameByID(knowledgeBaseID string) string {
+	trimmed := strings.TrimSpace(knowledgeBaseID)
+	if trimmed == "" || s == nil || s.appService == nil {
+		return ""
+	}
+	for _, item := range s.appService.ListKnowledgeBases() {
+		if item.ID == trimmed {
+			return strings.TrimSpace(item.Name)
+		}
+	}
+	return ""
+}
+
+func buildWeeklyHighlights(summary model.ServiceDeskAnalyticsSummary, faq []model.FAQCandidate, gaps []model.KnowledgeGap, lowQuality []model.LowQualityAnswer) []string {
+	highlights := make([]string, 0, 4)
+	if summary.ThisWeekDislikeCount > 0 {
+		highlights = append(highlights, fmt.Sprintf("本周累计收到 %d 条差评，建议优先复盘低质量回答与知识缺口。", summary.ThisWeekDislikeCount))
+	}
+	if len(gaps) > 0 {
+		highlights = append(highlights, fmt.Sprintf("当前最高频知识缺口是“%s”，建议尽快补文档并重新索引。", gaps[0].QuestionText))
+	}
+	if len(lowQuality) > 0 {
+		highlights = append(highlights, fmt.Sprintf("差评最集中的问题是“%s”，优先检查召回结果和答案模板。", lowQuality[0].QuestionText))
+	}
+	if len(faq) > 0 {
+		highlights = append(highlights, fmt.Sprintf("“%s” 已具备 FAQ 沉淀价值，可以整理成标准问答。", faq[0].QuestionText))
+	}
+	if len(highlights) == 0 {
+		highlights = append(highlights, "本周暂无明显风险项，可以继续补充 FAQ 和图片型知识说明。")
+	}
+	return highlights
+}
+
+func renderWeeklyReportMarkdown(report model.GovernanceWeeklyReport) string {
+	builder := strings.Builder{}
+	kbLine := firstNonEmpty(strings.TrimSpace(report.KnowledgeBaseName), strings.TrimSpace(report.KnowledgeBaseID), "全部知识库")
+	builder.WriteString("# 本周知识库治理周报\n\n")
+	builder.WriteString(fmt.Sprintf("- 生成时间：%s\n", report.GeneratedAt))
+	builder.WriteString(fmt.Sprintf("- 范围：%s\n", kbLine))
+	builder.WriteString(fmt.Sprintf("- 累计反馈：%d（点赞 %d / 点踩 %d）\n", report.Summary.TotalFeedbacks, report.Summary.LikeCount, report.Summary.DislikeCount))
+	builder.WriteString(fmt.Sprintf("- 待处理 FAQ：%d\n", report.Summary.FAQPendingCount))
+	builder.WriteString(fmt.Sprintf("- 待补知识缺口：%d\n", report.Summary.KnowledgeGapCount))
+	builder.WriteString(fmt.Sprintf("- 待处理低质量回答：%d\n", report.Summary.LowQualityOpenCount))
+	builder.WriteString(fmt.Sprintf("- 本周差评：%d\n\n", report.Summary.ThisWeekDislikeCount))
+	builder.WriteString("## 本周重点\n\n")
+	for _, item := range report.Highlights {
+		builder.WriteString("- " + item + "\n")
+	}
+	builder.WriteString("\n## FAQ 候选\n\n")
+	builder.WriteString(renderFAQCandidatesMarkdown(report.TopFAQCandidates, report.KnowledgeBaseName))
+	builder.WriteString("\n## 知识缺口\n\n")
+	builder.WriteString(renderKnowledgeGapsMarkdown(report.TopKnowledgeGaps, report.KnowledgeBaseName))
+	builder.WriteString("\n## 低质量回答\n\n")
+	builder.WriteString(renderLowQualityAnswersMarkdown(report.TopLowQualityAnswers, report.KnowledgeBaseName))
+	return builder.String()
+}
+
+func buildFAQCandidateExport(candidate model.FAQCandidate, knowledgeBaseName string) model.AnalyticsExportResponse {
+	question := firstNonEmpty(strings.TrimSpace(candidate.PublishedQuestion), strings.TrimSpace(candidate.QuestionText))
+	answer := firstNonEmpty(strings.TrimSpace(candidate.PublishedAnswer), strings.TrimSpace(candidate.AnswerText))
+	builder := strings.Builder{}
+	builder.WriteString("# FAQ 草稿\n\n")
+	builder.WriteString(fmt.Sprintf("- 知识库：%s\n", firstNonEmpty(strings.TrimSpace(knowledgeBaseName), strings.TrimSpace(candidate.KnowledgeBaseID), "未绑定知识库")))
+	builder.WriteString(fmt.Sprintf("- 生成时间：%s\n", firstNonEmpty(strings.TrimSpace(candidate.PublishedAt), util.NowRFC3339())))
+	builder.WriteString(fmt.Sprintf("- 整理人：%s\n\n", firstNonEmpty(strings.TrimSpace(candidate.PublishedBy), strings.TrimSpace(candidate.Owner), "ops-console")))
+	builder.WriteString("## 问题\n\n")
+	builder.WriteString(question + "\n\n")
+	builder.WriteString("## 标准回答\n\n")
+	builder.WriteString(answer + "\n")
+	if strings.TrimSpace(candidate.PublishNote) != "" {
+		builder.WriteString("\n## 备注\n\n")
+		builder.WriteString(candidate.PublishNote + "\n")
+	}
+	return model.AnalyticsExportResponse{
+		Scope:    "faq-candidate",
+		Format:   "markdown",
+		FileName: buildExportFileBase("faq-candidate", candidate.KnowledgeBaseID, knowledgeBaseName) + ".md",
+		MimeType: "text/markdown; charset=utf-8",
+		Content:  builder.String(),
+	}
+}
+
+func renderFAQCandidatesMarkdown(items []model.FAQCandidate, knowledgeBaseName string) string {
+	if len(items) == 0 {
+		return "当前没有可导出的 FAQ 候选。\n"
+	}
+	builder := strings.Builder{}
+	builder.WriteString(fmt.Sprintf("- 知识库：%s\n\n", firstNonEmpty(strings.TrimSpace(knowledgeBaseName), "全部知识库")))
+	for index, item := range items {
+		builder.WriteString(fmt.Sprintf("### %d. %s\n\n", index+1, item.QuestionText))
+		builder.WriteString(fmt.Sprintf("- 点赞数：%d\n", item.LikeCount))
+		builder.WriteString(fmt.Sprintf("- 状态：%s\n", item.Status))
+		if strings.TrimSpace(item.Owner) != "" {
+			builder.WriteString(fmt.Sprintf("- 责任人：%s\n", item.Owner))
+		}
+		if strings.TrimSpace(item.PublishedAt) != "" {
+			builder.WriteString(fmt.Sprintf("- 已整理时间：%s\n", item.PublishedAt))
+		}
+		builder.WriteString("\n")
+		builder.WriteString(item.AnswerText + "\n\n")
+	}
+	return builder.String()
+}
+
+func renderKnowledgeGapsMarkdown(items []model.KnowledgeGap, knowledgeBaseName string) string {
+	if len(items) == 0 {
+		return "当前没有可导出的知识缺口。\n"
+	}
+	builder := strings.Builder{}
+	builder.WriteString(fmt.Sprintf("- 知识库：%s\n\n", firstNonEmpty(strings.TrimSpace(knowledgeBaseName), "全部知识库")))
+	for index, item := range items {
+		builder.WriteString(fmt.Sprintf("### %d. %s\n\n", index+1, item.QuestionText))
+		builder.WriteString(fmt.Sprintf("- 问题类型：%s\n", item.IssueType))
+		builder.WriteString(fmt.Sprintf("- 频次：%d\n", item.Count))
+		builder.WriteString(fmt.Sprintf("- 状态：%s\n", item.Status))
+		if strings.TrimSpace(item.Owner) != "" {
+			builder.WriteString(fmt.Sprintf("- 责任人：%s\n", item.Owner))
+		}
+		if strings.TrimSpace(item.SuggestedAction) != "" {
+			builder.WriteString(fmt.Sprintf("- 建议动作：%s\n", item.SuggestedAction))
+		}
+		if strings.TrimSpace(item.Note) != "" {
+			builder.WriteString(fmt.Sprintf("- 备注：%s\n", item.Note))
+		}
+		builder.WriteString("\n")
+	}
+	return builder.String()
+}
+
+func renderLowQualityAnswersMarkdown(items []model.LowQualityAnswer, knowledgeBaseName string) string {
+	if len(items) == 0 {
+		return "当前没有可导出的低质量回答。\n"
+	}
+	builder := strings.Builder{}
+	builder.WriteString(fmt.Sprintf("- 知识库：%s\n\n", firstNonEmpty(strings.TrimSpace(knowledgeBaseName), "全部知识库")))
+	for index, item := range items {
+		builder.WriteString(fmt.Sprintf("### %d. %s\n\n", index+1, item.QuestionText))
+		builder.WriteString(fmt.Sprintf("- 主要原因：%s\n", firstNonEmpty(strings.TrimSpace(item.PrimaryReason), "未标注")))
+		builder.WriteString(fmt.Sprintf("- 点踩数：%d\n", item.DislikeCount))
+		builder.WriteString(fmt.Sprintf("- 状态：%s\n", item.Status))
+		if strings.TrimSpace(item.Owner) != "" {
+			builder.WriteString(fmt.Sprintf("- 责任人：%s\n", item.Owner))
+		}
+		if strings.TrimSpace(item.Note) != "" {
+			builder.WriteString(fmt.Sprintf("- 备注：%s\n", item.Note))
+		}
+		builder.WriteString("\n")
+		builder.WriteString(item.AnswerText + "\n\n")
+	}
+	return builder.String()
+}
+
+func renderFeedbackMarkdown(items []model.ServiceDeskMessageFeedback, knowledgeBaseName string) string {
+	if len(items) == 0 {
+		return "当前没有可导出的反馈记录。\n"
+	}
+	builder := strings.Builder{}
+	builder.WriteString(fmt.Sprintf("- 知识库：%s\n\n", firstNonEmpty(strings.TrimSpace(knowledgeBaseName), "全部知识库")))
+	for index, item := range items {
+		builder.WriteString(fmt.Sprintf("### %d. %s\n\n", index+1, firstNonEmpty(strings.TrimSpace(item.QuestionText), "未记录问题正文")))
+		builder.WriteString(fmt.Sprintf("- 反馈类型：%s\n", item.FeedbackType))
+		builder.WriteString(fmt.Sprintf("- 原因：%s\n", firstNonEmpty(strings.TrimSpace(item.FeedbackReason), "未填写原因")))
+		builder.WriteString(fmt.Sprintf("- 时间：%s\n", item.CreatedAt))
+		if strings.TrimSpace(item.FeedbackText) != "" {
+			builder.WriteString(fmt.Sprintf("- 补充说明：%s\n", item.FeedbackText))
+		}
+		builder.WriteString("\n")
+		builder.WriteString(firstNonEmpty(strings.TrimSpace(item.AnswerText), "未记录回答正文") + "\n\n")
+	}
+	return builder.String()
 }
 
 func (s *ServiceDeskService) generateResponse(conversationID string, req model.SendServiceDeskMessageRequest, onEvent func(event string, payload map[string]any) error) (*model.ServiceDeskConversation, model.ServiceDeskMessage, model.ServiceDeskMessage, error) {
