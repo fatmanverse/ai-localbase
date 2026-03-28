@@ -12,6 +12,13 @@ services:
     build:
       context: ./backend
       dockerfile: ../docker/backend.Dockerfile
+      args:
+        HTTP_PROXY: "${HTTP_PROXY:-}"
+        HTTPS_PROXY: "${HTTPS_PROXY:-}"
+        NO_PROXY: "${NO_PROXY:-}"
+        http_proxy: "${HTTP_PROXY:-}"
+        https_proxy: "${HTTPS_PROXY:-}"
+        no_proxy: "${NO_PROXY:-}"
     restart: unless-stopped
     depends_on:
       - qdrant
@@ -37,6 +44,13 @@ services:
     build:
       context: .
       dockerfile: ./docker/frontend.Dockerfile
+      args:
+        HTTP_PROXY: "${HTTP_PROXY:-}"
+        HTTPS_PROXY: "${HTTPS_PROXY:-}"
+        NO_PROXY: "${NO_PROXY:-}"
+        http_proxy: "${HTTP_PROXY:-}"
+        https_proxy: "${HTTPS_PROXY:-}"
+        no_proxy: "${NO_PROXY:-}"
     restart: unless-stopped
     depends_on:
       - backend

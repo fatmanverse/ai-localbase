@@ -122,3 +122,24 @@ npm --version
 ```
 
 如果你不想在宿主机处理 Node 兼容问题，建议直接改用 Docker 完成前端构建。
+
+---
+
+## 7. Docker 构建时无法下载 Go / npm 依赖
+
+### 处理
+先给宿主机导出代理变量，再重新构建：
+
+```bash
+export HTTP_PROXY=http://127.0.0.1:7890
+export HTTPS_PROXY=http://127.0.0.1:7890
+export NO_PROXY=localhost,127.0.0.1,host.docker.internal,qdrant,backend,frontend
+
+docker compose build --no-cache
+```
+
+如果你使用脚本构建镜像：
+
+```bash
+HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 NO_PROXY=localhost,127.0.0.1,host.docker.internal,qdrant,backend,frontend bash scripts/linux/build_images.sh
+```

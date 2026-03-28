@@ -30,6 +30,14 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
+如果服务器需要代理再拉依赖：
+```bash
+export HTTP_PROXY=http://127.0.0.1:7890
+export HTTPS_PROXY=http://127.0.0.1:7890
+export NO_PROXY=localhost,127.0.0.1,host.docker.internal,qdrant,backend,frontend
+docker compose up --build -d
+```
+
 访问地址：
 - 前端：`http://localhost:4173`
 - 后端：`http://localhost:8080`
