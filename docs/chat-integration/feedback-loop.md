@@ -2,6 +2,11 @@
 
 ## 已实现的反馈能力
 
+当前以下两条链路都已支持反馈：
+
+- 普通聊天页
+- service-desk / widget / iframe 嵌入页
+
 每条机器人回答都支持：
 
 - 👍 已解决
@@ -91,6 +96,44 @@ message_feedback
 - 进入低质量回答清单
 - 如果原因集中为“答非所问 / 检索不相关”，优先检查检索参数与提示词
 - 如果原因集中为“不准确 / 不完整 / 过时”，优先补知识文档与 FAQ
+
+---
+
+## 普通聊天页反馈接口
+
+普通聊天页现在也支持直接提交消息反馈：
+
+```http
+POST /api/conversations/:id/messages/:messageId/feedback
+Content-Type: application/json
+```
+
+示例：
+
+```json
+{
+  "feedbackType": "dislike",
+  "feedbackReason": "内容不完整",
+  "feedbackText": "少了截图里的按钮位置说明"
+}
+```
+
+服务端会自动补齐：
+
+- 当前会话 ID
+- 当前回答 ID
+- 上一轮用户问题
+- 当前答案正文
+- 当前知识库 ID
+- 当前回答来源文档
+- `channel=normal-chat` 元数据
+
+提交成功后会同步写入：
+
+- `message_feedback`
+- `faq_candidates`
+- `knowledge_gaps`
+- `low_quality_answers`
 
 ---
 

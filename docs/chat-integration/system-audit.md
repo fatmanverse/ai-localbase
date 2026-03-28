@@ -77,6 +77,18 @@
 - 支持 `ticketId / userId / tenantId / sourcePlatform / category / priority / quickPrompts` 等参数
 - 嵌入页固定知识库，不提供切换能力
 
+### 3. 图片知识检索：补齐图片原子 chunk 元数据与图片问法召回增强
+
+已完成：
+
+- 文档 chunk 新增 `chunkType / chunkProfile / topic` 元数据
+- 图片知识段在入索引时明确标记为 `chunk_type=image`
+- FAQ / 操作步骤 / 参数 / 排障 chunk 也会写入结构化类型
+- 对旧索引 payload 兼容回填 chunk 元数据，避免历史数据直接失效
+- 当用户问题明显是在问截图 / 页面 / 按钮 / 流程图时，会额外补一轮图片 chunk 召回
+- 重排阶段会对图片型 chunk 做轻量加权，降低“正文压住截图知识”的情况
+- 图片问法下会适度放宽单文档命中限制，避免正文 chunk 把图片 chunk 全部挤掉
+
 ---
 
 ## 当前保留为后续待完善项

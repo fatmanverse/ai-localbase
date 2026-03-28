@@ -25,6 +25,9 @@ const (
 	recommendedEmbeddingProvider     = "ollama"
 	recommendedEmbeddingModel        = "nomic-embed-text"
 	defaultWelcomeMessageTemplate    = "你好，我是 AI LocalBase 助手。{knowledgeBaseHint}"
+	defaultSuggestedPromptOne        = "请总结当前知识库的核心观点"
+	defaultSuggestedPromptTwo        = "请列出这个知识库中最关键的结论"
+	defaultSuggestedPromptThree      = "如果基于当前资料开始实现，下一步建议是什么？"
 	legacyDefaultChatModel           = "qwen3.5:0.8b"
 	legacyDefaultChatTemperature     = 0.7
 	legacyDefaultContextMessageLimit = 12
@@ -505,6 +508,37 @@ func normalizeWelcomeMessageTemplate(value string) string {
 	return trimmed
 }
 
+func defaultSuggestedPrompts() []string {
+	return []string{
+		defaultSuggestedPromptOne,
+		defaultSuggestedPromptTwo,
+		defaultSuggestedPromptThree,
+	}
+}
+
+func normalizeSuggestedPrompts(values []string) []string {
+	items := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		items = append(items, trimmed)
+		if len(items) >= 8 {
+			break
+		}
+	}
+	if len(items) == 0 {
+		return defaultSuggestedPrompts()
+	}
+	return items
+}
+
 func recommendedAppConfig(serverConfig model.ServerConfig) model.AppConfig {
 	chatPrimary := normalizeConfiguredEndpoint(model.ModelEndpointConfig{
 		Provider: recommendedChatProvider,
@@ -535,6 +569,7 @@ func recommendedAppConfig(serverConfig model.ServerConfig) model.AppConfig {
 		},
 		UI: model.UIConfig{
 			WelcomeMessageTemplate: normalizeWelcomeMessageTemplate(""),
+			SuggestedPrompts:       normalizeSuggestedPrompts(nil),
 		},
 	}
 }
@@ -629,6 +664,7 @@ func normalizeAppConfig(cfg model.AppConfig, serverConfig model.ServerConfig) mo
 		},
 		UI: model.UIConfig{
 			WelcomeMessageTemplate: normalizeWelcomeMessageTemplate(cfg.UI.WelcomeMessageTemplate),
+			SuggestedPrompts:       normalizeSuggestedPrompts(cfg.UI.SuggestedPrompts),
 		},
 	}
 }
@@ -731,6 +767,7 @@ func (s *AppService) UpdateConfig(req model.ConfigUpdateRequest) (model.AppConfi
 		},
 		UI: model.UIConfig{
 			WelcomeMessageTemplate: strings.TrimSpace(req.UI.WelcomeMessageTemplate),
+			SuggestedPrompts:       normalizeSuggestedPrompts(req.UI.SuggestedPrompts),
 		},
 	}, s.serverConfig)
 
@@ -1144,6 +1181,8 @@ func buildDocumentContextSummary(document model.Document, knowledgeBaseName stri
 	summary := fmt.Sprintf("当前问答范围为文档《%s》，所属知识库为“%s”。文档摘要：%s", document.Name, knowledgeBaseName, document.ContentPreview)
 	if document.ImageCount > 0 {
 		summary += fmt.Sprintf("。该文档还包含 %d 张已处理图片，可用于回答截图、流程图、表格图相关问题", document.ImageCount)
+	} else {
+		summary += "。当前已检索到的该文档内容以正文文本为主，未发现可直接利用的图片知识"
 	}
 	return summary
 }
@@ -1255,15 +1294,29 @@ func (s *AppService) BuildChatContext(req model.ChatCompletionRequest) (string, 
 		}
 
 		sources := make([]map[string]string, 0, len(kb.Documents))
+		totalImages := 0
 		for _, document := range kb.Documents {
-			sources = append(sources, map[string]string{
+			source := map[string]string{
 				"knowledgeBaseId": kb.ID,
 				"documentId":      document.ID,
 				"documentName":    document.Name,
-			})
+			}
+			imageIDs := includedDocumentImageIDs(document)
+			if len(imageIDs) > 0 {
+				source["imageIds"] = strings.Join(imageIDs, ",")
+				totalImages += len(imageIDs)
+			}
+			sources = append(sources, source)
 		}
 
-		return fmt.Sprintf("当前问答范围为知识库“%s”，其中包含 %d 份文档。", kb.Name, len(kb.Documents)), sources, nil
+		summary := fmt.Sprintf("当前问答范围为知识库“%s”，其中包含 %d 份文档。", kb.Name, len(kb.Documents))
+		if totalImages > 0 {
+			summary += fmt.Sprintf("该知识库还包含 %d 张已处理图片，可用于回答截图、流程图、表格图相关问题。", totalImages)
+		} else {
+			summary += "当前已检索到的知识内容以正文文本为主，未发现可直接利用的图片知识。"
+		}
+
+		return summary, sources, nil
 	}
 
 	if len(s.state.KnowledgeBases) == 0 {
@@ -1484,6 +1537,149 @@ func (s *AppService) DeleteConversation(id string) error {
 	return s.chatHistory.DeleteConversation(id)
 }
 
+type conversationFeedbackStore interface {
+	SaveConversationFeedback(feedback model.ServiceDeskMessageFeedback) (*model.ServiceDeskMessageFeedback, error)
+	GetConversationFeedbackSummary(conversationID string) (map[string]model.ServiceDeskFeedbackSummary, error)
+}
+
+func (s *AppService) SubmitConversationFeedback(req model.ConversationMessageFeedbackRequest) (*model.ConversationMessageFeedbackResponse, error) {
+	if s == nil {
+		return nil, fmt.Errorf("app service is nil")
+	}
+	if s.chatHistory == nil {
+		return nil, fmt.Errorf("chat history store is not configured")
+	}
+	feedbackStore, ok := s.chatHistory.(conversationFeedbackStore)
+	if !ok {
+		return nil, fmt.Errorf("conversation feedback store is not supported")
+	}
+
+	conversationID := strings.TrimSpace(req.ConversationID)
+	if conversationID == "" {
+		return nil, fmt.Errorf("conversation id is required")
+	}
+	messageID := strings.TrimSpace(req.MessageID)
+	if messageID == "" {
+		return nil, fmt.Errorf("message id is required")
+	}
+
+	conversation, err := s.chatHistory.GetConversation(conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if conversation == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
+
+	targetIndex := -1
+	for index, message := range conversation.Messages {
+		if strings.TrimSpace(message.ID) == messageID {
+			targetIndex = index
+			break
+		}
+	}
+	if targetIndex < 0 {
+		return nil, fmt.Errorf("message not found")
+	}
+
+	targetMessage := conversation.Messages[targetIndex]
+	if !strings.EqualFold(strings.TrimSpace(targetMessage.Role), "assistant") {
+		return nil, fmt.Errorf("only assistant messages can receive feedback")
+	}
+
+	questionText := strings.TrimSpace(req.QuestionText)
+	if questionText == "" {
+		questionText = previousConversationUserQuestion(conversation.Messages, targetIndex)
+	}
+	answerText := strings.TrimSpace(req.AnswerText)
+	if answerText == "" {
+		answerText = targetMessage.Content
+	}
+	knowledgeBaseID := firstNonEmpty(strings.TrimSpace(req.KnowledgeBaseID), strings.TrimSpace(conversation.KnowledgeBaseID))
+	sourceDocuments := chooseSourceDocuments(req.SourceDocuments, conversationSourceDocuments(targetMessage.Metadata))
+	metadata := cloneAnyMap(req.Metadata)
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	channel, _ := metadata["channel"].(string)
+	if strings.TrimSpace(channel) == "" {
+		metadata["channel"] = "normal-chat"
+	}
+
+	feedback, err := feedbackStore.SaveConversationFeedback(model.ServiceDeskMessageFeedback{
+		ID:               util.NextID("feedback"),
+		ConversationID:   conversation.ID,
+		MessageID:        targetMessage.ID,
+		UserID:           strings.TrimSpace(req.UserID),
+		FeedbackType:     req.FeedbackType,
+		FeedbackReason:   req.FeedbackReason,
+		FeedbackText:     strings.TrimSpace(req.FeedbackText),
+		QuestionText:     questionText,
+		AnswerText:       answerText,
+		KnowledgeBaseID:  knowledgeBaseID,
+		KBVersion:        strings.TrimSpace(req.KBVersion),
+		RetrievedContext: strings.TrimSpace(req.RetrievedContext),
+		SourceDocuments:  sourceDocuments,
+		Metadata:         metadata,
+		CreatedAt:        util.NowRFC3339(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	summaryMap, err := feedbackStore.GetConversationFeedbackSummary(conversation.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.ConversationMessageFeedbackResponse{
+		Feedback: *feedback,
+		Summary:  summaryMap[targetMessage.ID],
+	}, nil
+}
+
+func previousConversationUserQuestion(messages []model.StoredChatMessage, targetIndex int) string {
+	for cursor := targetIndex - 1; cursor >= 0; cursor -= 1 {
+		message := messages[cursor]
+		if strings.EqualFold(strings.TrimSpace(message.Role), "user") {
+			return strings.TrimSpace(message.Content)
+		}
+	}
+	return ""
+}
+
+func conversationSourceDocuments(metadata map[string]any) []model.ServiceDeskSourceDocument {
+	if len(metadata) == 0 {
+		return nil
+	}
+	raw, ok := metadata["sources"]
+	if !ok || raw == nil {
+		return nil
+	}
+
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]model.ServiceDeskSourceDocument, 0, len(items))
+	for _, item := range items {
+		mapped, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		doc := model.ServiceDeskSourceDocument{
+			KnowledgeBaseID: strings.TrimSpace(fmt.Sprint(mapped["knowledgeBaseId"])),
+			DocumentID:      strings.TrimSpace(fmt.Sprint(mapped["documentId"])),
+			DocumentName:    strings.TrimSpace(fmt.Sprint(mapped["documentName"])),
+		}
+		if doc.KnowledgeBaseID == "" && doc.DocumentID == "" && doc.DocumentName == "" {
+			continue
+		}
+		result = append(result, doc)
+	}
+	return result
+}
+
 func (s *AppService) SetReranker(reranker SemanticReranker) {
 	s.reranker = reranker
 }
@@ -1535,6 +1731,9 @@ func (s *AppService) buildQdrantPoints(chunks []DocumentChunk, vectors [][]float
 			"chunk_id":          chunk.ID,
 			"chunk_index":       chunk.Index,
 			"text":              chunk.Text,
+			"chunk_type":        chunk.ChunkType,
+			"chunk_profile":     chunk.ChunkProfile,
+			"chunk_topic":       chunk.Topic,
 		}
 		if len(chunk.ImageIDs) > 0 {
 			payload["image_ids"] = chunk.ImageIDs
@@ -1617,6 +1816,8 @@ func (s *AppService) retrieveRelevantChunks(req model.ChatCompletionRequest, que
 		}
 	}
 
+	selectionPerDocumentLimit := adjustPerDocumentLimitForQuery(params.perDocumentLimit, query)
+
 	if s.queryRewriter != nil {
 		if setter, ok := s.queryRewriter.(interface {
 			SetChatConfigProvider(func() model.ChatModelConfig)
@@ -1656,7 +1857,7 @@ func (s *AppService) retrieveRelevantChunks(req model.ChatCompletionRequest, que
 		}
 
 		candidates = s.rerankCandidates(ctx, candidates, query)
-		selected := selectWithMMR(candidates, params.finalTopK, params.perDocumentLimit)
+		selected := selectWithMMR(candidates, params.finalTopK, selectionPerDocumentLimit)
 
 		if strings.TrimSpace(req.DocumentID) == "" && isLowConfidenceSelection(query, selected) {
 			expandedCandidateTopK := params.candidateTopK * 2
@@ -1680,7 +1881,7 @@ func (s *AppService) retrieveRelevantChunks(req model.ChatCompletionRequest, que
 			}
 			if len(expandedCandidates) > 0 {
 				expandedCandidates = s.rerankCandidates(ctx, expandedCandidates, query)
-				expandedSelected := selectWithMMR(expandedCandidates, params.finalTopK, params.perDocumentLimit+1)
+				expandedSelected := selectWithMMR(expandedCandidates, params.finalTopK, selectionPerDocumentLimit+1)
 				if selectionQuality(expandedSelected) > selectionQuality(selected) {
 					selected = expandedSelected
 				}
@@ -1706,19 +1907,19 @@ func (s *AppService) retrieveRelevantChunks(req model.ChatCompletionRequest, que
 		}
 	}
 
-	candidates, err := s.collectCandidates(knowledgeBaseIDs, req, queryVector, params.candidateTopK, useHybrid, query)
+	candidates, err := s.collectCandidates(ctx, knowledgeBaseIDs, req, queryVector, params.candidateTopK, useHybrid, query)
 	if err != nil {
 		return nil, err
 	}
 	candidates = s.rerankCandidates(ctx, candidates, query)
-	selected := selectWithMMR(candidates, params.finalTopK, params.perDocumentLimit)
+	selected := selectWithMMR(candidates, params.finalTopK, selectionPerDocumentLimit)
 
 	if strings.TrimSpace(req.DocumentID) == "" && isLowConfidenceSelection(query, selected) {
 		expandedCandidateTopK := params.candidateTopK * 2
-		expandedCandidates, err := s.collectCandidates(knowledgeBaseIDs, req, queryVector, expandedCandidateTopK, useHybrid, query)
+		expandedCandidates, err := s.collectCandidates(ctx, knowledgeBaseIDs, req, queryVector, expandedCandidateTopK, useHybrid, query)
 		if err == nil {
 			expandedCandidates = s.rerankCandidates(ctx, expandedCandidates, query)
-			expandedSelected := selectWithMMR(expandedCandidates, params.finalTopK, params.perDocumentLimit+1)
+			expandedSelected := selectWithMMR(expandedCandidates, params.finalTopK, selectionPerDocumentLimit+1)
 			if selectionQuality(expandedSelected) > selectionQuality(selected) {
 				selected = expandedSelected
 			}
@@ -1874,59 +2075,57 @@ func resolveRetrievalParams(req model.ChatCompletionRequest) retrievalParams {
 	}
 }
 
-func (s *AppService) collectCandidates(knowledgeBaseIDs []string, req model.ChatCompletionRequest, queryVector []float64, candidateTopK int, useHybrid bool, query string) ([]RetrievedChunk, error) {
+func (s *AppService) searchKnowledgeBase(ctx context.Context, knowledgeBaseID string, queryVector []float64, topK int, useHybrid bool, query string, filter map[string]any) ([]SearchResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if useHybrid {
+		log.Printf("hybrid search enabled for knowledge base %s", knowledgeBaseID)
+		sparseVector := BuildSparseVector(query)
+		items, err := s.rag.SearchHybrid(ctx, s.qdrant, knowledgeBaseID, queryVector, sparseVector, topK, filter)
+		if err != nil {
+			return nil, fmt.Errorf("hybrid search qdrant collection %s: %w", knowledgeBaseID, err)
+		}
+		return items, nil
+	}
+	items, err := s.qdrant.Search(ctx, knowledgeBaseID, queryVector, topK, filter)
+	if err != nil {
+		return nil, fmt.Errorf("search qdrant collection %s: %w", knowledgeBaseID, err)
+	}
+	return items, nil
+}
+
+func (s *AppService) collectCandidates(ctx context.Context, knowledgeBaseIDs []string, req model.ChatCompletionRequest, queryVector []float64, candidateTopK int, useHybrid bool, query string) ([]RetrievedChunk, error) {
 	results := make([]RetrievedChunk, 0)
 	seenChunkIDs := make(map[string]struct{})
+	imageIntent := util.IsImageIntentQuery(query)
 	for _, knowledgeBaseID := range knowledgeBaseIDs {
-		filter := map[string]any{}
-		if strings.TrimSpace(req.DocumentID) != "" {
-			filter = map[string]any{
-				"must": []map[string]any{{
-					"key":   "document_id",
-					"match": map[string]any{"value": req.DocumentID},
-				}},
+		baseFilter := buildQdrantFilter(req.DocumentID, "")
+		items, err := s.searchKnowledgeBase(ctx, knowledgeBaseID, queryVector, candidateTopK, useHybrid, query, baseFilter)
+		if err != nil {
+			return nil, err
+		}
+		if imageIntent {
+			extraTopK := candidateTopK + 2
+			if extraTopK < candidateTopK {
+				extraTopK = candidateTopK
+			}
+			imageItems, imageErr := s.searchKnowledgeBase(ctx, knowledgeBaseID, queryVector, extraTopK, useHybrid, query, buildQdrantFilter(req.DocumentID, DocumentChunkTypeImage))
+			if imageErr == nil {
+				items = mergeSearchResultsByChunkID(items, imageItems)
+			}
+			expandedItems, expandedErr := s.searchKnowledgeBase(ctx, knowledgeBaseID, queryVector, extraTopK, useHybrid, query, baseFilter)
+			if expandedErr == nil {
+				items = mergeSearchResultsByChunkID(items, expandedItems)
 			}
 		}
 
-		var items []SearchResult
-		if useHybrid {
-			log.Printf("hybrid search enabled for knowledge base %s", knowledgeBaseID)
-			sparseVector := BuildSparseVector(query)
-			searchResults, err := s.rag.SearchHybrid(context.Background(), s.qdrant, knowledgeBaseID, queryVector, sparseVector, candidateTopK, filter)
-			if err != nil {
-				return nil, fmt.Errorf("hybrid search qdrant collection %s: %w", knowledgeBaseID, err)
-			}
-			items = searchResults
-		} else {
-			searchResults, err := s.qdrant.Search(context.Background(), knowledgeBaseID, queryVector, candidateTopK, filter)
-			if err != nil {
-				return nil, fmt.Errorf("search qdrant collection %s: %w", knowledgeBaseID, err)
-			}
-			items = searchResults
-		}
-
-		for _, item := range items {
-			chunkID := payloadString(item.Payload, "chunk_id", item.ID)
-			if _, exists := seenChunkIDs[chunkID]; exists {
+		for _, chunk := range searchResultsToRetrievedChunks(items, knowledgeBaseID) {
+			if _, exists := seenChunkIDs[chunk.ID]; exists {
 				continue
 			}
-			text := payloadString(item.Payload, "text", "")
-			if strings.TrimSpace(text) == "" {
-				continue
-			}
-			seenChunkIDs[chunkID] = struct{}{}
-			results = append(results, RetrievedChunk{
-				DocumentChunk: DocumentChunk{
-					ID:              chunkID,
-					KnowledgeBaseID: payloadString(item.Payload, "knowledge_base_id", knowledgeBaseID),
-					DocumentID:      payloadString(item.Payload, "document_id", ""),
-					DocumentName:    payloadString(item.Payload, "document_name", "未知文档"),
-					Text:            text,
-					Index:           payloadInt(item.Payload, "chunk_index"),
-					ImageIDs:        payloadStrings(item.Payload, "image_ids"),
-				},
-				Score: item.Score,
-			})
+			seenChunkIDs[chunk.ID] = struct{}{}
+			results = append(results, chunk)
 		}
 	}
 	return results, nil
@@ -1937,30 +2136,37 @@ func (s *AppService) rerankCandidates(ctx context.Context, candidates []Retrieve
 		return nil
 	}
 
+	var ranked []RetrievedChunk
 	if s != nil && s.serverConfig.EnableSemanticReranker && s.reranker != nil {
-		ranked, err := s.reranker.Rerank(ctx, query, candidates)
-		if err == nil && len(ranked) > 0 {
-			return ranked
+		semanticRanked, err := s.reranker.Rerank(ctx, query, candidates)
+		if err == nil && len(semanticRanked) > 0 {
+			ranked = semanticRanked
 		}
 	}
 
-	ranked := make([]RetrievedChunk, len(candidates))
-	copy(ranked, candidates)
+	if len(ranked) == 0 {
+		ranked = make([]RetrievedChunk, len(candidates))
+		copy(ranked, candidates)
 
-	minScore, maxScore := ranked[0].Score, ranked[0].Score
-	for _, item := range ranked {
-		if item.Score < minScore {
-			minScore = item.Score
+		minScore, maxScore := ranked[0].Score, ranked[0].Score
+		for _, item := range ranked {
+			if item.Score < minScore {
+				minScore = item.Score
+			}
+			if item.Score > maxScore {
+				maxScore = item.Score
+			}
 		}
-		if item.Score > maxScore {
-			maxScore = item.Score
+
+		for i := range ranked {
+			vectorScore := normalizeScore(ranked[i].Score, minScore, maxScore)
+			keywordScore := keywordCoverage(query, ranked[i].Text)
+			ranked[i].Score = rerankVectorWeight*vectorScore + rerankKeywordWeight*keywordScore + scoreBoost(ranked[i].Text)
 		}
 	}
 
 	for i := range ranked {
-		vectorScore := normalizeScore(ranked[i].Score, minScore, maxScore)
-		keywordScore := keywordCoverage(query, ranked[i].Text)
-		ranked[i].Score = rerankVectorWeight*vectorScore + rerankKeywordWeight*keywordScore + scoreBoost(ranked[i].Text)
+		ranked[i].Score += imageIntentBoost(query, ranked[i])
 	}
 
 	sort.Slice(ranked, func(i, j int) bool {

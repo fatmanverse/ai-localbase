@@ -280,6 +280,25 @@ func (s *SQLiteChatHistoryStore) GetConversation(id string) (*model.Conversation
 		return nil, fmt.Errorf("iterate conversation messages: %w", err)
 	}
 
+	feedbackSummaryMap, err := s.feedbackSummaryMap(conversationID)
+	if err != nil {
+		return nil, err
+	}
+	for index, message := range conversation.Messages {
+		if !strings.EqualFold(strings.TrimSpace(message.Role), "assistant") {
+			continue
+		}
+		summary, ok := feedbackSummaryMap[message.ID]
+		if !ok {
+			continue
+		}
+		if message.Metadata == nil {
+			message.Metadata = map[string]any{}
+		}
+		message.Metadata["feedbackSummary"] = summary
+		conversation.Messages[index] = message
+	}
+
 	return &conversation, nil
 }
 

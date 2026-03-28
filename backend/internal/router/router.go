@@ -24,6 +24,7 @@ func NewRouter(appHandler *handler.AppHandler) *gin.Engine {
 		api.GET("/conversations", appHandler.ListConversations)
 		api.GET("/conversations/:id", appHandler.GetConversation)
 		api.PUT("/conversations/:id", appHandler.SaveConversation)
+		api.POST("/conversations/:id/messages/:messageId/feedback", appHandler.SubmitConversationFeedback)
 		api.DELETE("/conversations/:id", appHandler.DeleteConversation)
 		api.GET("/knowledge-bases", appHandler.ListKnowledgeBases)
 		api.POST("/knowledge-bases", appHandler.CreateKnowledgeBase)

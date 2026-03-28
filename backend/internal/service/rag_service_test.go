@@ -54,6 +54,113 @@ func TestRagServiceBuildDocumentChunks(t *testing.T) {
 	}
 }
 
+func TestRagServiceBuildDocumentChunksKeepsFAQBlocks(t *testing.T) {
+	rag := NewRagService()
+	document := model.Document{
+		ID:              "doc-faq",
+		KnowledgeBaseID: "kb-1",
+		Name:            "redis-faq.md",
+	}
+
+	text := strings.TrimSpace(`问：Redis 支持哪些核心能力？
+答：支持高性能缓存、数据结构操作、持久化和发布订阅。
+
+问：Redis 持久化应该怎么选？
+答：如果更看重恢复速度可以优先看 RDB，如果更看重数据完整性可以结合 AOF。`)
+
+	chunks := rag.BuildDocumentChunks(document, text)
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 faq chunks, got %d", len(chunks))
+	}
+	if !strings.Contains(chunks[0].Text, "问：Redis 支持哪些核心能力") || !strings.Contains(chunks[0].Text, "答：支持高性能缓存") {
+		t.Fatalf("expected first faq chunk to keep qa block, got %q", chunks[0].Text)
+	}
+	if !strings.Contains(chunks[1].Text, "问：Redis 持久化应该怎么选") || !strings.Contains(chunks[1].Text, "答：如果更看重恢复速度") {
+		t.Fatalf("expected second faq chunk to keep qa block, got %q", chunks[1].Text)
+	}
+}
+
+func TestRagServiceBuildDocumentChunksSeparatesImageKnowledgeBlocks(t *testing.T) {
+	rag := NewRagService()
+	document := model.Document{
+		ID:              "doc-image-aware",
+		KnowledgeBaseID: "kb-1",
+		Name:            "image-guide.md",
+	}
+
+	text := strings.TrimSpace(`正文说明：登录后先进入审批页。
+
+## 图片知识补充
+图片ID: img-001
+图片类型: 关键操作截图
+图片说明: 审批页右上角包含“保存”按钮。
+图片OCR: 保存 提交 返回
+
+图片ID: img-002
+图片类型: 流程图/架构图
+图片说明: 提交流程先经过审批，再进入归档。
+图片OCR: 提交 审批 归档`)
+
+	chunks := rag.BuildDocumentChunks(document, text)
+	if len(chunks) < 3 {
+		t.Fatalf("expected body chunk + 2 image chunks, got %d", len(chunks))
+	}
+	var imageChunkCount int
+	for _, chunk := range chunks {
+		if len(chunk.ImageIDs) > 0 {
+			imageChunkCount += 1
+		}
+	}
+	if imageChunkCount < 2 {
+		t.Fatalf("expected image knowledge blocks to remain independently retrievable, got %d", imageChunkCount)
+	}
+}
+
+func TestRagServiceBuildDocumentChunksAddsStructuredMetadata(t *testing.T) {
+	rag := NewRagService()
+	faqDocument := model.Document{ID: "doc-faq-meta", KnowledgeBaseID: "kb-1", Name: "ops-faq.md"}
+	faqChunks := rag.BuildDocumentChunks(faqDocument, strings.TrimSpace(`问：如何重置密码？
+答：进入账号中心后点击“重置密码”。`))
+	if len(faqChunks) != 1 {
+		t.Fatalf("expected 1 faq chunk, got %d", len(faqChunks))
+	}
+	if faqChunks[0].ChunkType != DocumentChunkTypeFAQ {
+		t.Fatalf("expected faq chunk type, got %s", faqChunks[0].ChunkType)
+	}
+	if faqChunks[0].ChunkProfile != string(util.DocumentChunkProfileFAQ) {
+		t.Fatalf("expected faq chunk profile, got %s", faqChunks[0].ChunkProfile)
+	}
+	if !strings.Contains(faqChunks[0].Topic, "如何重置密码") {
+		t.Fatalf("expected faq topic to contain question, got %q", faqChunks[0].Topic)
+	}
+
+	imageDocument := model.Document{ID: "doc-image-meta", KnowledgeBaseID: "kb-1", Name: "ui-guide.md"}
+	imageChunks := rag.BuildDocumentChunks(imageDocument, strings.TrimSpace(`正文说明：审批完成后需要保存。
+
+## 图片知识补充
+图片ID: img-100
+图片类型: 关键操作截图
+图片标题: 审批页操作区
+图片说明: 审批页右上角包含保存按钮。
+图片OCR: 保存 提交 返回`))
+	var imageChunk *DocumentChunk
+	for index := range imageChunks {
+		if imageChunks[index].ChunkType == DocumentChunkTypeImage {
+			imageChunk = &imageChunks[index]
+			break
+		}
+	}
+	if imageChunk == nil {
+		t.Fatal("expected image chunk metadata to be generated")
+	}
+	if imageChunk.ChunkProfile != documentChunkProfileImageKnowledge {
+		t.Fatalf("expected image chunk profile, got %s", imageChunk.ChunkProfile)
+	}
+	if imageChunk.Topic != "审批页操作区" {
+		t.Fatalf("expected image chunk topic to use image title, got %q", imageChunk.Topic)
+	}
+}
+
 func TestRagServiceEmbedTextsFallback(t *testing.T) {
 	rag := NewRagService()
 	cfg := model.EmbeddingModelConfig{

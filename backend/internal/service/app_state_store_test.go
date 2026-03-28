@@ -151,6 +151,9 @@ func TestNewAppServiceUsesRecommendedDefaultConfig(t *testing.T) {
 	if cfg.UI.WelcomeMessageTemplate != defaultWelcomeMessageTemplate {
 		t.Fatalf("expected default welcome message template %q, got %q", defaultWelcomeMessageTemplate, cfg.UI.WelcomeMessageTemplate)
 	}
+	if len(cfg.UI.SuggestedPrompts) != 3 {
+		t.Fatalf("expected 3 default suggested prompts, got %d", len(cfg.UI.SuggestedPrompts))
+	}
 }
 
 func TestNewAppServiceMigratesLegacyDefaultConfig(t *testing.T) {

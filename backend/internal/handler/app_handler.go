@@ -99,6 +99,26 @@ func (h *AppHandler) SaveConversation(c *gin.Context) {
 	c.JSON(http.StatusOK, conversation)
 }
 
+func (h *AppHandler) SubmitConversationFeedback(c *gin.Context) {
+	var req model.ConversationMessageFeedbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeError(c, http.StatusBadRequest, "invalid conversation feedback request body")
+		return
+	}
+	if strings.TrimSpace(req.ConversationID) == "" {
+		req.ConversationID = c.Param("id")
+	}
+	if strings.TrimSpace(req.MessageID) == "" {
+		req.MessageID = c.Param("messageId")
+	}
+	result, err := h.appService.SubmitConversationFeedback(req)
+	if err != nil {
+		writeError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
 func (h *AppHandler) DeleteConversation(c *gin.Context) {
 	if err := h.appService.DeleteConversation(c.Param("id")); err != nil {
 		writeError(c, http.StatusInternalServerError, err.Error())
@@ -255,7 +275,7 @@ func (h *AppHandler) ChatCompletions(c *gin.Context) {
 		return
 	}
 
-	preparedReq, sources, err := h.prepareChatRequest(req)
+	preparedReq, sources, relatedImages, err := h.prepareChatRequest(req)
 	if err != nil {
 		writeError(c, http.StatusBadRequest, err.Error())
 		return
@@ -271,6 +291,7 @@ func (h *AppHandler) ChatCompletions(c *gin.Context) {
 		response.Metadata = map[string]any{}
 	}
 	response.Metadata["sources"] = sources
+	response.Metadata["relatedImages"] = relatedImages
 	response.Metadata["knowledgeBaseId"] = req.KnowledgeBaseID
 	response.Metadata["documentId"] = req.DocumentID
 
@@ -298,7 +319,7 @@ func (h *AppHandler) ChatCompletionsStream(c *gin.Context) {
 		return
 	}
 
-	preparedReq, sources, err := h.prepareChatRequest(req)
+	preparedReq, sources, relatedImages, err := h.prepareChatRequest(req)
 	if err != nil {
 		writeError(c, http.StatusBadRequest, err.Error())
 		return
@@ -318,10 +339,11 @@ func (h *AppHandler) ChatCompletionsStream(c *gin.Context) {
 
 	initialMeta := gin.H{
 		"sources":         sources,
+		"relatedImages":   relatedImages,
 		"knowledgeBaseId": req.KnowledgeBaseID,
 		"documentId":      req.DocumentID,
 	}
-	c.SSEvent("meta", initialMeta)
+	c.SSEvent("meta", gin.H{"metadata": initialMeta})
 	flusher.Flush()
 
 	assistantContent := strings.Builder{}
@@ -343,7 +365,7 @@ func (h *AppHandler) ChatCompletionsStream(c *gin.Context) {
 		Title:           "",
 		KnowledgeBaseID: req.KnowledgeBaseID,
 		DocumentID:      req.DocumentID,
-		Messages:        buildStoredConversationMessages(req.Messages, fullAssistantContent, nil),
+		Messages:        buildStoredConversationMessages(req.Messages, fullAssistantContent, initialMeta),
 	})
 	if saveErr != nil {
 		c.SSEvent("error", gin.H{"error": saveErr.Error()})
@@ -351,23 +373,23 @@ func (h *AppHandler) ChatCompletionsStream(c *gin.Context) {
 		return
 	}
 
-	c.SSEvent("done", gin.H{"content": fullAssistantContent})
+	c.SSEvent("done", gin.H{"content": fullAssistantContent, "metadata": initialMeta})
 	flusher.Flush()
 }
 
-func (h *AppHandler) prepareChatRequest(req model.ChatCompletionRequest) (model.ChatCompletionRequest, []map[string]string, error) {
+func (h *AppHandler) prepareChatRequest(req model.ChatCompletionRequest) (model.ChatCompletionRequest, []map[string]string, []model.ServiceDeskImageReference, error) {
 	if len(req.Messages) == 0 {
-		return model.ChatCompletionRequest{}, nil, fmt.Errorf("messages cannot be empty")
+		return model.ChatCompletionRequest{}, nil, nil, fmt.Errorf("messages cannot be empty")
 	}
 
 	retrievalContext, retrievalSources, err := h.appService.BuildRetrievalContext(req)
 	if err != nil {
-		return model.ChatCompletionRequest{}, nil, err
+		return model.ChatCompletionRequest{}, nil, nil, err
 	}
 
 	contextSummary, sources, err := h.appService.BuildChatContext(req)
 	if err != nil {
-		return model.ChatCompletionRequest{}, nil, err
+		return model.ChatCompletionRequest{}, nil, nil, err
 	}
 
 	allSources := append(retrievalSources, sources...)
@@ -451,6 +473,9 @@ func (h *AppHandler) prepareChatRequest(req model.ChatCompletionRequest) (model.
 			"- 只基于以下上下文作答；信息不足时明确说明",
 			"- 不要重复用户的问题，直接输出结构化内容",
 			"- 回答长度适中，每个子章节 2 至 4 条要点即可，保持空行分隔，禁止连续写成一行",
+			"- 若上下文包含图片 OCR、图片说明、流程图、截图或表格图信息，必须综合这些图片知识作答，不能只按纯文本理解",
+			"- 不得自行声称系统只支持文本检索、无法展示图片、文档完全没有图片，除非上下文已明确说明当前检索结果未包含可用图片知识",
+			"- 如果当前检索结果没有可用图片信息，应表述为“当前检索结果未包含可直接利用的图片知识”，不要上升为系统能力限制",
 			"",
 			"## 上下文",
 			strings.Join(contextParts, "\n\n"),
@@ -463,7 +488,7 @@ func (h *AppHandler) prepareChatRequest(req model.ChatCompletionRequest) (model.
 		}}, preparedReq.Messages...)
 	}
 
-	return preparedReq, allSources, nil
+	return preparedReq, allSources, h.appService.ResolveRelatedImages(allSources), nil
 }
 
 func (h *AppHandler) handleUpload(c *gin.Context, candidateKnowledgeBaseID string) {

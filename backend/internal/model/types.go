@@ -67,7 +67,8 @@ type EmbeddingConfig struct {
 }
 
 type UIConfig struct {
-	WelcomeMessageTemplate string `json:"welcomeMessageTemplate"`
+	WelcomeMessageTemplate string   `json:"welcomeMessageTemplate"`
+	SuggestedPrompts       []string `json:"suggestedPrompts"`
 }
 
 type AppConfig struct {
@@ -198,6 +199,27 @@ type SaveConversationRequest struct {
 	KnowledgeBaseID string              `json:"knowledgeBaseId"`
 	DocumentID      string              `json:"documentId"`
 	Messages        []StoredChatMessage `json:"messages"`
+}
+
+type ConversationMessageFeedbackRequest struct {
+	ConversationID   string                      `json:"conversationId"`
+	MessageID        string                      `json:"messageId"`
+	UserID           string                      `json:"userId,omitempty"`
+	FeedbackType     string                      `json:"feedbackType"`
+	FeedbackReason   string                      `json:"feedbackReason,omitempty"`
+	FeedbackText     string                      `json:"feedbackText,omitempty"`
+	QuestionText     string                      `json:"questionText,omitempty"`
+	AnswerText       string                      `json:"answerText,omitempty"`
+	KnowledgeBaseID  string                      `json:"knowledgeBaseId,omitempty"`
+	KBVersion        string                      `json:"kbVersion,omitempty"`
+	RetrievedContext string                      `json:"retrievedContext,omitempty"`
+	SourceDocuments  []ServiceDeskSourceDocument `json:"sourceDocuments,omitempty"`
+	Metadata         map[string]any              `json:"metadata,omitempty"`
+}
+
+type ConversationMessageFeedbackResponse struct {
+	Feedback ServiceDeskMessageFeedback `json:"feedback"`
+	Summary  ServiceDeskFeedbackSummary `json:"summary"`
 }
 
 type APIError struct {

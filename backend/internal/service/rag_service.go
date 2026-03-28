@@ -133,6 +133,9 @@ type DocumentChunk struct {
 	Text            string
 	Index           int
 	ImageIDs        []string
+	ChunkType       string
+	ChunkProfile    string
+	Topic           string
 }
 
 // SparseVector 稀疏向量（词项索引 -> 权重）
@@ -195,9 +198,15 @@ func (s *RagService) ChunkText(text string) []string {
 }
 
 func (s *RagService) BuildDocumentChunks(document model.Document, text string) []DocumentChunk {
-	parts := s.ChunkText(text)
+	cfg := util.DefaultSemanticChunkConfig()
+	cfg.MaxChunkSize = defaultChunkSize
+	cfg.OverlapSize = defaultChunkOverlap
+	parts := util.ChunkDocumentText(document.Name, text, cfg)
+	fallbackProfile := util.DetectDocumentChunkProfile(document.Name, text)
 	chunks := make([]DocumentChunk, 0, len(parts))
 	for index, part := range parts {
+		imageIDs := util.ExtractImageIDsFromText(part)
+		chunkType, chunkProfile, topic := inferDocumentChunkMetadata(document.Name, fallbackProfile, part, imageIDs)
 		chunks = append(chunks, DocumentChunk{
 			ID:              fmt.Sprintf("%s-chunk-%d", document.ID, index),
 			KnowledgeBaseID: document.KnowledgeBaseID,
@@ -205,7 +214,10 @@ func (s *RagService) BuildDocumentChunks(document model.Document, text string) [
 			DocumentName:    document.Name,
 			Text:            part,
 			Index:           index,
-			ImageIDs:        util.ExtractImageIDsFromText(part),
+			ImageIDs:        imageIDs,
+			ChunkType:       chunkType,
+			ChunkProfile:    chunkProfile,
+			Topic:           topic,
 		})
 	}
 
@@ -302,6 +314,15 @@ func (s *RagService) BuildContext(chunks []RetrievedChunk) (string, []map[string
 		}
 		if len(chunk.ImageIDs) > 0 {
 			source["imageIds"] = strings.Join(chunk.ImageIDs, ",")
+		}
+		if strings.TrimSpace(chunk.ChunkType) != "" {
+			source["chunkType"] = chunk.ChunkType
+		}
+		if strings.TrimSpace(chunk.ChunkProfile) != "" {
+			source["chunkProfile"] = chunk.ChunkProfile
+		}
+		if strings.TrimSpace(chunk.Topic) != "" {
+			source["chunkTopic"] = chunk.Topic
 		}
 		sources = append(sources, source)
 	}
@@ -418,11 +439,24 @@ func (r *RagService) MultiQuerySearch(
 				return
 			}
 
-			filter := map[string]any{}
-			items, err := r.qdrant.Search(ctx, collectionName, vectors[0], topK, filter)
+			items, err := r.qdrant.Search(ctx, collectionName, vectors[0], topK, map[string]any{})
 			if err != nil {
 				errChan <- err
 				return
+			}
+			if util.IsImageIntentQuery(q) {
+				extraTopK := topK + 2
+				if extraTopK < topK {
+					extraTopK = topK
+				}
+				imageItems, imageErr := r.qdrant.Search(ctx, collectionName, vectors[0], extraTopK, buildQdrantFilter("", DocumentChunkTypeImage))
+				if imageErr == nil {
+					items = mergeSearchResultsByChunkID(items, imageItems)
+				}
+				expandedItems, expandedErr := r.qdrant.Search(ctx, collectionName, vectors[0], extraTopK, map[string]any{})
+				if expandedErr == nil {
+					items = mergeSearchResultsByChunkID(items, expandedItems)
+				}
 			}
 
 			results := make([]RetrievedChunk, 0, len(items))
@@ -430,23 +464,11 @@ func (r *RagService) MultiQuerySearch(
 				if threshold > 0 && item.Score < float64(threshold) {
 					continue
 				}
-				chunkID := payloadString(item.Payload, "chunk_id", item.ID)
-				text := payloadString(item.Payload, "text", "")
-				if strings.TrimSpace(text) == "" {
+				chunk, ok := searchResultToRetrievedChunk(item, collectionName)
+				if !ok {
 					continue
 				}
-				results = append(results, RetrievedChunk{
-					DocumentChunk: DocumentChunk{
-						ID:              chunkID,
-						KnowledgeBaseID: payloadString(item.Payload, "knowledge_base_id", collectionName),
-						DocumentID:      payloadString(item.Payload, "document_id", ""),
-						DocumentName:    payloadString(item.Payload, "document_name", "未知文档"),
-						Text:            text,
-						Index:           payloadInt(item.Payload, "chunk_index"),
-						ImageIDs:        payloadStrings(item.Payload, "image_ids"),
-					},
-					Score: item.Score,
-				})
+				results = append(results, chunk)
 			}
 			resultChan <- results
 		}(query)

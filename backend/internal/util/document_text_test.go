@@ -115,3 +115,41 @@ func TestSemanticChunkAllowsDisablePreserveNewline(t *testing.T) {
 		t.Fatalf("expected merged chunk to contain full content, got %q", chunks[0])
 	}
 }
+
+func TestExtractChunkTopic(t *testing.T) {
+	imageTopic := ExtractChunkTopic(`图片ID: img-1
+图片标题: 审批页操作区
+图片说明: 右上角有保存按钮。`)
+	if imageTopic != "审批页操作区" {
+		t.Fatalf("expected image title topic, got %q", imageTopic)
+	}
+
+	faqTopic := ExtractChunkTopic(`问：如何切换知识库？
+答：新建会话时先选择知识库。`)
+	if !strings.Contains(faqTopic, "如何切换知识库") {
+		t.Fatalf("expected faq topic, got %q", faqTopic)
+	}
+}
+
+func TestIsImageIntentQuery(t *testing.T) {
+	positive := []string{
+		"截图里的保存按钮在哪",
+		"请结合流程图解释审批路径",
+		"页面上这个按钮是什么意思",
+	}
+	for _, query := range positive {
+		if !IsImageIntentQuery(query) {
+			t.Fatalf("expected image intent query to be detected: %s", query)
+		}
+	}
+
+	negative := []string{
+		"如何配置向量模型",
+		"知识库默认切片大小是多少",
+	}
+	for _, query := range negative {
+		if IsImageIntentQuery(query) {
+			t.Fatalf("expected non-image query to remain false: %s", query)
+		}
+	}
+}

@@ -395,3 +395,70 @@ GET /api/service-desk/analytics/summary
 - `tenantId`
 - `ticketId`
 - `createdAt`
+
+---
+
+## 8. 普通聊天页消息反馈接口
+
+如果你接的是 AI LocalBase 自带普通聊天页，或者你希望沿用普通会话模型，也可以直接使用这条接口提交反馈：
+
+```http
+POST /api/conversations/:id/messages/:messageId/feedback
+Content-Type: application/json
+```
+
+### 请求体
+
+```json
+{
+  "feedbackType": "dislike",
+  "feedbackReason": "内容不完整",
+  "feedbackText": "少了截图里的操作位置说明",
+  "questionText": "如何在系统里保存审批配置？",
+  "answerText": "...可选，留空时服务端自动补齐...",
+  "knowledgeBaseId": "kb-it-support",
+  "sourceDocuments": [
+    {
+      "knowledgeBaseId": "kb-it-support",
+      "documentId": "doc-1",
+      "documentName": "审批配置手册.pdf"
+    }
+  ],
+  "metadata": {
+    "channel": "normal-chat-ui"
+  }
+}
+```
+
+### 响应体
+
+```json
+{
+  "feedback": {
+    "id": "feedback-1",
+    "conversationId": "conv-1",
+    "messageId": "msg-2",
+    "feedbackType": "dislike",
+    "feedbackReason": "内容不完整",
+    "createdAt": "2025-03-28T10:00:00Z"
+  },
+  "summary": {
+    "likeCount": 0,
+    "dislikeCount": 1,
+    "latestFeedbackId": "feedback-1",
+    "latestFeedback": "dislike:内容不完整",
+    "status": "needs-improvement"
+  }
+}
+```
+
+### 说明
+
+- 服务端会校验会话和回答消息是否存在。
+- 如果 `questionText` / `answerText` 为空，服务端会自动从当前会话里补齐。
+- 反馈会直接进入统一治理表：
+  - `message_feedback`
+  - `faq_candidates`
+  - `knowledge_gaps`
+  - `low_quality_answers`
+- 普通聊天页重新加载会话详情时，也会把 `feedbackSummary` 回填到对应回答消息上。

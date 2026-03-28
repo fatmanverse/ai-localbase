@@ -341,6 +341,21 @@ func (s *SQLiteChatHistoryStore) ListServiceDeskMessages(conversationID string) 
 }
 
 func (s *SQLiteChatHistoryStore) SaveServiceDeskFeedback(feedback model.ServiceDeskMessageFeedback) (*model.ServiceDeskMessageFeedback, error) {
+	return s.saveMessageFeedback(feedback)
+}
+
+func (s *SQLiteChatHistoryStore) SaveConversationFeedback(feedback model.ServiceDeskMessageFeedback) (*model.ServiceDeskMessageFeedback, error) {
+	return s.saveMessageFeedback(feedback)
+}
+
+func (s *SQLiteChatHistoryStore) GetConversationFeedbackSummary(conversationID string) (map[string]model.ServiceDeskFeedbackSummary, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("sqlite chat history store is nil")
+	}
+	return s.feedbackSummaryMap(strings.TrimSpace(conversationID))
+}
+
+func (s *SQLiteChatHistoryStore) saveMessageFeedback(feedback model.ServiceDeskMessageFeedback) (*model.ServiceDeskMessageFeedback, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("sqlite chat history store is nil")
 	}

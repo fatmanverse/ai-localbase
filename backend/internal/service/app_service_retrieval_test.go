@@ -78,6 +78,58 @@ func TestRerankCandidatesBoostsKeywordCoverage(t *testing.T) {
 	}
 }
 
+func TestRerankCandidatesBoostsImageChunksForImageIntent(t *testing.T) {
+	query := "截图里的保存按钮在哪"
+	candidates := []RetrievedChunk{
+		{DocumentChunk: DocumentChunk{DocumentID: "doc-text", Text: "审批页面完成后可以继续提交。", Index: 0, ChunkType: DocumentChunkTypeText}, Score: 0.91},
+		{DocumentChunk: DocumentChunk{DocumentID: "doc-image", Text: `图片ID: img-1
+图片说明: 审批页右上角包含保存按钮。
+图片OCR: 保存 提交 返回`, Index: 1, ChunkType: DocumentChunkTypeImage, Topic: "审批页右上角保存按钮"}, Score: 0.89},
+		{DocumentChunk: DocumentChunk{DocumentID: "doc-misc", Text: "归档记录将在夜间批量同步。", Index: 2, ChunkType: DocumentChunkTypeText}, Score: 0.10},
+	}
+
+	service := &AppService{}
+	ranked := service.rerankCandidates(context.Background(), candidates, query)
+	if len(ranked) != len(candidates) {
+		t.Fatalf("expected ranked size %d, got %d", len(candidates), len(ranked))
+	}
+	if ranked[0].DocumentID != "doc-image" {
+		t.Fatalf("expected image chunk to rank first for image intent query, got %s", ranked[0].DocumentID)
+	}
+}
+
+func TestSearchResultToRetrievedChunkInfersLegacyChunkMetadata(t *testing.T) {
+	item := SearchResult{
+		ID:    "legacy-1",
+		Score: 0.77,
+		Payload: map[string]any{
+			"knowledge_base_id": "kb-1",
+			"document_id":       "doc-1",
+			"document_name":     "ui-guide.md",
+			"chunk_id":          "doc-1-chunk-2",
+			"chunk_index":       2,
+			"text": `图片ID: img-9
+图片标题: 审批页操作区
+图片说明: 右上角有保存按钮。`,
+			"image_ids": []any{"img-9"},
+		},
+	}
+
+	chunk, ok := searchResultToRetrievedChunk(item, "kb-1")
+	if !ok {
+		t.Fatal("expected legacy payload to be converted into retrieved chunk")
+	}
+	if chunk.ChunkType != DocumentChunkTypeImage {
+		t.Fatalf("expected inferred image chunk type, got %s", chunk.ChunkType)
+	}
+	if chunk.ChunkProfile != documentChunkProfileImageKnowledge {
+		t.Fatalf("expected inferred image chunk profile, got %s", chunk.ChunkProfile)
+	}
+	if chunk.Topic != "审批页操作区" {
+		t.Fatalf("expected inferred chunk topic, got %q", chunk.Topic)
+	}
+}
+
 func TestCosineSimilarity(t *testing.T) {
 	vecA := []float32{1, 0, 0}
 	vecB := []float32{1, 0, 0}

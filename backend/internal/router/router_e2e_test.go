@@ -223,6 +223,99 @@ Redis 支持过期时间设置，适合用作会话缓存或临时数据存储�
 	}
 }
 
+func TestConversationFeedbackAndConversationDetailSummary(t *testing.T) {
+	engine, modelBaseURL, cleanup := newTestRouter(t)
+	defer cleanup()
+
+	listResp := performRequest(t, engine, http.MethodGet, "/api/knowledge-bases", nil, "")
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", listResp.Code, listResp.Body.String())
+	}
+
+	var kbList struct {
+		Items []model.KnowledgeBase `json:"items"`
+	}
+	decodeJSONResponse(t, listResp.Body.Bytes(), &kbList)
+	knowledgeBaseID := kbList.Items[0].ID
+
+	chatPayload := map[string]any{
+		"conversationId":  "conv-feedback-1",
+		"model":           "chat-test-model",
+		"knowledgeBaseId": knowledgeBaseID,
+		"config": map[string]any{
+			"provider":    "ollama",
+			"baseUrl":     modelBaseURL,
+			"model":       "chat-test-model",
+			"apiKey":      "",
+			"temperature": 0.2,
+		},
+		"embedding": map[string]any{
+			"provider": "ollama",
+			"baseUrl":  modelBaseURL,
+			"model":    "embedding-test-model",
+		},
+		"messages": []map[string]string{{
+			"role":    "user",
+			"content": "请说明 Redis 的核心特点",
+		}},
+	}
+
+	chatResp := performJSONRequest(t, engine, http.MethodPost, "/v1/chat/completions", chatPayload)
+	if chatResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", chatResp.Code, chatResp.Body.String())
+	}
+
+	conversationResp := performRequest(t, engine, http.MethodGet, "/api/conversations/conv-feedback-1", nil, "")
+	if conversationResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", conversationResp.Code, conversationResp.Body.String())
+	}
+
+	var conversation model.Conversation
+	decodeJSONResponse(t, conversationResp.Body.Bytes(), &conversation)
+	if len(conversation.Messages) != 2 {
+		t.Fatalf("expected 2 conversation messages, got %d", len(conversation.Messages))
+	}
+	assistantMessage := conversation.Messages[1]
+	if assistantMessage.ID == "" {
+		t.Fatal("expected persisted assistant message id")
+	}
+
+	feedbackPayload := map[string]any{
+		"feedbackType":    "like",
+		"questionText":    "请说明 Redis 的核心特点",
+		"answerText":      assistantMessage.Content,
+		"knowledgeBaseId": knowledgeBaseID,
+	}
+	feedbackResp := performJSONRequest(t, engine, http.MethodPost, fmt.Sprintf("/api/conversations/%s/messages/%s/feedback", conversation.ID, assistantMessage.ID), feedbackPayload)
+	if feedbackResp.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d, body=%s", feedbackResp.Code, feedbackResp.Body.String())
+	}
+
+	var feedbackResult model.ConversationMessageFeedbackResponse
+	decodeJSONResponse(t, feedbackResp.Body.Bytes(), &feedbackResult)
+	if feedbackResult.Summary.LikeCount != 1 {
+		t.Fatalf("expected like count 1, got %+v", feedbackResult.Summary)
+	}
+
+	conversationResp = performRequest(t, engine, http.MethodGet, "/api/conversations/conv-feedback-1", nil, "")
+	if conversationResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", conversationResp.Code, conversationResp.Body.String())
+	}
+	decodeJSONResponse(t, conversationResp.Body.Bytes(), &conversation)
+	assistantMessage = conversation.Messages[1]
+	metadataMap := assistantMessage.Metadata
+	feedbackSummaryRaw, ok := metadataMap["feedbackSummary"]
+	if !ok {
+		t.Fatalf("expected feedback summary in assistant metadata, got %#v", metadataMap)
+	}
+	encoded, _ := json.Marshal(feedbackSummaryRaw)
+	var summary model.ServiceDeskFeedbackSummary
+	decodeJSONResponse(t, encoded, &summary)
+	if summary.LikeCount != 1 || summary.Status != "helpful" {
+		t.Fatalf("expected helpful feedback summary, got %+v", summary)
+	}
+}
+
 func newTestRouter(t *testing.T) (*http.ServeMux, string, func()) {
 	t.Helper()
 

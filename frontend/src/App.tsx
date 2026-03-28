@@ -3,10 +3,36 @@ import ChatArea from './components/ChatArea'
 import Sidebar from './components/Sidebar'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+export interface SourceDocumentReference {
+  knowledgeBaseId?: string
+  documentId?: string
+  documentName?: string
+}
+
+export interface RelatedImageReference {
+  id: string
+  documentId?: string
+  documentName?: string
+  classification?: string
+  description?: string
+  publicUrl?: string
+}
+
+export interface MessageFeedbackSummary {
+  likeCount: number
+  dislikeCount: number
+  latestFeedbackId?: string
+  latestFeedback?: string
+  status?: string
+}
+
 export interface ChatMessageMetadata {
   degraded?: boolean
   fallbackStrategy?: string
   upstreamError?: string
+  sources?: SourceDocumentReference[]
+  relatedImages?: RelatedImageReference[]
+  feedbackSummary?: MessageFeedbackSummary
 }
 
 export interface ChatMessage {
@@ -96,6 +122,7 @@ export interface EmbeddingConfig {
 
 export interface UIConfig {
   welcomeMessageTemplate: string
+  suggestedPrompts: string[]
 }
 
 export interface AppConfig {
@@ -116,16 +143,7 @@ interface ChatCompletionResponse {
       content: string
     }
   }>
-  metadata?: {
-    degraded?: boolean
-    fallbackStrategy?: string
-    upstreamError?: string
-    sources?: Array<{
-      knowledgeBaseId: string
-      documentId: string
-      documentName: string
-    }>
-  }
+  metadata?: ChatMessageMetadata
 }
 
 interface ChatRequestBody {
@@ -151,9 +169,27 @@ interface StreamEventPayload {
   metadata?: ChatMessageMetadata
 }
 
+interface ConversationFeedbackPayload {
+  feedbackType: 'like' | 'dislike'
+  feedbackReason?: string
+  feedbackText?: string
+}
+
+interface ConversationMessageFeedbackResponse {
+  feedback: {
+    id: string
+  }
+  summary: MessageFeedbackSummary
+}
+
 const API_BASE_PATH = ''
 
 export const DEFAULT_WELCOME_MESSAGE_TEMPLATE = '你好，我是 AI LocalBase 助手。{knowledgeBaseHint}'
+export const DEFAULT_SUGGESTED_PROMPTS = [
+  '请总结当前知识库的核心观点',
+  '请列出这个知识库中最关键的结论',
+  '如果基于当前资料开始实现，下一步建议是什么？',
+]
 
 export const recommendedConfig: AppConfig = {
   chat: {
@@ -184,7 +220,18 @@ export const recommendedConfig: AppConfig = {
   },
   ui: {
     welcomeMessageTemplate: DEFAULT_WELCOME_MESSAGE_TEMPLATE,
+    suggestedPrompts: [...DEFAULT_SUGGESTED_PROMPTS],
   },
+}
+
+const normalizeSuggestedPrompts = (values?: string[]): string[] => {
+  const items = (values ?? [])
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item, index, arr) => arr.indexOf(item) === index)
+    .slice(0, 8)
+
+  return items.length > 0 ? items : [...DEFAULT_SUGGESTED_PROMPTS]
 }
 
 const cloneAppConfig = (config: AppConfig): AppConfig => ({
@@ -200,11 +247,68 @@ const cloneAppConfig = (config: AppConfig): AppConfig => ({
   },
   ui: {
     welcomeMessageTemplate: config.ui?.welcomeMessageTemplate?.trim() || DEFAULT_WELCOME_MESSAGE_TEMPLATE,
+    suggestedPrompts: normalizeSuggestedPrompts(config.ui?.suggestedPrompts),
   },
 })
 
 const createId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+const normalizeFeedbackSummary = (summary?: MessageFeedbackSummary): MessageFeedbackSummary | undefined => {
+  if (!summary) {
+    return undefined
+  }
+
+  const likeCount = Number(summary.likeCount ?? 0)
+  const dislikeCount = Number(summary.dislikeCount ?? 0)
+  const latestFeedbackId = summary.latestFeedbackId?.trim() ?? ''
+  const latestFeedback = summary.latestFeedback?.trim() ?? ''
+  const status = summary.status?.trim() ?? ''
+
+  if (likeCount <= 0 && dislikeCount <= 0 && !latestFeedbackId && !latestFeedback && !status) {
+    return undefined
+  }
+
+  return {
+    likeCount,
+    dislikeCount,
+    latestFeedbackId: latestFeedbackId || undefined,
+    latestFeedback: latestFeedback || undefined,
+    status: status || undefined,
+  }
+}
+
+const normalizeChatMessageMetadata = (metadata?: ChatMessageMetadata): ChatMessageMetadata | undefined => {
+  if (!metadata) {
+    return undefined
+  }
+
+  const sources = (metadata.sources ?? []).filter((item) =>
+    Boolean(item.documentId || item.documentName || item.knowledgeBaseId),
+  )
+  const relatedImages = (metadata.relatedImages ?? []).filter((item) => Boolean(item.id))
+  const feedbackSummary = normalizeFeedbackSummary(metadata.feedbackSummary)
+
+  if (
+    !metadata.degraded &&
+    !metadata.fallbackStrategy &&
+    !metadata.upstreamError &&
+    sources.length === 0 &&
+    relatedImages.length === 0 &&
+    !feedbackSummary
+  ) {
+    return undefined
+  }
+
+  return {
+    degraded: metadata.degraded,
+    fallbackStrategy: metadata.fallbackStrategy,
+    upstreamError: metadata.upstreamError,
+    sources,
+    relatedImages,
+    feedbackSummary,
+  }
+}
 
 interface BackendDocumentItem {
   id: string
@@ -323,7 +427,7 @@ const normalizeConversation = (conversation: BackendConversation): Conversation 
     role: message.role,
     content: message.content,
     timestamp: message.createdAt,
-    metadata: message.metadata,
+    metadata: normalizeChatMessageMetadata(message.metadata),
   })),
 })
 
@@ -339,6 +443,15 @@ const buildWelcomeMessage = (welcomeMessageTemplate?: string, knowledgeBaseName?
   return normalizedTemplate
     .replace(/\{knowledgeBaseName\}/g, trimmedKnowledgeBaseName)
     .replace(/\{knowledgeBaseHint\}/g, resolveKnowledgeBaseHint(knowledgeBaseName))
+}
+
+const findPreviousUserQuestion = (messages: ChatMessage[], targetIndex: number): string => {
+  for (let cursor = targetIndex - 1; cursor >= 0; cursor -= 1) {
+    if (messages[cursor]?.role === 'user') {
+      return messages[cursor]?.content?.trim() ?? ''
+    }
+  }
+  return ''
 }
 
 const createWelcomeConversation = (options?: {
@@ -569,7 +682,7 @@ function App() {
           role: message.role,
           content: message.content,
           createdAt: message.timestamp,
-          metadata: message.metadata,
+          metadata: normalizeChatMessageMetadata(message.metadata),
         })),
       }),
     })
@@ -925,7 +1038,7 @@ function App() {
             role: message.role,
             content: message.content,
             createdAt: message.timestamp,
-            metadata: message.metadata,
+            metadata: normalizeChatMessageMetadata(message.metadata),
           })),
         }),
       })
@@ -1691,13 +1804,7 @@ function App() {
         const data = (await fallbackResponse.json()) as ChatCompletionResponse
         finalizeAssistantMessage(
           data.choices[0]?.message?.content || '后端未返回有效回答。',
-          data.metadata
-            ? {
-                degraded: data.metadata.degraded,
-                fallbackStrategy: data.metadata.fallbackStrategy,
-                upstreamError: data.metadata.upstreamError,
-              }
-            : undefined,
+          normalizeChatMessageMetadata(data.metadata),
         )
         return
       }
@@ -1813,6 +1920,88 @@ function App() {
     } finally {
       setStreamingConversationId(null)
     }
+  }
+
+  const handleSubmitMessageFeedback = async (
+    messageId: string,
+    payload: ConversationFeedbackPayload,
+  ): Promise<MessageFeedbackSummary> => {
+    if (!activeConversation) {
+      throw new Error('当前没有可反馈的会话。')
+    }
+
+    const messageIndex = activeConversation.messages.findIndex((message) => message.id === messageId)
+    if (messageIndex < 0) {
+      throw new Error('未找到对应回答，请刷新后重试。')
+    }
+
+    const targetMessage = activeConversation.messages[messageIndex]
+    if (targetMessage.role !== 'assistant') {
+      throw new Error('只有回答消息支持反馈。')
+    }
+
+    const response = await fetch(
+      `${API_BASE_PATH}/api/conversations/${activeConversation.id}/messages/${messageId}/feedback`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          feedbackType: payload.feedbackType,
+          feedbackReason: payload.feedbackReason,
+          feedbackText: payload.feedbackText,
+          questionText: findPreviousUserQuestion(activeConversation.messages, messageIndex),
+          answerText: targetMessage.content,
+          knowledgeBaseId: activeConversation.knowledgeBaseId,
+          sourceDocuments: targetMessage.metadata?.sources ?? [],
+          metadata: {
+            channel: 'normal-chat-ui',
+          },
+        }),
+      },
+    )
+
+    if (!response.ok) {
+      throw new Error(await extractErrorMessage(response))
+    }
+
+    const result = (await response.json()) as ConversationMessageFeedbackResponse
+    const summary = normalizeFeedbackSummary(result.summary) ?? {
+      likeCount: payload.feedbackType === 'like' ? 1 : 0,
+      dislikeCount: payload.feedbackType === 'dislike' ? 1 : 0,
+      latestFeedbackId: result.feedback?.id,
+      latestFeedback:
+        payload.feedbackType === 'dislike' && payload.feedbackReason
+          ? `${payload.feedbackType}:${payload.feedbackReason}`
+          : payload.feedbackType,
+      status: payload.feedbackType === 'like' ? 'helpful' : 'needs-improvement',
+    }
+
+    setConversations((prev) =>
+      prev.map((conversation) => {
+        if (conversation.id !== activeConversation.id) {
+          return conversation
+        }
+
+        return {
+          ...conversation,
+          messages: conversation.messages.map((message) =>
+            message.id === messageId
+              ? {
+                  ...message,
+                  metadata: {
+                    ...(message.metadata ?? {}),
+                    feedbackSummary: summary,
+                  },
+                }
+              : message,
+          ),
+        }
+      }),
+    )
+
+    return summary
   }
 
   const handleSaveConfig = async (nextConfig: AppConfig) => {
@@ -1961,6 +2150,7 @@ function App() {
         onSendMessage={handleSendMessage}
         onClearConversation={handleClearConversation}
         onChangeConversationKnowledgeBase={handleChangeConversationKnowledgeBase}
+        onSubmitMessageFeedback={handleSubmitMessageFeedback}
       />
 
       {isCreateConversationModalOpen && (

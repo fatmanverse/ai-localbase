@@ -683,3 +683,463 @@ func filterMinChunks(chunks []string, minSize int) []string {
 func runeCount(text string) int {
 	return len([]rune(text))
 }
+
+type DocumentChunkProfile string
+
+const (
+	DocumentChunkProfileGeneric         DocumentChunkProfile = "generic"
+	DocumentChunkProfileFAQ             DocumentChunkProfile = "faq"
+	DocumentChunkProfileOperationSteps  DocumentChunkProfile = "operation_steps"
+	DocumentChunkProfileParameters      DocumentChunkProfile = "parameters"
+	DocumentChunkProfileTroubleshooting DocumentChunkProfile = "troubleshooting"
+)
+
+var (
+	faqQuestionLineRegexp     = regexp.MustCompile(`(?i)^(问|q(?:uestion)?)[\s\d._-]*[:：]`)
+	stepParagraphLineRegexp   = regexp.MustCompile(`(?m)^(\d+[.)、]\s+|步骤\s*\d+[:：]?\s*|第[一二三四五六七八九十\d]+步[:：]?\s*|[-*+]\s+)`)
+	markdownTableLineRegexp   = regexp.MustCompile(`(?m)^\|.+\|\s*$`)
+	troubleshootKeywordRegexp = regexp.MustCompile(`现象|原因|排查|处理|修复|报错|错误|告警|异常|解决`)
+)
+
+// DetectDocumentChunkProfile 根据文档名与正文特征判断切片策略。
+// 这是一个轻量启发式实现，优先保证 FAQ / 步骤 / 参数 / 排障几类资料不要继续一刀切。
+func DetectDocumentChunkProfile(documentName, text string) DocumentChunkProfile {
+	cleaned := normalizeChunkText(text)
+	if cleaned == "" {
+		return DocumentChunkProfileGeneric
+	}
+
+	lowerName := strings.ToLower(strings.TrimSpace(documentName))
+	faqScore := 0
+	stepScore := 0
+	parameterScore := 0
+	troubleshootScore := 0
+
+	if strings.Contains(lowerName, "faq") || strings.Contains(lowerName, "q&a") {
+		faqScore += 4
+	}
+	if strings.Contains(lowerName, "guide") || strings.Contains(lowerName, "manual") || strings.Contains(lowerName, "tutorial") || strings.Contains(lowerName, "手册") || strings.Contains(lowerName, "步骤") || strings.Contains(lowerName, "操作") {
+		stepScore += 2
+	}
+	if strings.Contains(lowerName, "config") || strings.Contains(lowerName, "setting") || strings.Contains(lowerName, "param") || strings.Contains(lowerName, "参数") || strings.Contains(lowerName, "配置") || strings.Contains(lowerName, "字段") {
+		parameterScore += 3
+	}
+	if strings.Contains(lowerName, "error") || strings.Contains(lowerName, "trouble") || strings.Contains(lowerName, "incident") || strings.Contains(lowerName, "排障") || strings.Contains(lowerName, "故障") || strings.Contains(lowerName, "错误") || strings.Contains(lowerName, "告警") {
+		troubleshootScore += 4
+	}
+
+	faqScore += countRegexpMatches(faqQuestionLineRegexp, cleaned) * 2
+	stepScore += countRegexpMatches(stepParagraphLineRegexp, cleaned)
+	parameterScore += countRegexpMatches(markdownTableLineRegexp, cleaned)
+	troubleshootScore += countRegexpMatches(troubleshootKeywordRegexp, cleaned)
+
+	if strings.Contains(cleaned, "默认值") || strings.Contains(cleaned, "必填") || strings.Contains(cleaned, "字段说明") || strings.Contains(cleaned, "参数说明") || strings.Contains(cleaned, "配置项") {
+		parameterScore += 3
+	}
+	if strings.Contains(cleaned, "步骤") || strings.Contains(cleaned, "点击") || strings.Contains(cleaned, "进入") || strings.Contains(cleaned, "打开") || strings.Contains(cleaned, "保存") || strings.Contains(cleaned, "提交") {
+		stepScore += 2
+	}
+	if strings.Contains(cleaned, "问：") || strings.Contains(cleaned, "答：") || strings.Contains(cleaned, "Q:") || strings.Contains(cleaned, "A:") {
+		faqScore += 2
+	}
+
+	bestProfile := DocumentChunkProfileGeneric
+	bestScore := 0
+	candidates := []struct {
+		profile DocumentChunkProfile
+		score   int
+	}{
+		{DocumentChunkProfileFAQ, faqScore},
+		{DocumentChunkProfileTroubleshooting, troubleshootScore},
+		{DocumentChunkProfileParameters, parameterScore},
+		{DocumentChunkProfileOperationSteps, stepScore},
+	}
+	for _, candidate := range candidates {
+		if candidate.score > bestScore {
+			bestScore = candidate.score
+			bestProfile = candidate.profile
+		}
+	}
+	return bestProfile
+}
+
+// ChunkDocumentText 以“文档类型 + 图片知识段”做基础版分治切片。
+// 目标不是一次性做完整多模态 chunker，而是先避免 FAQ / 参数 / 步骤 / 排障 / 图片继续被统一语义切片打散。
+func ChunkDocumentText(documentName, text string, cfg SemanticChunkConfig) []string {
+	cleaned := normalizeChunkText(text)
+	if cleaned == "" {
+		return nil
+	}
+
+	cfg = normalizeSemanticChunkConfig(cfg)
+	bodyText, imageChunks := splitImageKnowledgeAwareText(cleaned, cfg)
+	profile := DetectDocumentChunkProfile(documentName, bodyText)
+
+	var bodyChunks []string
+	switch profile {
+	case DocumentChunkProfileFAQ:
+		bodyChunks = chunkFAQText(bodyText, cfg)
+	case DocumentChunkProfileParameters:
+		bodyChunks = chunkParagraphAwareText(bodyText, cfg, true)
+	case DocumentChunkProfileTroubleshooting:
+		bodyChunks = chunkParagraphAwareText(bodyText, cfg, true)
+	case DocumentChunkProfileOperationSteps:
+		bodyChunks = chunkParagraphAwareText(bodyText, cfg, true)
+	default:
+		bodyChunks = SemanticChunk(bodyText, cfg)
+	}
+
+	combined := make([]string, 0, len(bodyChunks)+len(imageChunks))
+	combined = append(combined, normalizeStructuredChunks(bodyChunks)...)
+	combined = append(combined, normalizeStructuredChunks(imageChunks)...)
+	if len(combined) > 0 {
+		return combined
+	}
+	return SemanticChunk(cleaned, cfg)
+}
+
+func countRegexpMatches(re *regexp.Regexp, text string) int {
+	if re == nil || strings.TrimSpace(text) == "" {
+		return 0
+	}
+	return len(re.FindAllString(text, -1))
+}
+
+func splitImageKnowledgeAwareText(text string, cfg SemanticChunkConfig) (string, []string) {
+	marker := "## 图片知识补充"
+	index := strings.Index(text, marker)
+	if index < 0 {
+		return strings.TrimSpace(text), nil
+	}
+
+	body := strings.TrimSpace(text[:index])
+	section := strings.TrimSpace(text[index+len(marker):])
+	if section == "" {
+		return body, nil
+	}
+
+	lines := strings.Split(section, "\n")
+	blocks := make([]string, 0)
+	introLines := make([]string, 0)
+	current := make([]string, 0)
+	flushCurrent := func() {
+		trimmed := strings.TrimSpace(strings.Join(current, "\n"))
+		if trimmed != "" {
+			blocks = append(blocks, trimmed)
+		}
+		current = current[:0]
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			if len(current) > 0 {
+				current = append(current, "")
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "图片ID:") || strings.HasPrefix(trimmed, "图片ID：") {
+			if len(current) > 0 {
+				flushCurrent()
+			}
+			current = append(current, trimmed)
+			continue
+		}
+		if len(current) == 0 {
+			introLines = append(introLines, trimmed)
+			continue
+		}
+		current = append(current, trimmed)
+	}
+	if len(current) > 0 {
+		flushCurrent()
+	}
+
+	result := make([]string, 0, len(blocks)+1)
+	intro := strings.TrimSpace(strings.Join(introLines, "\n"))
+	if intro != "" {
+		result = append(result, chunkParagraphAwareText(intro, cfg, false)...)
+	}
+	for _, block := range blocks {
+		if runeCount(block) <= cfg.MaxChunkSize {
+			result = append(result, block)
+			continue
+		}
+		result = append(result, chunkParagraphAwareText(block, cfg, false)...)
+	}
+	return body, result
+}
+
+func chunkFAQText(text string, cfg SemanticChunkConfig) []string {
+	cleaned := normalizeChunkText(text)
+	if cleaned == "" {
+		return nil
+	}
+
+	lines := strings.Split(cleaned, "\n")
+	blocks := make([]string, 0)
+	current := make([]string, 0)
+	seenQuestion := false
+	flushCurrent := func() {
+		trimmed := strings.TrimSpace(strings.Join(current, "\n"))
+		if trimmed != "" {
+			blocks = append(blocks, trimmed)
+		}
+		current = current[:0]
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			if len(current) > 0 {
+				current = append(current, "")
+			}
+			continue
+		}
+		if faqQuestionLineRegexp.MatchString(trimmed) {
+			if len(current) > 0 {
+				flushCurrent()
+			}
+			seenQuestion = true
+			current = append(current, trimmed)
+			continue
+		}
+		current = append(current, trimmed)
+	}
+	if len(current) > 0 {
+		flushCurrent()
+	}
+
+	if !seenQuestion {
+		return chunkParagraphAwareText(cleaned, cfg, true)
+	}
+
+	result := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		if runeCount(block) <= cfg.MaxChunkSize {
+			result = append(result, strings.TrimSpace(block))
+			continue
+		}
+		result = append(result, packStructuredUnits([]string{block}, cfg)...)
+	}
+	return result
+}
+
+func chunkParagraphAwareText(text string, cfg SemanticChunkConfig, mergeHeadings bool) []string {
+	cleaned := normalizeChunkText(text)
+	if cleaned == "" {
+		return nil
+	}
+	paragraphs := splitParagraphs(cleaned)
+	if len(paragraphs) == 0 {
+		return nil
+	}
+	if mergeHeadings {
+		paragraphs = mergeHeadingParagraphs(paragraphs)
+	}
+	return packStructuredUnits(paragraphs, cfg)
+}
+
+func mergeHeadingParagraphs(paragraphs []string) []string {
+	if len(paragraphs) <= 1 {
+		return paragraphs
+	}
+	result := make([]string, 0, len(paragraphs))
+	for index := 0; index < len(paragraphs); index++ {
+		current := strings.TrimSpace(paragraphs[index])
+		if current == "" {
+			continue
+		}
+		if looksLikeHeadingParagraph(current) && index+1 < len(paragraphs) {
+			next := strings.TrimSpace(paragraphs[index+1])
+			if next != "" {
+				result = append(result, current+"\n\n"+next)
+				index++
+				continue
+			}
+		}
+		result = append(result, current)
+	}
+	return result
+}
+
+func looksLikeHeadingParagraph(paragraph string) bool {
+	trimmed := strings.TrimSpace(paragraph)
+	if trimmed == "" {
+		return false
+	}
+	if runeCount(trimmed) > 48 {
+		return false
+	}
+	if strings.HasPrefix(trimmed, "#") {
+		return true
+	}
+	if strings.HasSuffix(trimmed, "：") || strings.HasSuffix(trimmed, ":") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "步骤") || strings.HasPrefix(trimmed, "第") {
+		return true
+	}
+	if regexp.MustCompile(`^[一二三四五六七八九十]+[、.．]`).MatchString(trimmed) {
+		return true
+	}
+	if strings.Contains(trimmed, "现象") || strings.Contains(trimmed, "原因") || strings.Contains(trimmed, "排查") || strings.Contains(trimmed, "修复") {
+		return true
+	}
+	return false
+}
+
+func packStructuredUnits(units []string, cfg SemanticChunkConfig) []string {
+	trimmedUnits := make([]string, 0, len(units))
+	for _, unit := range units {
+		trimmed := strings.TrimSpace(unit)
+		if trimmed == "" {
+			continue
+		}
+		trimmedUnits = append(trimmedUnits, trimmed)
+	}
+	if len(trimmedUnits) == 0 {
+		return nil
+	}
+
+	chunks := make([]string, 0, len(trimmedUnits))
+	current := ""
+	for _, unit := range trimmedUnits {
+		if runeCount(unit) > cfg.MaxChunkSize {
+			if strings.TrimSpace(current) != "" {
+				chunks = append(chunks, strings.TrimSpace(current))
+				current = ""
+			}
+			for _, part := range SemanticChunk(unit, SemanticChunkConfig{
+				MaxChunkSize:    cfg.MaxChunkSize,
+				MinChunkSize:    1,
+				OverlapSize:     0,
+				PreserveNewline: cfg.PreserveNewline,
+			}) {
+				if strings.TrimSpace(part) != "" {
+					chunks = append(chunks, strings.TrimSpace(part))
+				}
+			}
+			continue
+		}
+
+		if current == "" {
+			current = unit
+			continue
+		}
+		candidate := current + "\n\n" + unit
+		if runeCount(candidate) <= cfg.MaxChunkSize {
+			current = candidate
+			continue
+		}
+		chunks = append(chunks, strings.TrimSpace(current))
+		current = unit
+	}
+	if strings.TrimSpace(current) != "" {
+		chunks = append(chunks, strings.TrimSpace(current))
+	}
+	return chunks
+}
+
+func normalizeStructuredChunks(chunks []string) []string {
+	if len(chunks) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(chunks))
+	seen := make(map[string]struct{}, len(chunks))
+	for _, chunk := range chunks {
+		trimmed := strings.TrimSpace(chunk)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, trimmed)
+	}
+	return result
+}
+
+var imageIntentKeywords = []string{
+	"图片", "截图", "界面", "页面", "按钮", "图里", "图中", "附图", "看图",
+	"流程图", "架构图", "拓扑图", "示意图", "图表", "表格截图", "页面截图", "关键操作截图",
+	"screenshot", "ui", "button", "page", "diagram", "topology",
+}
+
+func IsImageIntentQuery(query string) bool {
+	cleaned := strings.ToLower(strings.TrimSpace(query))
+	if cleaned == "" {
+		return false
+	}
+	for _, keyword := range imageIntentKeywords {
+		if strings.Contains(cleaned, strings.ToLower(keyword)) {
+			return true
+		}
+	}
+	return false
+}
+
+func ExtractChunkTopic(text string) string {
+	cleaned := normalizeChunkText(text)
+	if cleaned == "" {
+		return ""
+	}
+
+	lines := strings.Split(cleaned, "\n")
+	preferredLabels := []string{"图片标题", "图片说明", "图片类型", "标题", "主题"}
+	for _, label := range preferredLabels {
+		for _, line := range lines {
+			if value := extractTopicLabelValue(line, label); value != "" {
+				return shortenChunkTopic(value)
+			}
+		}
+	}
+
+	skipPrefixes := []string{"图片ID", "图片OCR", "前文", "后文"}
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(stripMarkdownDecoration(line))
+		if trimmed == "" {
+			continue
+		}
+		skip := false
+		for _, prefix := range skipPrefixes {
+			if strings.HasPrefix(trimmed, prefix+":") || strings.HasPrefix(trimmed, prefix+"：") {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+		return shortenChunkTopic(trimmed)
+	}
+	return ""
+}
+
+func extractTopicLabelValue(line, label string) string {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return ""
+	}
+	for _, sep := range []string{":", "："} {
+		prefix := label + sep
+		if strings.HasPrefix(trimmed, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+		}
+	}
+	return ""
+}
+
+func shortenChunkTopic(topic string) string {
+	trimmed := strings.TrimSpace(topic)
+	if trimmed == "" {
+		return ""
+	}
+	runes := []rune(trimmed)
+	if len(runes) > 72 {
+		return string(runes[:72])
+	}
+	return trimmed
+}

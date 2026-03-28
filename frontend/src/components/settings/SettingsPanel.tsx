@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AppConfig, ChatConfig, CircuitBreakerConfig, DEFAULT_WELCOME_MESSAGE_TEMPLATE, EmbeddingConfig, ModelEndpointConfig, recommendedConfig } from '../../App'
+import { AppConfig, ChatConfig, CircuitBreakerConfig, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_WELCOME_MESSAGE_TEMPLATE, EmbeddingConfig, ModelEndpointConfig, recommendedConfig } from '../../App'
 
 interface SettingsPanelProps {
   config: AppConfig
@@ -36,6 +36,7 @@ const createRecommendedConfig = (): AppConfig => ({
   ui: {
     welcomeMessageTemplate:
       recommendedConfig.ui?.welcomeMessageTemplate || DEFAULT_WELCOME_MESSAGE_TEMPLATE,
+    suggestedPrompts: [...(recommendedConfig.ui?.suggestedPrompts ?? DEFAULT_SUGGESTED_PROMPTS)],
   },
 })
 
@@ -62,6 +63,17 @@ const formatCandidateLines = (items: ModelEndpointConfig[] | undefined) =>
     })
     .filter(Boolean)
     .join('\n')
+
+const formatPromptLines = (items: string[] | undefined) =>
+  (items ?? []).map((item) => item.trim()).filter(Boolean).join('\n')
+
+const parsePromptLines = (value: string): string[] =>
+  value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line, index, arr) => arr.indexOf(line) === index)
+    .slice(0, 8)
 
 const parseCandidateLines = (value: string): ModelEndpointConfig[] => {
   const lines = value
@@ -143,6 +155,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [embeddingCandidatesText, setEmbeddingCandidatesText] = useState(() =>
     formatCandidateLines(config.embedding.candidates),
   )
+  const [suggestedPromptsText, setSuggestedPromptsText] = useState(() =>
+    formatPromptLines(config.ui?.suggestedPrompts),
+  )
 
   const recommendedDraft = useMemo(() => createRecommendedConfig(), [])
 
@@ -150,6 +165,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setDraftConfig(config)
     setChatCandidatesText(formatCandidateLines(config.chat.candidates))
     setEmbeddingCandidatesText(formatCandidateLines(config.embedding.candidates))
+    setSuggestedPromptsText(formatPromptLines(config.ui?.suggestedPrompts))
   }, [config])
 
   const effectiveDraftConfig = useMemo<AppConfig>(
@@ -211,6 +227,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         welcomeMessageTemplate: value,
       },
     }))
+  }
+
+  const handleSuggestedPromptsChange = (value: string) => {
+    setSuggestedPromptsText(value)
   }
 
   const handleChatCircuitBreakerChange = <K extends keyof CircuitBreakerConfig>(
@@ -338,7 +358,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </label>
 
               <label className="settings-field settings-field-full">
-                <span>Temperature: {draftConfig.chat.temperature.toFixed(1)}</span>
+                <span>温度（回答发散度）：{draftConfig.chat.temperature.toFixed(1)}</span>
                 <input
                   type="range"
                   min="0"
@@ -349,6 +369,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     handleChatConfigChange('temperature', Number(event.target.value))
                   }
                 />
+                <small>值越低越稳定，越适合知识库问答；默认推荐 <code>0.2</code>。</small>
               </label>
 
               <label className="settings-field settings-field-full">
@@ -538,10 +559,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <div className="settings-hint settings-hint-profile">
               <strong>当前内置推荐配置</strong>
               <ul className="settings-hint-list">
-                <li>聊天模型：<code>qwen2.5:7b</code>，Temperature 默认 <code>0.2</code></li>
+                <li>聊天模型：<code>qwen2.5:7b</code>，温度默认 <code>0.2</code></li>
                 <li>向量模型：<code>nomic-embed-text</code>，默认向量维度 <code>768</code></li>
-                <li>RAG 内置策略：语义切片 <code>800</code> / Overlap <code>120</code></li>
-                <li>检索策略：文档内 TopK <code>5</code>，知识库 TopK <code>6</code>，单文档最多 <code>2</code> 个切片</li>
+                <li>RAG 内置策略：类型感知切片，默认窗口 <code>800</code> / Overlap <code>120</code></li>
+                <li>检索策略：默认开启混合检索 / 语义重排 / 查询改写，文档内 TopK <code>5</code>，知识库 TopK <code>6</code>，单文档最多 <code>2</code> 个切片</li>
                 <li>容灾策略：支持多提供方顺序切换，默认熔断阈值 <code>2</code>，冷却 <code>30s</code></li>
               </ul>
             </div>
@@ -574,10 +595,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   <code>你好，我是 AI LocalBase 助手。{'{knowledgeBaseHint}'}</code>
                 </small>
               </label>
+
+              <label className="settings-field settings-field-full">
+                <span>默认问题建议</span>
+                <textarea
+                  rows={5}
+                  value={suggestedPromptsText}
+                  onChange={(event) => handleSuggestedPromptsChange(event.target.value)}
+                  placeholder={DEFAULT_SUGGESTED_PROMPTS.join('\n')}
+                />
+                <small>
+                  普通聊天页底部的快捷提问按钮支持自定义。每行一条，最多保留 <code>8</code> 条；留空会自动回退到默认建议。
+                </small>
+              </label>
             </div>
 
             <p className="settings-hint">
-              该文案会用于普通聊天页的新建会话欢迎消息。若模板留空，会自动回退到默认提示语。
+              该区域用于控制普通聊天页的新建会话欢迎文案与快捷提问建议。若相关配置留空，会自动回退到默认值。
             </p>
           </section>
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { AppConfig, Conversation, DocumentItem, KnowledgeBase } from '../App'
+import { AppConfig, Conversation, DEFAULT_SUGGESTED_PROMPTS, DocumentItem, KnowledgeBase, MessageFeedbackSummary } from '../App'
 
 /**
  * 修复 LLM 输出的 Markdown 格式问题：
@@ -555,13 +555,48 @@ interface ChatAreaProps {
   onSendMessage: (content: string) => Promise<void>
   onClearConversation: () => void
   onChangeConversationKnowledgeBase: (knowledgeBaseId: string) => Promise<void> | void
+  onSubmitMessageFeedback: (
+    messageId: string,
+    payload: {
+      feedbackType: 'like' | 'dislike'
+      feedbackReason?: string
+      feedbackText?: string
+    },
+  ) => Promise<MessageFeedbackSummary>
 }
 
-const suggestedPrompts = [
-  '请总结当前知识库的核心观点',
-  '请列出这个知识库中最关键的结论',
-  '如果基于当前资料开始实现，下一步建议是什么？',
+const normalChatFeedbackReasonOptions = [
+  '答非所问',
+  '内容不准确',
+  '内容不完整',
+  '内容过时',
+  '没有解决问题',
+  '检索结果不相关',
+  '图片文字未识别',
+  '图片内容未召回',
+  '图文理解不完整',
+  '图片描述不准确',
+  '图片信息过时',
+  '其他',
 ]
+
+const describeFeedbackSummary = (summary?: MessageFeedbackSummary): string => {
+  if (!summary?.latestFeedback) {
+    return ''
+  }
+
+  const [feedbackType, reason] = summary.latestFeedback.split(':')
+  if (feedbackType === 'like') {
+    return '已记录：这条回答解决了问题'
+  }
+  if (reason) {
+    return `已记录：${reason}`
+  }
+  if (feedbackType === 'dislike') {
+    return '已记录：这条回答还没有解决问题'
+  }
+  return ''
+}
 
 const formatTime = (value: string) =>
   new Date(value).toLocaleTimeString('zh-CN', {
@@ -582,9 +617,15 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   onSendMessage,
   onClearConversation,
   onChangeConversationKnowledgeBase,
+  onSubmitMessageFeedback,
 }) => {
   const [inputValue, setInputValue] = useState('')
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const [expandedFeedbackMessageId, setExpandedFeedbackMessageId] = useState<string | null>(null)
+  const [feedbackSubmittingMessageId, setFeedbackSubmittingMessageId] = useState<string | null>(null)
+  const [feedbackReasons, setFeedbackReasons] = useState<Record<string, string>>({})
+  const [feedbackTexts, setFeedbackTexts] = useState<Record<string, string>>({})
+  const [feedbackNotices, setFeedbackNotices] = useState<Record<string, string>>({})
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   const hasBoundKnowledgeBase = Boolean(conversationKnowledgeBase)
@@ -597,6 +638,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       : '未绑定知识库'
   const canAsk = hasBoundKnowledgeBase && !isLoading && !isSwitchingKnowledgeBase
   const canSend = inputValue.trim().length > 0 && canAsk
+  const suggestedPrompts =
+    config.ui?.suggestedPrompts && config.ui.suggestedPrompts.length > 0
+      ? config.ui.suggestedPrompts
+      : DEFAULT_SUGGESTED_PROMPTS
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -665,6 +710,45 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       }, 1500)
     } catch {
       // 忽略复制异常，避免影响主流程
+    }
+  }
+
+  const handleSubmitLikeFeedback = async (messageId: string) => {
+    setFeedbackSubmittingMessageId(messageId)
+    try {
+      await onSubmitMessageFeedback(messageId, { feedbackType: 'like' })
+      setFeedbackNotices((prev) => ({
+        ...prev,
+        [messageId]: '这条回答我已经记下为“已解决”，后面会优先沉淀成高质量问答。',
+      }))
+      setExpandedFeedbackMessageId((prev) => (prev === messageId ? null : prev))
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : '提交反馈失败，请稍后重试。')
+    } finally {
+      setFeedbackSubmittingMessageId(null)
+    }
+  }
+
+  const handleSubmitDislikeFeedback = async (messageId: string) => {
+    const feedbackReason = feedbackReasons[messageId] ?? '没有解决问题'
+    const feedbackText = feedbackTexts[messageId]?.trim() ?? ''
+
+    setFeedbackSubmittingMessageId(messageId)
+    try {
+      await onSubmitMessageFeedback(messageId, {
+        feedbackType: 'dislike',
+        feedbackReason,
+        feedbackText,
+      })
+      setFeedbackNotices((prev) => ({
+        ...prev,
+        [messageId]: '问题我已经记下了，这条回答会进入知识库和问答策略的优化清单。',
+      }))
+      setExpandedFeedbackMessageId((prev) => (prev === messageId ? null : prev))
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : '提交反馈失败，请稍后重试。')
+    } finally {
+      setFeedbackSubmittingMessageId(null)
     }
   }
 
@@ -737,7 +821,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             {conversationDocument ? <p>当前文档范围：{conversationDocument.name}</p> : null}
           </div>
         ) : (
-          activeConversation.messages.map((message) => {
+          activeConversation.messages.map((message, index) => {
             const isStreamingPlaceholder =
               isLoading &&
               message.role === 'assistant' &&
@@ -747,6 +831,22 @@ const ChatArea: React.FC<ChatAreaProps> = ({
               message.role === 'assistant' && message.metadata?.degraded
                 ? message.metadata
                 : null
+            const previousMessage = activeConversation.messages[index - 1]
+            const sourceDocuments = message.role === 'assistant' ? message.metadata?.sources ?? [] : []
+            const relatedImages = message.role === 'assistant' ? message.metadata?.relatedImages ?? [] : []
+            const feedbackSummary =
+              message.role === 'assistant' ? message.metadata?.feedbackSummary : undefined
+            const feedbackNotice = feedbackNotices[message.id] || describeFeedbackSummary(feedbackSummary)
+            const hasSubmittedFeedback = Boolean(feedbackSummary?.latestFeedbackId)
+            const isFeedbackExpanded = expandedFeedbackMessageId === message.id
+            const isFeedbackSubmitting = feedbackSubmittingMessageId === message.id
+            const selectedFeedbackReason = feedbackReasons[message.id] ?? '没有解决问题'
+            const feedbackText = feedbackTexts[message.id] ?? ''
+            const canCollectFeedback =
+              message.role === 'assistant' &&
+              previousMessage?.role === 'user' &&
+              !isStreamingPlaceholder &&
+              Boolean(message.content.trim())
 
             return (
               <div key={message.id} className={`message ${message.role}`}>
@@ -770,19 +870,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                 >
                   {degradedMetadata && (
                     <div className="message-degraded-banner" role="status" aria-live="polite">
-                      <div className="message-degraded-title">
-                        ⚠ 当前回答为降级回复，模型或检索链路出现异常
+                      <div className="message-degraded-title">这次先给你一版保守结论，现有资料还不算特别完整。</div>
+                      <div className="message-degraded-detail">
+                        你可以先按当前答案处理；如果还卡住，我再继续帮你缩小范围。
                       </div>
-                      {degradedMetadata.fallbackStrategy && (
-                        <div className="message-degraded-detail">
-                          策略：{degradedMetadata.fallbackStrategy}
-                        </div>
-                      )}
-                      {degradedMetadata.upstreamError && (
-                        <div className="message-degraded-subtle">
-                          上游错误：{degradedMetadata.upstreamError}
-                        </div>
-                      )}
                     </div>
                   )}
                   {isStreamingPlaceholder ? (
@@ -843,6 +934,159 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                     message.content
                   )}
                 </div>
+                {message.role === 'assistant' && sourceDocuments.length > 0 ? (
+                  <div className="message-sources">
+                    <span className="message-sources-label">知识来源</span>
+                    <div className="message-source-list">
+                      {sourceDocuments.map((source) => (
+                        <span
+                          key={`${source.knowledgeBaseId ?? ''}-${source.documentId ?? ''}-${source.documentName ?? ''}`}
+                          className="message-source-chip"
+                        >
+                          {source.documentName || source.documentId || '文档片段'}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {message.role === 'assistant' && relatedImages.length > 0 ? (
+                  <div className="message-related-images">
+                    <div className="message-related-images-title">相关图片</div>
+                    <div className="message-related-image-grid">
+                      {relatedImages.map((image) => (
+                        <div key={image.id} className="message-related-image-card">
+                          {image.publicUrl ? (
+                            <img
+                              src={image.publicUrl}
+                              alt={image.description || image.documentName || image.id}
+                              loading="lazy"
+                            />
+                          ) : null}
+                          <div className="message-related-image-meta">
+                            <strong>{image.documentName || '相关图片'}</strong>
+                            {image.classification ? <span>{image.classification}</span> : null}
+                            {image.description ? <p>{image.description}</p> : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {canCollectFeedback ? (
+                  <div className="message-feedback-box">
+                    <div className="message-feedback-headline">这条回答是否帮你解决了问题？</div>
+
+                    {(feedbackSummary?.likeCount ?? 0) > 0 || (feedbackSummary?.dislikeCount ?? 0) > 0 ? (
+                      <div className="message-feedback-summary">
+                        <span>👍 {feedbackSummary?.likeCount ?? 0}</span>
+                        <span>👎 {feedbackSummary?.dislikeCount ?? 0}</span>
+                      </div>
+                    ) : null}
+
+                    {feedbackNotice ? (
+                      <div className={`message-feedback-notice ${hasSubmittedFeedback ? 'is-muted' : ''}`.trim()}>
+                        {feedbackNotice}
+                      </div>
+                    ) : null}
+
+                    {!hasSubmittedFeedback ? (
+                      <>
+                        <div className="message-feedback-actions">
+                          <button
+                            type="button"
+                            className="message-feedback-action primary"
+                            disabled={isFeedbackSubmitting}
+                            onClick={() => {
+                              void handleSubmitLikeFeedback(message.id)
+                            }}
+                          >
+                            {isFeedbackSubmitting ? '提交中...' : '👍 已解决'}
+                          </button>
+                          <button
+                            type="button"
+                            className="message-feedback-action secondary"
+                            disabled={isFeedbackSubmitting}
+                            onClick={() => {
+                              setExpandedFeedbackMessageId((prev) =>
+                                prev === message.id ? null : message.id,
+                              )
+                              setFeedbackReasons((prev) => ({
+                                ...prev,
+                                [message.id]: prev[message.id] ?? '没有解决问题',
+                              }))
+                            }}
+                          >
+                            👎 还不够
+                          </button>
+                        </div>
+
+                        {isFeedbackExpanded ? (
+                          <div className="message-feedback-panel">
+                            <div className="message-feedback-reasons">
+                              {normalChatFeedbackReasonOptions.map((reason) => (
+                                <button
+                                  key={reason}
+                                  type="button"
+                                  className={`message-feedback-reason ${
+                                    selectedFeedbackReason === reason ? 'selected' : ''
+                                  }`}
+                                  disabled={isFeedbackSubmitting}
+                                  onClick={() => {
+                                    setFeedbackReasons((prev) => ({
+                                      ...prev,
+                                      [message.id]: reason,
+                                    }))
+                                  }}
+                                >
+                                  {reason}
+                                </button>
+                              ))}
+                            </div>
+                            <textarea
+                              rows={3}
+                              value={feedbackText}
+                              disabled={isFeedbackSubmitting}
+                              placeholder="如果你愿意，可以补充一下实际卡住的点，我后面会优先优化这类回答。"
+                              onChange={(event) => {
+                                const nextValue = event.target.value
+                                setFeedbackTexts((prev) => ({
+                                  ...prev,
+                                  [message.id]: nextValue,
+                                }))
+                              }}
+                            />
+                            <div className="message-feedback-submit-row">
+                              <span>选好原因后提交，我会把这类问题归到后续优化清单里。</span>
+                              <div className="message-feedback-submit-actions">
+                                <button
+                                  type="button"
+                                  className="message-feedback-action secondary"
+                                  disabled={isFeedbackSubmitting}
+                                  onClick={() => setExpandedFeedbackMessageId(null)}
+                                >
+                                  取消
+                                </button>
+                                <button
+                                  type="button"
+                                  className="message-feedback-action primary"
+                                  disabled={isFeedbackSubmitting}
+                                  onClick={() => {
+                                    void handleSubmitDislikeFeedback(message.id)
+                                  }}
+                                >
+                                  {isFeedbackSubmitting ? '提交中...' : '提交反馈'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 <div className="message-time">{formatTime(message.timestamp)}</div>
               </div>
             )
