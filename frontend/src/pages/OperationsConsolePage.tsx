@@ -36,6 +36,12 @@ interface FAQCandidate {
   publishedBy?: string
   publishedAt?: string
   publishNote?: string
+  lastPublishedKnowledgeBaseId?: string
+  lastPublishedDocumentId?: string
+  lastPublishedDocumentName?: string
+  lastPublishMode?: string
+  lastPublishedToKnowledgeAt?: string
+  knowledgeBasePublishCount?: number
 }
 
 interface KnowledgeGap {
@@ -211,6 +217,48 @@ function buildDefaultFAQDocumentName(question?: string) {
   return `FAQ-${title}.md`
 }
 
+function normalizeDocumentText(value?: string) {
+  return (value || '').trim().toLowerCase()
+}
+
+function isFAQDocumentCandidate(document: PublishedKnowledgeBaseDocument) {
+  const haystack = `${normalizeDocumentText(document.name)} ${normalizeDocumentText(document.contentPreview)}`
+  if (!haystack) return false
+  return /faq|常见问题|常见问答|问答|合集|汇总|帮助中心/.test(haystack) || haystack.includes('ai-localbase-faq-entry')
+}
+
+function pickRecommendedFAQDocument(item: FAQCandidate, knowledgeBaseId: string, documents: PublishedKnowledgeBaseDocument[]) {
+  if (!knowledgeBaseId || documents.length === 0) return ''
+  const preferredKnowledgeBaseId = item.lastPublishedKnowledgeBaseId?.trim() || ''
+  const preferredDocumentId = item.lastPublishedDocumentId?.trim() || ''
+  if (preferredKnowledgeBaseId === knowledgeBaseId && preferredDocumentId && documents.some((document) => document.id === preferredDocumentId)) {
+    return preferredDocumentId
+  }
+
+  const preferredDocumentName = normalizeDocumentText(item.lastPublishedDocumentName)
+  const scored = documents
+    .map((document, index) => {
+      let score = 0
+      if (preferredDocumentName && normalizeDocumentText(document.name) === preferredDocumentName) score += 80
+      if (isFAQDocumentCandidate(document)) score += 20
+      if (/合集|汇总|总览|大全/.test(document.name)) score += 10
+      return { document, index, score }
+    })
+    .sort((left, right) => {
+      if (left.score === right.score) return left.index - right.index
+      return right.score - left.score
+    })
+
+  return scored[0]?.score > 0 ? scored[0].document.id : ''
+}
+
+function formatPublishModeLabel(mode?: string) {
+  if (mode === 'append_to_document') return '追加到现有文档'
+  if (mode === 'replace_document') return '覆盖目标文档'
+  if (mode === 'create_new') return '新建 FAQ 文档'
+  return '未记录'
+}
+
 function buildDraftMap<T extends { id: string; owner?: string; note?: string }>(items: T[]): Record<string, GovernanceDraft> {
   return items.reduce<Record<string, GovernanceDraft>>((accumulator, item) => {
     accumulator[item.id] = {
@@ -224,15 +272,17 @@ function buildDraftMap<T extends { id: string; owner?: string; note?: string }>(
 function buildPublishDraftMap(items: FAQCandidate[]): Record<string, FAQPublishDraft> {
   return items.reduce<Record<string, FAQPublishDraft>>((accumulator, item) => {
     const question = item.publishedQuestion || item.questionText || ''
+    const reusedKnowledgeBaseId = item.lastPublishedKnowledgeBaseId || item.knowledgeBaseId || ''
+    const reusedDocumentId = item.lastPublishedDocumentId || ''
     accumulator[item.id] = {
       question,
       answer: item.publishedAnswer || item.answerText || '',
       publishedBy: item.publishedBy || item.owner || '',
       note: item.publishNote || item.note || '',
-      knowledgeBaseId: item.knowledgeBaseId || '',
+      knowledgeBaseId: reusedKnowledgeBaseId,
       documentName: buildDefaultFAQDocumentName(question),
-      publishMode: 'create_new',
-      targetDocumentId: '',
+      publishMode: reusedDocumentId ? 'append_to_document' : 'create_new',
+      targetDocumentId: reusedDocumentId,
     }
     return accumulator
   }, {})
@@ -311,13 +361,15 @@ export default function OperationsConsolePage() {
     setSelectedKnowledgeBaseId((current) => (items.some((item) => item.id === current) ? current : ''))
   }, [])
 
-  const loadKnowledgeBaseDocuments = useCallback(async (knowledgeBaseId: string, force = false) => {
+  const loadKnowledgeBaseDocuments = useCallback(async (knowledgeBaseId: string, force = false): Promise<PublishedKnowledgeBaseDocument[]> => {
     const trimmed = knowledgeBaseId.trim()
-    if (!trimmed) return
-    if (!force && knowledgeBaseDocuments[trimmed]) return
+    if (!trimmed) return []
+    if (!force && knowledgeBaseDocuments[trimmed]) return knowledgeBaseDocuments[trimmed]
     const response = await fetch(`${API_BASE_PATH}/api/knowledge-bases/${trimmed}/documents`)
     const payload = await response.json().catch(() => ({ items: [] })) as { items?: PublishedKnowledgeBaseDocument[] }
-    setKnowledgeBaseDocuments((current) => ({ ...current, [trimmed]: payload.items ?? [] }))
+    const items = payload.items ?? []
+    setKnowledgeBaseDocuments((current) => ({ ...current, [trimmed]: items }))
+    return items
   }, [knowledgeBaseDocuments])
 
   const loadGovernanceData = useCallback(async () => {
@@ -393,6 +445,16 @@ export default function OperationsConsolePage() {
   }, [loadGovernanceData])
 
   useEffect(() => {
+    if (activeTab !== 'faq') return
+    const knowledgeBaseIds = Array.from(new Set(faqCandidates.map((item) => (item.lastPublishedKnowledgeBaseId || item.knowledgeBaseId || '').trim()).filter(Boolean)))
+    knowledgeBaseIds.forEach((knowledgeBaseId) => {
+      if (!knowledgeBaseDocuments[knowledgeBaseId]) {
+        void loadKnowledgeBaseDocuments(knowledgeBaseId)
+      }
+    })
+  }, [activeTab, faqCandidates, knowledgeBaseDocuments, loadKnowledgeBaseDocuments])
+
+  useEffect(() => {
     setSelectedIds([])
     setBatchStatus('')
     setBatchOwner('')
@@ -436,6 +498,16 @@ export default function OperationsConsolePage() {
   const getPublishDraft = useCallback((id: string): FAQPublishDraft => (
     publishDrafts[id] ?? { question: '', answer: '', publishedBy: '', note: '', knowledgeBaseId: '', documentName: '', publishMode: 'create_new', targetDocumentId: '' }
   ), [publishDrafts])
+
+  const recommendFAQDocument = useCallback(async (item: FAQCandidate, knowledgeBaseId: string, publishMode: string) => {
+    const trimmedKnowledgeBaseId = knowledgeBaseId.trim()
+    if (!trimmedKnowledgeBaseId || publishMode === 'create_new') return
+    const documents = await loadKnowledgeBaseDocuments(trimmedKnowledgeBaseId)
+    const recommendedDocumentId = pickRecommendedFAQDocument(item, trimmedKnowledgeBaseId, documents)
+    if (recommendedDocumentId) {
+      updatePublishDraft(item.id, 'targetDocumentId', recommendedDocumentId)
+    }
+  }, [loadKnowledgeBaseDocuments, updatePublishDraft])
 
   const updateItemStatus = useCallback(async (tab: EditableGovernanceTab, id: string, status: string) => {
     setUpdatingId(id)
@@ -500,7 +572,7 @@ export default function OperationsConsolePage() {
     } finally {
       setPublishingId('')
     }
-  }, [getPublishDraft, loadGovernanceData, loadKnowledgeBaseDocuments])
+  }, [getPublishDraft, loadGovernanceData])
 
   const publishFAQToKnowledgeBase = useCallback(async (item: FAQCandidate) => {
     const draft = getPublishDraft(item.id)
@@ -791,6 +863,15 @@ export default function OperationsConsolePage() {
               </div>
               <h3>{item.questionText}</h3>
               <p>{item.answerText}</p>
+              {item.knowledgeBasePublishCount ? (
+                <div className="ops-feedback-meta">
+                  <span>已发布知识库 {item.knowledgeBasePublishCount} 次</span>
+                  {item.lastPublishedDocumentName ? <span>最近文档：{item.lastPublishedDocumentName}</span> : null}
+                  {item.lastPublishedKnowledgeBaseId ? <span>最近知识库：{resolveKnowledgeBaseName(item.lastPublishedKnowledgeBaseId)}</span> : null}
+                  {item.lastPublishMode ? <span>最近方式：{formatPublishModeLabel(item.lastPublishMode)}</span> : null}
+                  {item.lastPublishedToKnowledgeAt ? <span>最近发布时间：{formatDate(item.lastPublishedToKnowledgeAt)}</span> : null}
+                </div>
+              ) : null}
               <div className="ops-card-editor">
                 <label>
                   <span>责任人</span>
@@ -817,7 +898,7 @@ export default function OperationsConsolePage() {
                     updatePublishDraft(item.id, 'knowledgeBaseId', value)
                     updatePublishDraft(item.id, 'targetDocumentId', '')
                     if (value) {
-                      void loadKnowledgeBaseDocuments(value)
+                      void recommendFAQDocument(item, value, publishDraft.publishMode)
                     }
                   }}>
                     <option value="">请选择知识库</option>
@@ -840,7 +921,7 @@ export default function OperationsConsolePage() {
                       updatePublishDraft(item.id, 'targetDocumentId', '')
                       updatePublishDraft(item.id, 'documentName', '')
                       if (publishDraft.knowledgeBaseId) {
-                        void loadKnowledgeBaseDocuments(publishDraft.knowledgeBaseId)
+                        void recommendFAQDocument(item, publishDraft.knowledgeBaseId, value)
                       }
                     }
                   }}>
@@ -858,6 +939,9 @@ export default function OperationsConsolePage() {
                         <option key={document.id} value={document.id}>{document.name}</option>
                       ))}
                     </select>
+                    {publishDraft.targetDocumentId && (knowledgeBaseDocuments[publishDraft.knowledgeBaseId] ?? []).some((document) => document.id === publishDraft.targetDocumentId) ? (
+                      <small>已自动带出最近使用或最匹配的 FAQ 合集文档，你也可以手动改。</small>
+                    ) : null}
                   </label>
                 ) : null}
                 {publishDraft.publishMode === 'create_new' ? (

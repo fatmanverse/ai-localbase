@@ -282,6 +282,9 @@ curl -X POST http://localhost:8080/api/service-desk/analytics/faq-candidates/<id
 - `append_to_document`：追加到已有文档；如果同一 FAQ 已存在，会按问题 key 自动替换，避免重复堆积
 - `replace_document`：用当前 FAQ 文档整体覆盖目标文档
 
+- 系统会优先推荐最近一次发布过的 FAQ 文档；如果没有历史记录，会优先推荐名字看起来像 FAQ 合集 / 常见问题的文档
+- FAQ 候选会记录最近一次发布到哪个知识库、哪个文档、用了什么模式，以及累计发布次数
+
 重建索引：
 
 ```bash

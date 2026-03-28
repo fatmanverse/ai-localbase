@@ -88,6 +88,12 @@ func (s *SQLiteChatHistoryStore) initServiceDeskTables() error {
 			published_by TEXT NOT NULL DEFAULT '',
 			published_at TEXT NOT NULL DEFAULT '',
 			publish_note TEXT NOT NULL DEFAULT '',
+			last_published_knowledge_base_id TEXT NOT NULL DEFAULT '',
+			last_published_document_id TEXT NOT NULL DEFAULT '',
+			last_published_document_name TEXT NOT NULL DEFAULT '',
+			last_publish_mode TEXT NOT NULL DEFAULT '',
+			last_published_to_knowledge_at TEXT NOT NULL DEFAULT '',
+			knowledge_base_publish_count INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);`,
@@ -154,11 +160,17 @@ func (s *SQLiteChatHistoryStore) ensureServiceDeskAnalyticsColumns() error {
 		}
 	}
 	faqDefinitions := map[string]string{
-		"published_question": "TEXT NOT NULL DEFAULT ''",
-		"published_answer":   "TEXT NOT NULL DEFAULT ''",
-		"published_by":       "TEXT NOT NULL DEFAULT ''",
-		"published_at":       "TEXT NOT NULL DEFAULT ''",
-		"publish_note":       "TEXT NOT NULL DEFAULT ''",
+		"published_question":               "TEXT NOT NULL DEFAULT ''",
+		"published_answer":                 "TEXT NOT NULL DEFAULT ''",
+		"published_by":                     "TEXT NOT NULL DEFAULT ''",
+		"published_at":                     "TEXT NOT NULL DEFAULT ''",
+		"publish_note":                     "TEXT NOT NULL DEFAULT ''",
+		"last_published_knowledge_base_id": "TEXT NOT NULL DEFAULT ''",
+		"last_published_document_id":       "TEXT NOT NULL DEFAULT ''",
+		"last_published_document_name":     "TEXT NOT NULL DEFAULT ''",
+		"last_publish_mode":                "TEXT NOT NULL DEFAULT ''",
+		"last_published_to_knowledge_at":   "TEXT NOT NULL DEFAULT ''",
+		"knowledge_base_publish_count":     "INTEGER NOT NULL DEFAULT 0",
 	}
 	if err := s.ensureSQLiteColumns("faq_candidates", faqDefinitions); err != nil {
 		return err
@@ -581,7 +593,7 @@ func (s *SQLiteChatHistoryStore) ListFAQCandidatesByOptions(opts model.Analytics
 		fixedClauses = append(fixedClauses, "published_at <> ''")
 	}
 	query, args := buildAnalyticsListQuery(
-		`SELECT id, question_normalized, question_text, answer_text, knowledge_base_id, source_message_id, conversation_id, like_count, status, owner, note, updated_by, published_question, published_answer, published_by, published_at, publish_note, created_at, updated_at FROM faq_candidates`,
+		`SELECT id, question_normalized, question_text, answer_text, knowledge_base_id, source_message_id, conversation_id, like_count, status, owner, note, updated_by, published_question, published_answer, published_by, published_at, publish_note, last_published_knowledge_base_id, last_published_document_id, last_published_document_name, last_publish_mode, last_published_to_knowledge_at, knowledge_base_publish_count, created_at, updated_at FROM faq_candidates`,
 		fixedClauses,
 		[]analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}, {Column: "status", Value: opts.Status}, {Column: "owner", Value: opts.Owner}},
 		" ORDER BY like_count DESC, updated_at DESC LIMIT ?",
@@ -595,7 +607,7 @@ func (s *SQLiteChatHistoryStore) ListFAQCandidatesByOptions(opts model.Analytics
 	items := make([]model.FAQCandidate, 0)
 	for rows.Next() {
 		var item model.FAQCandidate
-		if err := rows.Scan(&item.ID, &item.QuestionNormalized, &item.QuestionText, &item.AnswerText, &item.KnowledgeBaseID, &item.SourceMessageID, &item.ConversationID, &item.LikeCount, &item.Status, &item.Owner, &item.Note, &item.UpdatedBy, &item.PublishedQuestion, &item.PublishedAnswer, &item.PublishedBy, &item.PublishedAt, &item.PublishNote, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.QuestionNormalized, &item.QuestionText, &item.AnswerText, &item.KnowledgeBaseID, &item.SourceMessageID, &item.ConversationID, &item.LikeCount, &item.Status, &item.Owner, &item.Note, &item.UpdatedBy, &item.PublishedQuestion, &item.PublishedAnswer, &item.PublishedBy, &item.PublishedAt, &item.PublishNote, &item.LastPublishedKnowledgeBaseID, &item.LastPublishedDocumentID, &item.LastPublishedDocumentName, &item.LastPublishMode, &item.LastPublishedToKnowledgeAt, &item.KnowledgeBasePublishCount, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan faq candidate: %w", err)
 		}
 		items = append(items, item)
@@ -861,6 +873,37 @@ func (s *SQLiteChatHistoryStore) PublishFAQCandidate(id string, question string,
 	return s.getFAQCandidateByID(id)
 }
 
+func (s *SQLiteChatHistoryStore) RecordFAQCandidateKnowledgeBasePublish(id, knowledgeBaseID, documentID, documentName, publishMode, publishedBy string) (*model.FAQCandidate, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("sqlite chat history store is nil")
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, fmt.Errorf("id is required")
+	}
+	now := util.NowRFC3339()
+	mode := strings.TrimSpace(publishMode)
+	if mode == "" {
+		mode = "create_new"
+	}
+	updatedBy := strings.TrimSpace(publishedBy)
+	if updatedBy == "" {
+		updatedBy = "ops-console"
+	}
+	result, err := s.db.Exec(`UPDATE faq_candidates SET last_published_knowledge_base_id = ?, last_published_document_id = ?, last_published_document_name = ?, last_publish_mode = ?, last_published_to_knowledge_at = ?, knowledge_base_publish_count = knowledge_base_publish_count + 1, updated_by = ?, updated_at = ? WHERE id = ?`, strings.TrimSpace(knowledgeBaseID), strings.TrimSpace(documentID), strings.TrimSpace(documentName), mode, now, updatedBy, now, id)
+	if err != nil {
+		return nil, fmt.Errorf("record faq candidate knowledge base publish: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("rows affected faq_candidates: %w", err)
+	}
+	if affected == 0 {
+		return nil, fmt.Errorf("item not found")
+	}
+	return s.getFAQCandidateByID(id)
+}
+
 func (s *SQLiteChatHistoryStore) UpdateKnowledgeGapStatus(id string, req model.AnalyticsStatusUpdateRequest) (*model.KnowledgeGap, error) {
 	update, err := buildAnalyticsItemUpdate(req, normalizeKnowledgeGapStatus)
 	if err != nil {
@@ -1013,7 +1056,7 @@ func (s *SQLiteChatHistoryStore) execAnalyticsItemUpdate(exec analyticsExec, tab
 
 func (s *SQLiteChatHistoryStore) getFAQCandidateByID(id string) (*model.FAQCandidate, error) {
 	var item model.FAQCandidate
-	if err := s.db.QueryRow(`SELECT id, question_normalized, question_text, answer_text, knowledge_base_id, source_message_id, conversation_id, like_count, status, owner, note, updated_by, published_question, published_answer, published_by, published_at, publish_note, created_at, updated_at FROM faq_candidates WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Scan(&item.ID, &item.QuestionNormalized, &item.QuestionText, &item.AnswerText, &item.KnowledgeBaseID, &item.SourceMessageID, &item.ConversationID, &item.LikeCount, &item.Status, &item.Owner, &item.Note, &item.UpdatedBy, &item.PublishedQuestion, &item.PublishedAnswer, &item.PublishedBy, &item.PublishedAt, &item.PublishNote, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := s.db.QueryRow(`SELECT id, question_normalized, question_text, answer_text, knowledge_base_id, source_message_id, conversation_id, like_count, status, owner, note, updated_by, published_question, published_answer, published_by, published_at, publish_note, last_published_knowledge_base_id, last_published_document_id, last_published_document_name, last_publish_mode, last_published_to_knowledge_at, knowledge_base_publish_count, created_at, updated_at FROM faq_candidates WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Scan(&item.ID, &item.QuestionNormalized, &item.QuestionText, &item.AnswerText, &item.KnowledgeBaseID, &item.SourceMessageID, &item.ConversationID, &item.LikeCount, &item.Status, &item.Owner, &item.Note, &item.UpdatedBy, &item.PublishedQuestion, &item.PublishedAnswer, &item.PublishedBy, &item.PublishedAt, &item.PublishNote, &item.LastPublishedKnowledgeBaseID, &item.LastPublishedDocumentID, &item.LastPublishedDocumentName, &item.LastPublishMode, &item.LastPublishedToKnowledgeAt, &item.KnowledgeBasePublishCount, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("item not found")
 		}

@@ -516,6 +516,17 @@ Content-Type: application/json
 - `append_to_document`：按 FAQ 问题 key 合并进目标文档；如果相同 FAQ 已存在，则自动替换原条目
 - `replace_document`：用当前 FAQ 文档整体覆盖目标文档，再重新索引
 
+FAQ 候选返回体新增最近一次知识库发布记录字段：
+
+- `lastPublishedKnowledgeBaseId`
+- `lastPublishedDocumentId`
+- `lastPublishedDocumentName`
+- `lastPublishMode`
+- `lastPublishedToKnowledgeAt`
+- `knowledgeBasePublishCount`
+
+这些字段可用于前端默认回填上次 FAQ 合集文档，或给运营同学展示最近一次发布去向。
+
 ### 7.6 获取治理周报
 
 ```http

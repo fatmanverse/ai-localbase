@@ -227,6 +227,10 @@ func (s *ServiceDeskService) PublishFAQCandidateToKnowledgeBase(id string, req m
 		return nil, err
 	}
 	candidate.KnowledgeBaseID = targetKnowledgeBaseID
+	updatedCandidate, recordErr := s.store.RecordFAQCandidateKnowledgeBasePublish(candidate.ID, targetKnowledgeBaseID, document.ID, document.Name, publishMode, candidate.PublishedBy)
+	if recordErr == nil && updatedCandidate != nil {
+		candidate = updatedCandidate
+	}
 	return &model.PublishFAQToKnowledgeBaseResponse{Candidate: *candidate, Export: export, Document: document}, nil
 }
 

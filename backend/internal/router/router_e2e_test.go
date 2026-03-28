@@ -861,6 +861,9 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	if publishToKBPayload.Document.ID == "" || publishToKBPayload.Document.Status != "indexed" || publishToKBPayload.Document.Name != "FAQ-基础合集.md" {
 		t.Fatalf("expected generated knowledge base document after publish-to-kb, got %+v", publishToKBPayload)
 	}
+	if publishToKBPayload.Candidate.LastPublishedDocumentID != publishToKBPayload.Document.ID || publishToKBPayload.Candidate.LastPublishedDocumentName != publishToKBPayload.Document.Name || publishToKBPayload.Candidate.LastPublishMode != "create_new" || publishToKBPayload.Candidate.KnowledgeBasePublishCount != 1 {
+		t.Fatalf("expected publish-to-kb to record faq publish metadata, got %+v", publishToKBPayload.Candidate)
+	}
 
 	documentsResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/knowledge-bases/%s/documents", knowledgeBaseID), nil, "")
 	if documentsResp.Code != http.StatusOK {
@@ -897,6 +900,9 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	decodeJSONResponse(t, faqAppendData, &appendPayload)
 	if appendPayload.Document.ID != publishToKBPayload.Document.ID || appendPayload.Document.Status != "indexed" || appendPayload.Document.Name != publishToKBPayload.Document.Name {
 		t.Fatalf("expected append mode to reuse existing document without renaming it, got %+v", appendPayload)
+	}
+	if appendPayload.Candidate.LastPublishedDocumentID != publishToKBPayload.Document.ID || appendPayload.Candidate.LastPublishMode != "append_to_document" || appendPayload.Candidate.KnowledgeBasePublishCount != 2 {
+		t.Fatalf("expected append mode to update faq publish metadata, got %+v", appendPayload.Candidate)
 	}
 	updatedDocumentsResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/knowledge-bases/%s/documents", knowledgeBaseID), nil, "")
 	if updatedDocumentsResp.Code != http.StatusOK {

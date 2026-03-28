@@ -147,25 +147,31 @@ type ServiceDeskMessageFeedback struct {
 }
 
 type FAQCandidate struct {
-	ID                 string `json:"id"`
-	QuestionNormalized string `json:"questionNormalized"`
-	QuestionText       string `json:"questionText"`
-	AnswerText         string `json:"answerText"`
-	KnowledgeBaseID    string `json:"knowledgeBaseId,omitempty"`
-	SourceMessageID    string `json:"sourceMessageId"`
-	ConversationID     string `json:"conversationId"`
-	LikeCount          int    `json:"likeCount"`
-	Status             string `json:"status"`
-	Owner              string `json:"owner,omitempty"`
-	Note               string `json:"note,omitempty"`
-	UpdatedBy          string `json:"updatedBy,omitempty"`
-	PublishedQuestion  string `json:"publishedQuestion,omitempty"`
-	PublishedAnswer    string `json:"publishedAnswer,omitempty"`
-	PublishedBy        string `json:"publishedBy,omitempty"`
-	PublishedAt        string `json:"publishedAt,omitempty"`
-	PublishNote        string `json:"publishNote,omitempty"`
-	CreatedAt          string `json:"createdAt"`
-	UpdatedAt          string `json:"updatedAt"`
+	ID                           string `json:"id"`
+	QuestionNormalized           string `json:"questionNormalized"`
+	QuestionText                 string `json:"questionText"`
+	AnswerText                   string `json:"answerText"`
+	KnowledgeBaseID              string `json:"knowledgeBaseId,omitempty"`
+	SourceMessageID              string `json:"sourceMessageId"`
+	ConversationID               string `json:"conversationId"`
+	LikeCount                    int    `json:"likeCount"`
+	Status                       string `json:"status"`
+	Owner                        string `json:"owner,omitempty"`
+	Note                         string `json:"note,omitempty"`
+	UpdatedBy                    string `json:"updatedBy,omitempty"`
+	PublishedQuestion            string `json:"publishedQuestion,omitempty"`
+	PublishedAnswer              string `json:"publishedAnswer,omitempty"`
+	PublishedBy                  string `json:"publishedBy,omitempty"`
+	PublishedAt                  string `json:"publishedAt,omitempty"`
+	PublishNote                  string `json:"publishNote,omitempty"`
+	LastPublishedKnowledgeBaseID string `json:"lastPublishedKnowledgeBaseId,omitempty"`
+	LastPublishedDocumentID      string `json:"lastPublishedDocumentId,omitempty"`
+	LastPublishedDocumentName    string `json:"lastPublishedDocumentName,omitempty"`
+	LastPublishMode              string `json:"lastPublishMode,omitempty"`
+	LastPublishedToKnowledgeAt   string `json:"lastPublishedToKnowledgeAt,omitempty"`
+	KnowledgeBasePublishCount    int    `json:"knowledgeBasePublishCount,omitempty"`
+	CreatedAt                    string `json:"createdAt"`
+	UpdatedAt                    string `json:"updatedAt"`
 }
 
 type KnowledgeGap struct {
