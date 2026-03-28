@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   qdrant:
     image: qdrant/qdrant:v1.13.4
@@ -21,13 +19,15 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       PORT: "8080"
-      UPLOAD_DIR: data/uploads
-      QDRANT_URL: http://qdrant:6333
-      QDRANT_COLLECTION_PREFIX: kb_
-      QDRANT_VECTOR_SIZE: "768"
-      QDRANT_DISTANCE: Cosine
-      QDRANT_TIMEOUT_SECONDS: "5"
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      UPLOAD_DIR: "data/uploads"
+      STATE_FILE: "data/app-state.json"
+      CHAT_HISTORY_FILE: "data/chat-history.db"
+      QDRANT_URL: "${QDRANT_URL:-http://qdrant:6333}"
+      QDRANT_COLLECTION_PREFIX: "${QDRANT_COLLECTION_PREFIX:-kb_}"
+      QDRANT_VECTOR_SIZE: "${QDRANT_VECTOR_SIZE:-768}"
+      QDRANT_DISTANCE: "${QDRANT_DISTANCE:-Cosine}"
+      QDRANT_TIMEOUT_SECONDS: "${QDRANT_TIMEOUT_SECONDS:-5}"
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
     ports:
       - "8080:8080"
     volumes:
@@ -41,6 +41,6 @@ services:
     depends_on:
       - backend
     environment:
-      VITE_API_BASE_URL: http://localhost:8080
+      VITE_API_BASE_URL: "${VITE_API_BASE_URL:-http://localhost:8080}"
     ports:
       - "4173:4173"
