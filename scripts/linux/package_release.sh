@@ -35,7 +35,7 @@ mkdir -p "${RELEASE_DIR}/docker" "${RELEASE_DIR}/compose"
 cp docker/nginx.conf "${RELEASE_DIR}/docker/nginx.conf"
 cp docker/backend.Dockerfile docker/frontend.Dockerfile "${RELEASE_DIR}/docker/"
 cp docker-compose.yml docker-compose.qdrant.yml "${RELEASE_DIR}/compose/"
-cp README.md DOCKER_DEPLOY.md TROUBLESHOOTING.md .env.example "${RELEASE_DIR}/"
+cp README.md DEPLOY_LINUX.md TROUBLESHOOTING.md .env.example "${RELEASE_DIR}/"
 
 tar -C "${ARTIFACT_ROOT}/release" -czf "${PACKAGE_PATH}" "${RELEASE_NAME}"
 
