@@ -209,8 +209,20 @@ func (s *ServiceDeskService) PublishFAQCandidateToKnowledgeBase(id string, req m
 	if err != nil {
 		return nil, err
 	}
-	documentName := buildFAQKnowledgeBaseDocumentName(strings.TrimSpace(req.DocumentName), strings.TrimSpace(candidate.PublishedQuestion), strings.TrimSpace(candidate.QuestionText))
-	document, err := s.appService.CreateGeneratedMarkdownDocument(targetKnowledgeBaseID, documentName, export.Content)
+	publishMode := normalizeFAQKnowledgeBasePublishMode(req.PublishMode)
+	if publishMode != "create_new" && strings.TrimSpace(req.TargetDocumentID) == "" {
+		return nil, fmt.Errorf("target document id is required when publish mode is %s", publishMode)
+	}
+	knowledgeBaseName := s.knowledgeBaseNameByID(targetKnowledgeBaseID)
+	documentName := strings.TrimSpace(req.DocumentName)
+	if publishMode == "create_new" || documentName != "" {
+		documentName = buildFAQKnowledgeBaseDocumentName(documentName, strings.TrimSpace(candidate.PublishedQuestion), strings.TrimSpace(candidate.QuestionText))
+	}
+	markdown := buildFAQKnowledgeBaseDocument(*candidate, knowledgeBaseName)
+	if publishMode == "append_to_document" {
+		markdown = buildFAQKnowledgeBaseEntry(*candidate)
+	}
+	document, err := s.appService.UpsertGeneratedMarkdownDocument(targetKnowledgeBaseID, strings.TrimSpace(req.TargetDocumentID), documentName, markdown, publishMode)
 	if err != nil {
 		return nil, err
 	}
@@ -502,6 +514,72 @@ func renderWeeklyReportMarkdown(report model.GovernanceWeeklyReport) string {
 	builder.WriteString(renderKnowledgeGapsMarkdown(report.TopKnowledgeGaps, report.KnowledgeBaseName))
 	builder.WriteString("\n## 低质量回答\n\n")
 	builder.WriteString(renderLowQualityAnswersMarkdown(report.TopLowQualityAnswers, report.KnowledgeBaseName))
+	return builder.String()
+}
+
+func normalizeFAQKnowledgeBasePublishMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "append_to_document", "append", "merge":
+		return "append_to_document"
+	case "replace_document", "replace", "overwrite":
+		return "replace_document"
+	default:
+		return "create_new"
+	}
+}
+
+func buildFAQKnowledgeBaseEntryKey(candidate model.FAQCandidate) string {
+	key := strings.TrimSpace(candidate.QuestionNormalized)
+	if key == "" {
+		key = firstNonEmpty(strings.TrimSpace(candidate.PublishedQuestion), strings.TrimSpace(candidate.QuestionText), candidate.ID)
+	}
+	key = strings.ToLower(strings.TrimSpace(key))
+	builder := strings.Builder{}
+	for _, r := range key {
+		switch {
+		case r >= 'a' && r <= 'z':
+			builder.WriteRune(r)
+		case r >= '0' && r <= '9':
+			builder.WriteRune(r)
+		case r >= 0x4e00 && r <= 0x9fff:
+			builder.WriteRune(r)
+		default:
+			builder.WriteRune('_')
+		}
+	}
+	result := strings.Trim(builder.String(), "_")
+	if result == "" {
+		return strings.TrimSpace(candidate.ID)
+	}
+	return result
+}
+
+func buildFAQKnowledgeBaseEntry(candidate model.FAQCandidate) string {
+	question := firstNonEmpty(strings.TrimSpace(candidate.PublishedQuestion), strings.TrimSpace(candidate.QuestionText))
+	answer := firstNonEmpty(strings.TrimSpace(candidate.PublishedAnswer), strings.TrimSpace(candidate.AnswerText))
+	publishedBy := firstNonEmpty(strings.TrimSpace(candidate.PublishedBy), strings.TrimSpace(candidate.Owner), "ops-console")
+	publishedAt := firstNonEmpty(strings.TrimSpace(candidate.PublishedAt), util.NowRFC3339())
+	entryKey := buildFAQKnowledgeBaseEntryKey(candidate)
+	builder := strings.Builder{}
+	builder.WriteString(fmt.Sprintf("<!-- ai-localbase-faq-entry:start key=%s -->\n", entryKey))
+	builder.WriteString(fmt.Sprintf("## %s\n\n", question))
+	builder.WriteString(answer + "\n\n")
+	builder.WriteString("### 维护信息\n\n")
+	builder.WriteString(fmt.Sprintf("- 整理人：%s\n", publishedBy))
+	builder.WriteString(fmt.Sprintf("- 整理时间：%s\n", publishedAt))
+	if strings.TrimSpace(candidate.PublishNote) != "" {
+		builder.WriteString(fmt.Sprintf("- 备注：%s\n", strings.TrimSpace(candidate.PublishNote)))
+	}
+	builder.WriteString("\n<!-- ai-localbase-faq-entry:end -->\n")
+	return builder.String()
+}
+
+func buildFAQKnowledgeBaseDocument(candidate model.FAQCandidate, knowledgeBaseName string) string {
+	builder := strings.Builder{}
+	builder.WriteString("# FAQ 文档\n\n")
+	builder.WriteString(fmt.Sprintf("- 知识库：%s\n", firstNonEmpty(strings.TrimSpace(knowledgeBaseName), strings.TrimSpace(candidate.KnowledgeBaseID), "未绑定知识库")))
+	builder.WriteString(fmt.Sprintf("- 最近整理时间：%s\n\n", firstNonEmpty(strings.TrimSpace(candidate.PublishedAt), util.NowRFC3339())))
+	builder.WriteString(buildFAQKnowledgeBaseEntry(candidate))
 	return builder.String()
 }
 

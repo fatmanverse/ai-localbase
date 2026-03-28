@@ -17,6 +17,8 @@ interface FAQPublishDraft {
   note: string
   knowledgeBaseId: string
   documentName: string
+  publishMode: string
+  targetDocumentId: string
 }
 
 interface FAQCandidate {
@@ -229,6 +231,8 @@ function buildPublishDraftMap(items: FAQCandidate[]): Record<string, FAQPublishD
       note: item.publishNote || item.note || '',
       knowledgeBaseId: item.knowledgeBaseId || '',
       documentName: buildDefaultFAQDocumentName(question),
+      publishMode: 'create_new',
+      targetDocumentId: '',
     }
     return accumulator
   }, {})
@@ -269,6 +273,7 @@ export default function OperationsConsolePage() {
   const [gapDrafts, setGapDrafts] = useState<Record<string, GovernanceDraft>>({})
   const [lowQualityDrafts, setLowQualityDrafts] = useState<Record<string, GovernanceDraft>>({})
   const [publishDrafts, setPublishDrafts] = useState<Record<string, FAQPublishDraft>>({})
+  const [knowledgeBaseDocuments, setKnowledgeBaseDocuments] = useState<Record<string, PublishedKnowledgeBaseDocument[]>>({})
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [updatingId, setUpdatingId] = useState('')
   const [batchStatus, setBatchStatus] = useState('')
@@ -305,6 +310,15 @@ export default function OperationsConsolePage() {
     setKnowledgeBases(items)
     setSelectedKnowledgeBaseId((current) => (items.some((item) => item.id === current) ? current : ''))
   }, [])
+
+  const loadKnowledgeBaseDocuments = useCallback(async (knowledgeBaseId: string, force = false) => {
+    const trimmed = knowledgeBaseId.trim()
+    if (!trimmed) return
+    if (!force && knowledgeBaseDocuments[trimmed]) return
+    const response = await fetch(`${API_BASE_PATH}/api/knowledge-bases/${trimmed}/documents`)
+    const payload = await response.json().catch(() => ({ items: [] })) as { items?: PublishedKnowledgeBaseDocument[] }
+    setKnowledgeBaseDocuments((current) => ({ ...current, [trimmed]: payload.items ?? [] }))
+  }, [knowledgeBaseDocuments])
 
   const loadGovernanceData = useCallback(async () => {
     setLoading(true)
@@ -415,12 +429,12 @@ export default function OperationsConsolePage() {
   const updatePublishDraft = useCallback((id: string, field: keyof FAQPublishDraft, value: string) => {
     setPublishDrafts((current) => ({
       ...current,
-      [id]: { ...(current[id] ?? { question: '', answer: '', publishedBy: '', note: '', knowledgeBaseId: '', documentName: '' }), [field]: value },
+      [id]: { ...(current[id] ?? { question: '', answer: '', publishedBy: '', note: '', knowledgeBaseId: '', documentName: '', publishMode: 'create_new', targetDocumentId: '' }), [field]: value },
     }))
   }, [])
 
   const getPublishDraft = useCallback((id: string): FAQPublishDraft => (
-    publishDrafts[id] ?? { question: '', answer: '', publishedBy: '', note: '', knowledgeBaseId: '', documentName: '' }
+    publishDrafts[id] ?? { question: '', answer: '', publishedBy: '', note: '', knowledgeBaseId: '', documentName: '', publishMode: 'create_new', targetDocumentId: '' }
   ), [publishDrafts])
 
   const updateItemStatus = useCallback(async (tab: EditableGovernanceTab, id: string, status: string) => {
@@ -486,7 +500,7 @@ export default function OperationsConsolePage() {
     } finally {
       setPublishingId('')
     }
-  }, [getPublishDraft, loadGovernanceData])
+  }, [getPublishDraft, loadGovernanceData, loadKnowledgeBaseDocuments])
 
   const publishFAQToKnowledgeBase = useCallback(async (item: FAQCandidate) => {
     const draft = getPublishDraft(item.id)
@@ -503,17 +517,20 @@ export default function OperationsConsolePage() {
           publishedBy: draft.publishedBy,
           note: draft.note,
           knowledgeBaseId: draft.knowledgeBaseId,
-          documentName: draft.documentName,
+          documentName: draft.publishMode === 'create_new' ? draft.documentName : '',
+          publishMode: draft.publishMode,
+          targetDocumentId: draft.targetDocumentId,
         }),
       })
-      setActionMessage(`FAQ 已写入知识库文档：${result.document.name}`)
+      setActionMessage(draft.publishMode === 'create_new' ? `FAQ 已写入知识库文档：${result.document.name}` : `FAQ 已合并到知识库文档：${result.document.name}`)
+      await loadKnowledgeBaseDocuments(draft.knowledgeBaseId, true)
       await loadGovernanceData()
     } catch (publishError) {
       setError(getErrorMessage(publishError, 'FAQ 发布到知识库失败'))
     } finally {
       setPublishingToKnowledgeBaseId('')
     }
-  }, [getPublishDraft, loadGovernanceData])
+  }, [getPublishDraft, loadGovernanceData, loadKnowledgeBaseDocuments])
 
   const toggleSelected = useCallback((id: string) => {
     setSelectedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))
@@ -607,7 +624,7 @@ export default function OperationsConsolePage() {
           <div className="ops-console-eyebrow">Operations Console</div>
           <h1>知识库治理工作台</h1>
           <p>
-            这里给运营、交付和知识库维护同学一个最简单可用的治理入口。你可以直接查看 FAQ 候选、知识缺口、低质量回答和差评明细，顺手补责任人、处理备注、导出当前视图，把高赞回答整理成正式 FAQ 草稿，或者直接发布回知识库。
+            这里给运营、交付和知识库维护同学一个最简单可用的治理入口。你可以直接查看 FAQ 候选、知识缺口、低质量回答和差评明细，顺手补责任人、处理备注、导出当前视图，把高赞回答整理成正式 FAQ 草稿，直接发布回知识库，或者追加进 FAQ 合集文档。
           </p>
         </div>
         <div className="ops-console-summary-card">
@@ -795,7 +812,14 @@ export default function OperationsConsolePage() {
                 </label>
                 <label>
                   <span>发布知识库</span>
-                  <select value={publishDraft.knowledgeBaseId} onChange={(event) => updatePublishDraft(item.id, 'knowledgeBaseId', event.target.value)}>
+                  <select value={publishDraft.knowledgeBaseId} onChange={(event) => {
+                    const value = event.target.value
+                    updatePublishDraft(item.id, 'knowledgeBaseId', value)
+                    updatePublishDraft(item.id, 'targetDocumentId', '')
+                    if (value) {
+                      void loadKnowledgeBaseDocuments(value)
+                    }
+                  }}>
                     <option value="">请选择知识库</option>
                     {knowledgeBases.map((knowledgeBase) => (
                       <option key={knowledgeBase.id} value={knowledgeBase.id}>{knowledgeBase.name}</option>
@@ -803,9 +827,45 @@ export default function OperationsConsolePage() {
                   </select>
                 </label>
                 <label>
-                  <span>文档名</span>
-                  <input value={publishDraft.documentName} onChange={(event) => updatePublishDraft(item.id, 'documentName', event.target.value)} placeholder="例如 FAQ-Redis核心特点.md" />
+                  <span>发布方式</span>
+                  <select value={publishDraft.publishMode} onChange={(event) => {
+                    const value = event.target.value
+                    updatePublishDraft(item.id, 'publishMode', value)
+                    if (value === 'create_new') {
+                      updatePublishDraft(item.id, 'targetDocumentId', '')
+                      if (!publishDraft.documentName.trim()) {
+                        updatePublishDraft(item.id, 'documentName', buildDefaultFAQDocumentName(publishDraft.question))
+                      }
+                    } else {
+                      updatePublishDraft(item.id, 'targetDocumentId', '')
+                      updatePublishDraft(item.id, 'documentName', '')
+                      if (publishDraft.knowledgeBaseId) {
+                        void loadKnowledgeBaseDocuments(publishDraft.knowledgeBaseId)
+                      }
+                    }
+                  }}>
+                    <option value="create_new">新建 FAQ 文档</option>
+                    <option value="append_to_document">追加到现有文档</option>
+                    <option value="replace_document">覆盖现有文档</option>
+                  </select>
                 </label>
+                {publishDraft.publishMode !== 'create_new' ? (
+                  <label>
+                    <span>目标文档</span>
+                    <select value={publishDraft.targetDocumentId} onChange={(event) => updatePublishDraft(item.id, 'targetDocumentId', event.target.value)}>
+                      <option value="">请选择目标文档</option>
+                      {(knowledgeBaseDocuments[publishDraft.knowledgeBaseId] ?? []).map((document) => (
+                        <option key={document.id} value={document.id}>{document.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                {publishDraft.publishMode === 'create_new' ? (
+                  <label>
+                    <span>文档名</span>
+                    <input value={publishDraft.documentName} onChange={(event) => updatePublishDraft(item.id, 'documentName', event.target.value)} placeholder="例如 FAQ-Redis核心特点.md" />
+                  </label>
+                ) : null}
                 <label className="is-answer">
                   <span>FAQ 标准回答</span>
                   <textarea value={publishDraft.answer} onChange={(event) => updatePublishDraft(item.id, 'answer', event.target.value)} rows={4} placeholder="整理后的最终 FAQ 回答内容" />
@@ -827,7 +887,12 @@ export default function OperationsConsolePage() {
                 <button type="button" className="ops-refresh-button" disabled={publishingId === item.id || publishingToKnowledgeBaseId === item.id} onClick={() => void publishFAQCandidate(item)}>
                   {publishingId === item.id ? '生成中...' : '生成 FAQ 草稿'}
                 </button>
-                <button type="button" className="ops-secondary-button" disabled={publishingId === item.id || publishingToKnowledgeBaseId === item.id} onClick={() => void publishFAQToKnowledgeBase(item)}>
+                <button
+                  type="button"
+                  className="ops-secondary-button"
+                  disabled={publishingId === item.id || publishingToKnowledgeBaseId === item.id || !publishDraft.knowledgeBaseId || (publishDraft.publishMode !== 'create_new' && !publishDraft.targetDocumentId)}
+                  onClick={() => void publishFAQToKnowledgeBase(item)}
+                >
                   {publishingToKnowledgeBaseId === item.id ? '发布中...' : '发布到知识库'}
                 </button>
               </div>

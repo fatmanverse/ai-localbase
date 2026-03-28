@@ -1,5 +1,25 @@
 # RELEASE NOTES
 
+## v0.4.8 增量更新
+
+### FAQ 文档合并发布
+
+- FAQ 回写知识库接口新增 `publishMode` 与 `targetDocumentId` 参数
+- 支持 `create_new / append_to_document / replace_document` 三种发布模式
+- 追加模式会按 FAQ 问题 key 合并到已有 FAQ 文档；若同一 FAQ 已存在，则自动替换原条目，避免重复堆积
+- 前端治理台支持选择发布方式、目标文档，并可直接把 FAQ 发布到 FAQ 合集文档
+
+### 静态验证
+
+```bash
+cd backend && PATH=/usr/local/go/bin:$PATH go test ./...
+cd frontend && npm run build
+```
+
+结果：**通过**。
+
+---
+
 ## v0.4.7 增量更新
 
 ### FAQ 回写知识库

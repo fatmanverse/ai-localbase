@@ -1088,13 +1088,7 @@ func (s *AppService) CreateGeneratedMarkdownDocument(knowledgeBaseID, documentNa
 	if err := os.MkdirAll(s.serverConfig.UploadDir, 0o755); err != nil {
 		return model.Document{}, fmt.Errorf("create upload dir: %w", err)
 	}
-	name := strings.TrimSpace(documentName)
-	if name == "" {
-		name = fmt.Sprintf("FAQ-%s.md", time.Now().UTC().Format("20060102-150405"))
-	}
-	if !strings.HasSuffix(strings.ToLower(name), ".md") {
-		name += ".md"
-	}
+	name := ensureGeneratedMarkdownDocumentName(documentName)
 	storedName := fmt.Sprintf("%d_%s", util.NowUnixNano(), util.SanitizeFilename(name))
 	if !strings.HasSuffix(strings.ToLower(storedName), ".md") {
 		storedName += ".md"
@@ -1125,6 +1119,178 @@ func (s *AppService) CreateGeneratedMarkdownDocument(knowledgeBaseID, documentNa
 		return model.Document{}, err
 	}
 	return indexed, nil
+}
+
+func (s *AppService) UpsertGeneratedMarkdownDocument(knowledgeBaseID, targetDocumentID, documentName, markdown, mode string) (model.Document, error) {
+	if s == nil {
+		return model.Document{}, fmt.Errorf("app service is nil")
+	}
+	knowledgeBaseID, err := s.ResolveKnowledgeBaseID(knowledgeBaseID)
+	if err != nil {
+		return model.Document{}, err
+	}
+	publishMode := normalizeGeneratedMarkdownPublishMode(mode)
+	if publishMode == "create_new" {
+		return s.CreateGeneratedMarkdownDocument(knowledgeBaseID, documentName, markdown)
+	}
+	targetDocumentID = strings.TrimSpace(targetDocumentID)
+	if targetDocumentID == "" {
+		return model.Document{}, fmt.Errorf("target document id is required when publish mode is %s", publishMode)
+	}
+	knowledgeBase, targetDocument, targetIndex, err := s.findKnowledgeBaseDocument(knowledgeBaseID, targetDocumentID)
+	if err != nil {
+		return model.Document{}, err
+	}
+	originalContent, err := os.ReadFile(targetDocument.Path)
+	if err != nil {
+		return model.Document{}, fmt.Errorf("read target document content: %w", err)
+	}
+	nextContent := strings.TrimSpace(markdown)
+	if nextContent == "" {
+		return model.Document{}, fmt.Errorf("generated markdown content is required")
+	}
+	if publishMode == "append_to_document" {
+		nextContent = mergeGeneratedMarkdownContent(string(originalContent), nextContent)
+	}
+	if !strings.HasSuffix(nextContent, "\n") {
+		nextContent += "\n"
+	}
+	payload := []byte(nextContent)
+	if err := os.WriteFile(targetDocument.Path, payload, 0o644); err != nil {
+		return model.Document{}, fmt.Errorf("write target document content: %w", err)
+	}
+	updatedDocument := targetDocument
+	if strings.TrimSpace(documentName) != "" {
+		updatedDocument.Name = ensureGeneratedMarkdownDocumentName(documentName)
+	}
+	updatedDocument.Size = int64(len(payload))
+	updatedDocument.SizeLabel = util.FormatFileSize(int64(len(payload)))
+	updatedDocument.UploadedAt = util.NowRFC3339()
+	updatedDocument.Status = "processing"
+	updatedDocuments := append([]model.Document(nil), knowledgeBase.Documents...)
+	updatedDocuments[targetIndex] = updatedDocument
+	embeddingConfig := s.currentEmbeddingConfig()
+	reindexedDocuments := make([]model.Document, 0, len(updatedDocuments))
+	allPoints := make([]QdrantPoint, 0)
+	for _, document := range updatedDocuments {
+		indexedDocument, chunks, vectors, buildErr := s.buildIndexedDocument(document, embeddingConfig)
+		if buildErr != nil {
+			_ = os.WriteFile(targetDocument.Path, originalContent, 0o644)
+			return model.Document{}, fmt.Errorf("reindex document %s: %w", document.Name, buildErr)
+		}
+		reindexedDocuments = append(reindexedDocuments, indexedDocument)
+		allPoints = append(allPoints, s.buildQdrantPoints(chunks, vectors)...)
+	}
+	if err := s.rebuildKnowledgeBaseCollection(knowledgeBaseID, allPoints); err != nil {
+		_ = os.WriteFile(targetDocument.Path, originalContent, 0o644)
+		return model.Document{}, err
+	}
+	s.state.Mu.Lock()
+	latestKnowledgeBase, ok := s.state.KnowledgeBases[knowledgeBaseID]
+	if !ok {
+		s.state.Mu.Unlock()
+		_ = os.WriteFile(targetDocument.Path, originalContent, 0o644)
+		return model.Document{}, fmt.Errorf("knowledge base not found")
+	}
+	latestKnowledgeBase.Documents = reindexedDocuments
+	s.state.KnowledgeBases[knowledgeBaseID] = latestKnowledgeBase
+	s.state.Mu.Unlock()
+	if err := s.saveState(); err != nil {
+		return model.Document{}, err
+	}
+	for _, document := range reindexedDocuments {
+		if document.ID == updatedDocument.ID {
+			return document, nil
+		}
+	}
+	return model.Document{}, fmt.Errorf("reindexed document not found")
+}
+
+func normalizeGeneratedMarkdownPublishMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "append_to_document", "append", "merge":
+		return "append_to_document"
+	case "replace_document", "replace", "overwrite":
+		return "replace_document"
+	default:
+		return "create_new"
+	}
+}
+
+func ensureGeneratedMarkdownDocumentName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		trimmed = fmt.Sprintf("FAQ-%s.md", time.Now().UTC().Format("20060102-150405"))
+	}
+	if !strings.HasSuffix(strings.ToLower(trimmed), ".md") {
+		trimmed += ".md"
+	}
+	return trimmed
+}
+
+func extractGeneratedMarkdownEntryKey(content string) string {
+	const startPrefix = "<!-- ai-localbase-faq-entry:start key="
+	const endSuffix = " -->"
+	start := strings.Index(content, startPrefix)
+	if start < 0 {
+		return ""
+	}
+	start += len(startPrefix)
+	end := strings.Index(content[start:], endSuffix)
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(content[start : start+end])
+}
+
+func mergeGeneratedMarkdownContent(existing string, incoming string) string {
+	trimmedExisting := strings.TrimSpace(existing)
+	trimmedIncoming := strings.TrimSpace(incoming)
+	if trimmedIncoming == "" {
+		return trimmedExisting
+	}
+	const startPrefix = "<!-- ai-localbase-faq-entry:start key="
+	const endMarker = "<!-- ai-localbase-faq-entry:end -->"
+	if key := extractGeneratedMarkdownEntryKey(trimmedIncoming); key != "" {
+		startMarker := startPrefix + key + " -->"
+		if startIndex := strings.Index(trimmedExisting, startMarker); startIndex >= 0 {
+			tail := trimmedExisting[startIndex:]
+			if endIndex := strings.Index(tail, endMarker); endIndex >= 0 {
+				replaceEnd := startIndex + endIndex + len(endMarker)
+				prefix := strings.TrimSpace(trimmedExisting[:startIndex])
+				suffix := strings.TrimSpace(trimmedExisting[replaceEnd:])
+				switch {
+				case prefix == "" && suffix == "":
+					return trimmedIncoming + "\n"
+				case prefix == "":
+					return trimmedIncoming + "\n\n" + suffix + "\n"
+				case suffix == "":
+					return prefix + "\n\n" + trimmedIncoming + "\n"
+				default:
+					return prefix + "\n\n" + trimmedIncoming + "\n\n" + suffix + "\n"
+				}
+			}
+		}
+	}
+	if trimmedExisting == "" {
+		return trimmedIncoming + "\n"
+	}
+	return trimmedExisting + "\n\n" + trimmedIncoming + "\n"
+}
+
+func (s *AppService) findKnowledgeBaseDocument(knowledgeBaseID, documentID string) (model.KnowledgeBase, model.Document, int, error) {
+	s.state.Mu.RLock()
+	knowledgeBase, ok := s.state.KnowledgeBases[knowledgeBaseID]
+	s.state.Mu.RUnlock()
+	if !ok {
+		return model.KnowledgeBase{}, model.Document{}, -1, fmt.Errorf("knowledge base not found")
+	}
+	for index, document := range knowledgeBase.Documents {
+		if document.ID == strings.TrimSpace(documentID) {
+			return knowledgeBase, document, index, nil
+		}
+	}
+	return model.KnowledgeBase{}, model.Document{}, -1, fmt.Errorf("document not found")
 }
 
 func reportIndexProgress(onProgress func(stage string, progress int, message string), stage string, progress int, message string) {

@@ -452,7 +452,27 @@ Content-Type: application/json
   "publishedBy": "ops-faq-publisher",
   "note": "已整理为 FAQ 草稿并同步知识库",
   "knowledgeBaseId": "kb-1",
-  "documentName": "FAQ-Redis-核心特点.md"
+  "documentName": "FAQ-Redis-核心特点.md",
+  "publishMode": "create_new"
+}
+```
+
+补充参数：
+
+- `publishMode`：`create_new` / `append_to_document` / `replace_document`
+- `targetDocumentId`：当 `publishMode` 为 `append_to_document` 或 `replace_document` 时必填
+
+如果希望把 FAQ 合并到已有 FAQ 合集文档，可使用：
+
+```json
+{
+  "knowledgeBaseId": "kb-1",
+  "publishMode": "append_to_document",
+  "targetDocumentId": "doc-18",
+  "question": "Redis 的核心特点是什么？",
+  "answer": "Redis 适合高性能缓存、结构化数据读写和快速恢复场景。",
+  "publishedBy": "ops-faq-publisher",
+  "note": "已更新 FAQ 合集中的 Redis 说明"
 }
 ```
 
@@ -488,7 +508,13 @@ Content-Type: application/json
 适用场景：
 - 运维 / 交付同学已经把 FAQ 文稿整理好，希望直接回写到知识库
 - 希望把高赞回答快速转成知识库里的 Markdown 文档，避免人工复制
+- 希望把多个 FAQ 合并到统一 FAQ 合集文档，而不是每次都新增一份文档
 - 让 FAQ 候选 -> FAQ 草稿 -> 知识库文档形成最小闭环
+
+发布模式说明：
+- `create_new`：新建一份 FAQ Markdown 文档并立即索引
+- `append_to_document`：按 FAQ 问题 key 合并进目标文档；如果相同 FAQ 已存在，则自动替换原条目
+- `replace_document`：用当前 FAQ 文档整体覆盖目标文档，再重新索引
 
 ### 7.6 获取治理周报
 

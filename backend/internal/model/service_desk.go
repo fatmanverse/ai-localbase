@@ -241,12 +241,14 @@ type PublishFAQCandidateRequest struct {
 }
 
 type PublishFAQToKnowledgeBaseRequest struct {
-	Question        string `json:"question,omitempty"`
-	Answer          string `json:"answer,omitempty"`
-	PublishedBy     string `json:"publishedBy,omitempty"`
-	Note            string `json:"note,omitempty"`
-	KnowledgeBaseID string `json:"knowledgeBaseId,omitempty"`
-	DocumentName    string `json:"documentName,omitempty"`
+	Question         string `json:"question,omitempty"`
+	Answer           string `json:"answer,omitempty"`
+	PublishedBy      string `json:"publishedBy,omitempty"`
+	Note             string `json:"note,omitempty"`
+	KnowledgeBaseID  string `json:"knowledgeBaseId,omitempty"`
+	DocumentName     string `json:"documentName,omitempty"`
+	PublishMode      string `json:"publishMode,omitempty"`
+	TargetDocumentID string `json:"targetDocumentId,omitempty"`
 }
 
 type AnalyticsExportOptions struct {

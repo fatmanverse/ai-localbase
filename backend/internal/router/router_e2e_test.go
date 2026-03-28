@@ -848,7 +848,7 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 		"publishedBy":     "ops-faq-publisher",
 		"note":            "已整理为 FAQ 草稿并同步知识库",
 		"knowledgeBaseId": knowledgeBaseID,
-		"documentName":    "FAQ-Redis-核心特点.md",
+		"documentName":    "FAQ-基础合集.md",
 	})
 	if faqPublishToKBResp.Code != http.StatusOK {
 		t.Fatalf("expected faq publish-to-kb status 200, got %d, body=%s", faqPublishToKBResp.Code, faqPublishToKBResp.Body.String())
@@ -858,7 +858,7 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	faqPublishToKBData, _ := json.Marshal(faqPublishToKBResult.Data)
 	var publishToKBPayload model.PublishFAQToKnowledgeBaseResponse
 	decodeJSONResponse(t, faqPublishToKBData, &publishToKBPayload)
-	if publishToKBPayload.Document.ID == "" || publishToKBPayload.Document.Status != "indexed" || !strings.Contains(publishToKBPayload.Document.Name, "FAQ-Redis") {
+	if publishToKBPayload.Document.ID == "" || publishToKBPayload.Document.Status != "indexed" || publishToKBPayload.Document.Name != "FAQ-基础合集.md" {
 		t.Fatalf("expected generated knowledge base document after publish-to-kb, got %+v", publishToKBPayload)
 	}
 
@@ -876,6 +876,39 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	}
 	if documentsResult.Items[0].ID != publishToKBPayload.Document.ID {
 		t.Fatalf("expected generated document to appear in knowledge base list, got %+v", documentsResult.Items)
+	}
+
+	faqAppendResp := performJSONRequest(t, engine, http.MethodPost, fmt.Sprintf("/api/service-desk/analytics/faq-candidates/%s/publish-to-kb", faqList.Items[0].ID), map[string]any{
+		"question":         "Redis 的核心特点是什么？",
+		"answer":           "Redis 适合高性能缓存、结构化数据读写和快速恢复场景。",
+		"publishedBy":      "ops-faq-publisher",
+		"note":             "已更新 FAQ 合集中的 Redis 说明",
+		"knowledgeBaseId":  knowledgeBaseID,
+		"publishMode":      "append_to_document",
+		"targetDocumentId": publishToKBPayload.Document.ID,
+	})
+	if faqAppendResp.Code != http.StatusOK {
+		t.Fatalf("expected faq append-to-document status 200, got %d, body=%s", faqAppendResp.Code, faqAppendResp.Body.String())
+	}
+	var faqAppendResult model.APIResponse
+	decodeJSONResponse(t, faqAppendResp.Body.Bytes(), &faqAppendResult)
+	faqAppendData, _ := json.Marshal(faqAppendResult.Data)
+	var appendPayload model.PublishFAQToKnowledgeBaseResponse
+	decodeJSONResponse(t, faqAppendData, &appendPayload)
+	if appendPayload.Document.ID != publishToKBPayload.Document.ID || appendPayload.Document.Status != "indexed" || appendPayload.Document.Name != publishToKBPayload.Document.Name {
+		t.Fatalf("expected append mode to reuse existing document without renaming it, got %+v", appendPayload)
+	}
+	updatedDocumentsResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/knowledge-bases/%s/documents", knowledgeBaseID), nil, "")
+	if updatedDocumentsResp.Code != http.StatusOK {
+		t.Fatalf("expected updated documents list status 200, got %d, body=%s", updatedDocumentsResp.Code, updatedDocumentsResp.Body.String())
+	}
+	var updatedDocumentsResult struct {
+		KnowledgeBaseID string           `json:"knowledgeBaseId"`
+		Items           []model.Document `json:"items"`
+	}
+	decodeJSONResponse(t, updatedDocumentsResp.Body.Bytes(), &updatedDocumentsResult)
+	if len(updatedDocumentsResult.Items) != len(documentsResult.Items) || updatedDocumentsResult.Items[0].ID != publishToKBPayload.Document.ID {
+		t.Fatalf("expected append mode to avoid creating duplicate faq documents, got %+v", updatedDocumentsResult.Items)
 	}
 
 	weeklyReportResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/weekly-report?knowledgeBaseId=%s", knowledgeBaseID), nil, "")

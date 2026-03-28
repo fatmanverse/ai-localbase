@@ -265,8 +265,22 @@ curl -X POST http://localhost:8080/api/service-desk/analytics/faq-candidates/<id
 ```bash
 curl -X POST http://localhost:8080/api/service-desk/analytics/faq-candidates/<id>/publish-to-kb \
   -H 'Content-Type: application/json' \
-  -d '{"question":"Redis 的核心特点是什么？","answer":"Redis 适合高性能缓存、结构化数据读写和快速恢复场景。","publishedBy":"ops-faq-publisher","note":"已整理为 FAQ 草稿并同步知识库","knowledgeBaseId":"<kbId>","documentName":"FAQ-Redis-核心特点.md"}'
+  -d '{"question":"Redis 的核心特点是什么？","answer":"Redis 适合高性能缓存、结构化数据读写和快速恢复场景。","publishedBy":"ops-faq-publisher","note":"已整理为 FAQ 草稿并同步知识库","knowledgeBaseId":"<kbId>","documentName":"FAQ-Redis-核心特点.md","publishMode":"create_new"}'
 ```
+
+把 FAQ 追加到已有 FAQ 合集文档：
+
+```bash
+curl -X POST http://localhost:8080/api/service-desk/analytics/faq-candidates/<id>/publish-to-kb \
+  -H 'Content-Type: application/json' \
+  -d '{"knowledgeBaseId":"<kbId>","publishMode":"append_to_document","targetDocumentId":"<docId>","question":"Redis 的核心特点是什么？","answer":"Redis 适合高性能缓存、结构化数据读写和快速恢复场景。","publishedBy":"ops-faq-publisher","note":"已更新 FAQ 合集中的 Redis 说明"}'
+```
+
+支持的 FAQ 发布模式：
+
+- `create_new`：新建 FAQ Markdown 文档
+- `append_to_document`：追加到已有文档；如果同一 FAQ 已存在，会按问题 key 自动替换，避免重复堆积
+- `replace_document`：用当前 FAQ 文档整体覆盖目标文档
 
 重建索引：
 

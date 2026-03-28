@@ -132,7 +132,14 @@ POST /api/service-desk/analytics/faq-candidates/:id/publish-to-kb
 
 - 在生成 FAQ 草稿的同时，直接写入指定知识库
 - 服务端会自动生成 Markdown 文档并立刻完成索引
-- 前端治理台可以直接选择目标知识库和文档名
+- 前端治理台可以直接选择目标知识库、发布方式和目标文档
+- 支持按 FAQ 问题 key 合并到已有 FAQ 合集文档，避免重复堆积
+
+FAQ 回写模式：
+
+- `create_new`：新建 FAQ 文档
+- `append_to_document`：追加到现有文档；若同一 FAQ 已存在则自动替换
+- `replace_document`：用当前 FAQ 文档整体覆盖目标文档
 
 ### 治理周报
 
@@ -220,5 +227,5 @@ Content-Type: application/json
 4. 用 `analytics/knowledge-gaps` 筛选高频知识缺口，并在备注里记录“已补文档 / 已重建索引 / 待业务确认”等动作。
 5. 用 `analytics/low-quality-answers` 看高频差评回答，把问题归因到切片、检索、答案策略或知识缺失。
 6. 用 `analytics/export` 导出当前视图，直接发给运营、交付或产品同学复盘。
-7. 在前端 `?mode=ops-console` / `/ops` 页面直接做勾选、指派、备注、导出和 FAQ 草稿整理。
+7. 在前端 `?mode=ops-console` / `/ops` 页面直接做勾选、指派、备注、导出、FAQ 草稿整理，以及 FAQ 合集文档发布。
 8. 优先处理高频点踩的问题，再回头补 FAQ 与图片型知识说明。

@@ -110,8 +110,10 @@
 - 新增 `GET /api/service-desk/analytics/export` 导出接口
 - 新增 `POST /api/service-desk/analytics/faq-candidates/:id/publish` FAQ 草稿生成接口
 - 新增 `POST /api/service-desk/analytics/faq-candidates/:id/publish-to-kb` FAQ 回写知识库接口
+- FAQ 回写支持 `create_new / append_to_document / replace_document` 三种模式
+- 追加模式会按 FAQ 问题 key 自动替换已有条目，避免 FAQ 文档重复堆积
 - FAQ 候选支持 `publishedOnly=true` 过滤已整理项
-- 治理页支持导出当前视图、导出周报、一键生成 FAQ 草稿，并可直接发布到知识库
+- 治理页支持导出当前视图、导出周报、一键生成 FAQ 草稿，并可直接发布到知识库或合并到 FAQ 合集文档
 
 ---
 
