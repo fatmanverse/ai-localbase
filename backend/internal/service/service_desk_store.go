@@ -80,6 +80,9 @@ func (s *SQLiteChatHistoryStore) initServiceDeskTables() error {
 			conversation_id TEXT NOT NULL,
 			like_count INTEGER NOT NULL DEFAULT 0,
 			status TEXT NOT NULL DEFAULT 'candidate',
+			owner TEXT NOT NULL DEFAULT '',
+			note TEXT NOT NULL DEFAULT '',
+			updated_by TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);`,
@@ -93,6 +96,9 @@ func (s *SQLiteChatHistoryStore) initServiceDeskTables() error {
 			suggested_action TEXT NOT NULL DEFAULT '',
 			count INTEGER NOT NULL DEFAULT 0,
 			status TEXT NOT NULL DEFAULT 'pending',
+			owner TEXT NOT NULL DEFAULT '',
+			note TEXT NOT NULL DEFAULT '',
+			updated_by TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
 			UNIQUE(question_normalized, issue_type)
@@ -107,6 +113,9 @@ func (s *SQLiteChatHistoryStore) initServiceDeskTables() error {
 			primary_reason TEXT NOT NULL DEFAULT '',
 			dislike_count INTEGER NOT NULL DEFAULT 0,
 			status TEXT NOT NULL DEFAULT 'open',
+			owner TEXT NOT NULL DEFAULT '',
+			note TEXT NOT NULL DEFAULT '',
+			updated_by TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);`,
@@ -118,7 +127,68 @@ func (s *SQLiteChatHistoryStore) initServiceDeskTables() error {
 		}
 	}
 
+	if err := s.ensureServiceDeskAnalyticsColumns(); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (s *SQLiteChatHistoryStore) ensureServiceDeskAnalyticsColumns() error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("sqlite chat history store is nil")
+	}
+	definitions := map[string]string{
+		"owner":      "TEXT NOT NULL DEFAULT ''",
+		"note":       "TEXT NOT NULL DEFAULT ''",
+		"updated_by": "TEXT NOT NULL DEFAULT ''",
+	}
+	for _, table := range []string{"faq_candidates", "knowledge_gaps", "low_quality_answers"} {
+		if err := s.ensureSQLiteColumns(table, definitions); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *SQLiteChatHistoryStore) ensureSQLiteColumns(table string, definitions map[string]string) error {
+	existing, err := s.sqliteTableColumns(table)
+	if err != nil {
+		return err
+	}
+	for column, definition := range definitions {
+		if _, ok := existing[column]; ok {
+			continue
+		}
+		statement := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)
+		if _, err := s.db.Exec(statement); err != nil {
+			return fmt.Errorf("ensure %s.%s: %w", table, column, err)
+		}
+	}
+	return nil
+}
+
+func (s *SQLiteChatHistoryStore) sqliteTableColumns(table string) (map[string]struct{}, error) {
+	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return nil, fmt.Errorf("query table info %s: %w", table, err)
+	}
+	defer rows.Close()
+	columns := make(map[string]struct{})
+	for rows.Next() {
+		var cid int
+		var name, dataType string
+		var notNull, pk int
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &pk); err != nil {
+			return nil, fmt.Errorf("scan table info %s: %w", table, err)
+		}
+		columns[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate table info %s: %w", table, err)
+	}
+	return columns, nil
 }
 
 func (s *SQLiteChatHistoryStore) SaveServiceDeskConversation(conversation model.ServiceDeskConversation) error {
@@ -426,29 +496,54 @@ func (s *SQLiteChatHistoryStore) saveMessageFeedback(feedback model.ServiceDeskM
 	return &feedback, nil
 }
 
-func (s *SQLiteChatHistoryStore) GetServiceDeskAnalyticsSummary() (model.ServiceDeskAnalyticsSummary, error) {
+func (s *SQLiteChatHistoryStore) GetServiceDeskAnalyticsSummary(opts model.AnalyticsListOptions) (model.ServiceDeskAnalyticsSummary, error) {
 	if s == nil || s.db == nil {
 		return model.ServiceDeskAnalyticsSummary{}, fmt.Errorf("sqlite chat history store is nil")
 	}
 	summary := model.ServiceDeskAnalyticsSummary{}
-	if err := s.db.QueryRow(`SELECT COUNT(1), COALESCE(SUM(CASE WHEN feedback_type = 'like' THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN feedback_type = 'dislike' THEN 1 ELSE 0 END), 0) FROM message_feedback`).Scan(&summary.TotalFeedbacks, &summary.LikeCount, &summary.DislikeCount); err != nil {
+	feedbackFilters := []analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}}
+	query, args := buildAnalyticsCountQuery(
+		`SELECT COUNT(1), COALESCE(SUM(CASE WHEN feedback_type = 'like' THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN feedback_type = 'dislike' THEN 1 ELSE 0 END), 0) FROM message_feedback`,
+		nil,
+		feedbackFilters,
+	)
+	if err := s.db.QueryRow(query, args...).Scan(&summary.TotalFeedbacks, &summary.LikeCount, &summary.DislikeCount); err != nil {
 		return summary, fmt.Errorf("query feedback totals: %w", err)
 	}
 
 	var err error
-	summary.FAQCandidates, err = s.ListFAQCandidates(20)
+	summary.FAQPendingCount, err = s.countAnalyticsRows("faq_candidates", []string{"like_count >= 2", "status = 'candidate'"}, []analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}})
 	if err != nil {
 		return summary, err
 	}
-	summary.KnowledgeGaps, err = s.ListKnowledgeGaps(20)
+	summary.KnowledgeGapCount, err = s.countAnalyticsRows("knowledge_gaps", []string{"count >= 1", "status = 'pending'"}, []analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}})
 	if err != nil {
 		return summary, err
 	}
-	summary.LowQualityAnswers, err = s.ListLowQualityAnswers(20)
+	summary.LowQualityOpenCount, err = s.countAnalyticsRows("low_quality_answers", []string{"dislike_count >= 1", "status = 'open'"}, []analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}})
 	if err != nil {
 		return summary, err
 	}
-	recentFeedback, err := s.ListRecentFeedback(200)
+	thisWeekStart := beginningOfWeekUTC(time.Now().UTC()).Format(time.RFC3339)
+	summary.ThisWeekDislikeCount, err = s.countAnalyticsRows("message_feedback", []string{"feedback_type = 'dislike'", "created_at >= '" + thisWeekStart + "'"}, []analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}})
+	if err != nil {
+		return summary, err
+	}
+
+	listOpts := model.AnalyticsListOptions{Limit: 20, KnowledgeBaseID: opts.KnowledgeBaseID}
+	summary.FAQCandidates, err = s.ListFAQCandidatesByOptions(listOpts)
+	if err != nil {
+		return summary, err
+	}
+	summary.KnowledgeGaps, err = s.ListKnowledgeGapsByOptions(listOpts)
+	if err != nil {
+		return summary, err
+	}
+	summary.LowQualityAnswers, err = s.ListLowQualityAnswersByOptions(listOpts)
+	if err != nil {
+		return summary, err
+	}
+	recentFeedback, err := s.ListRecentFeedbackByOptions(model.AnalyticsListOptions{Limit: 200, KnowledgeBaseID: opts.KnowledgeBaseID})
 	if err != nil {
 		return summary, err
 	}
@@ -467,9 +562,9 @@ func (s *SQLiteChatHistoryStore) ListFAQCandidates(limit int) ([]model.FAQCandid
 
 func (s *SQLiteChatHistoryStore) ListFAQCandidatesByOptions(opts model.AnalyticsListOptions) ([]model.FAQCandidate, error) {
 	query, args := buildAnalyticsListQuery(
-		`SELECT id, question_normalized, question_text, answer_text, knowledge_base_id, source_message_id, conversation_id, like_count, status, created_at, updated_at FROM faq_candidates`,
+		`SELECT id, question_normalized, question_text, answer_text, knowledge_base_id, source_message_id, conversation_id, like_count, status, owner, note, updated_by, created_at, updated_at FROM faq_candidates`,
 		[]string{"like_count >= 2"},
-		[]analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}, {Column: "status", Value: opts.Status}},
+		[]analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}, {Column: "status", Value: opts.Status}, {Column: "owner", Value: opts.Owner}},
 		" ORDER BY like_count DESC, updated_at DESC LIMIT ?",
 		normalizeAnalyticsListLimit(opts.Limit),
 	)
@@ -481,7 +576,7 @@ func (s *SQLiteChatHistoryStore) ListFAQCandidatesByOptions(opts model.Analytics
 	items := make([]model.FAQCandidate, 0)
 	for rows.Next() {
 		var item model.FAQCandidate
-		if err := rows.Scan(&item.ID, &item.QuestionNormalized, &item.QuestionText, &item.AnswerText, &item.KnowledgeBaseID, &item.SourceMessageID, &item.ConversationID, &item.LikeCount, &item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.QuestionNormalized, &item.QuestionText, &item.AnswerText, &item.KnowledgeBaseID, &item.SourceMessageID, &item.ConversationID, &item.LikeCount, &item.Status, &item.Owner, &item.Note, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan faq candidate: %w", err)
 		}
 		items = append(items, item)
@@ -495,9 +590,9 @@ func (s *SQLiteChatHistoryStore) ListKnowledgeGaps(limit int) ([]model.Knowledge
 
 func (s *SQLiteChatHistoryStore) ListKnowledgeGapsByOptions(opts model.AnalyticsListOptions) ([]model.KnowledgeGap, error) {
 	query, args := buildAnalyticsListQuery(
-		`SELECT id, question_normalized, question_text, issue_type, knowledge_base_id, sample_answer, suggested_action, count, status, created_at, updated_at FROM knowledge_gaps`,
+		`SELECT id, question_normalized, question_text, issue_type, knowledge_base_id, sample_answer, suggested_action, count, status, owner, note, updated_by, created_at, updated_at FROM knowledge_gaps`,
 		[]string{"count >= 1"},
-		[]analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}, {Column: "status", Value: opts.Status}, {Column: "issue_type", Value: opts.IssueType}},
+		[]analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}, {Column: "status", Value: opts.Status}, {Column: "issue_type", Value: opts.IssueType}, {Column: "owner", Value: opts.Owner}},
 		" ORDER BY count DESC, updated_at DESC LIMIT ?",
 		normalizeAnalyticsListLimit(opts.Limit),
 	)
@@ -509,7 +604,7 @@ func (s *SQLiteChatHistoryStore) ListKnowledgeGapsByOptions(opts model.Analytics
 	items := make([]model.KnowledgeGap, 0)
 	for rows.Next() {
 		var item model.KnowledgeGap
-		if err := rows.Scan(&item.ID, &item.QuestionNormalized, &item.QuestionText, &item.IssueType, &item.KnowledgeBaseID, &item.SampleAnswer, &item.SuggestedAction, &item.Count, &item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.QuestionNormalized, &item.QuestionText, &item.IssueType, &item.KnowledgeBaseID, &item.SampleAnswer, &item.SuggestedAction, &item.Count, &item.Status, &item.Owner, &item.Note, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan knowledge gap: %w", err)
 		}
 		items = append(items, item)
@@ -523,9 +618,9 @@ func (s *SQLiteChatHistoryStore) ListLowQualityAnswers(limit int) ([]model.LowQu
 
 func (s *SQLiteChatHistoryStore) ListLowQualityAnswersByOptions(opts model.AnalyticsListOptions) ([]model.LowQualityAnswer, error) {
 	query, args := buildAnalyticsListQuery(
-		`SELECT id, source_message_id, conversation_id, question_text, answer_text, knowledge_base_id, primary_reason, dislike_count, status, created_at, updated_at FROM low_quality_answers`,
+		`SELECT id, source_message_id, conversation_id, question_text, answer_text, knowledge_base_id, primary_reason, dislike_count, status, owner, note, updated_by, created_at, updated_at FROM low_quality_answers`,
 		[]string{"dislike_count >= 1"},
-		[]analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}, {Column: "status", Value: opts.Status}, {Column: "primary_reason", Value: opts.FeedbackReason}},
+		[]analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}, {Column: "status", Value: opts.Status}, {Column: "primary_reason", Value: opts.FeedbackReason}, {Column: "owner", Value: opts.Owner}},
 		" ORDER BY dislike_count DESC, updated_at DESC LIMIT ?",
 		normalizeAnalyticsListLimit(opts.Limit),
 	)
@@ -537,7 +632,7 @@ func (s *SQLiteChatHistoryStore) ListLowQualityAnswersByOptions(opts model.Analy
 	items := make([]model.LowQualityAnswer, 0)
 	for rows.Next() {
 		var item model.LowQualityAnswer
-		if err := rows.Scan(&item.ID, &item.SourceMessageID, &item.ConversationID, &item.QuestionText, &item.AnswerText, &item.KnowledgeBaseID, &item.PrimaryReason, &item.DislikeCount, &item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.SourceMessageID, &item.ConversationID, &item.QuestionText, &item.AnswerText, &item.KnowledgeBaseID, &item.PrimaryReason, &item.DislikeCount, &item.Status, &item.Owner, &item.Note, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan low quality answer: %w", err)
 		}
 		items = append(items, item)
@@ -581,10 +676,10 @@ type analyticsFilter struct {
 	Value  string
 }
 
-func buildAnalyticsListQuery(base string, fixedClauses []string, filters []analyticsFilter, suffix string, limit int) (string, []any) {
+func buildAnalyticsWhereClause(fixedClauses []string, filters []analyticsFilter) (string, []any) {
 	clauses := make([]string, 0, len(fixedClauses)+len(filters))
 	clauses = append(clauses, fixedClauses...)
-	args := make([]any, 0, len(filters)+1)
+	args := make([]any, 0, len(filters))
 	for _, filter := range filters {
 		value := strings.TrimSpace(filter.Value)
 		column := strings.TrimSpace(filter.Column)
@@ -594,15 +689,25 @@ func buildAnalyticsListQuery(base string, fixedClauses []string, filters []analy
 		clauses = append(clauses, column+" = ?")
 		args = append(args, value)
 	}
-	query := base
-	if len(clauses) > 0 {
-		query += " WHERE " + strings.Join(clauses, " AND ")
+	if len(clauses) == 0 {
+		return "", args
 	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+func buildAnalyticsListQuery(base string, fixedClauses []string, filters []analyticsFilter, suffix string, limit int) (string, []any) {
+	whereClause, args := buildAnalyticsWhereClause(fixedClauses, filters)
+	query := base + whereClause
 	if strings.TrimSpace(suffix) != "" {
 		query += suffix
 	}
 	args = append(args, normalizeAnalyticsListLimit(limit))
 	return query, args
+}
+
+func buildAnalyticsCountQuery(base string, fixedClauses []string, filters []analyticsFilter) (string, []any) {
+	whereClause, args := buildAnalyticsWhereClause(fixedClauses, filters)
+	return base + whereClause, args
 }
 
 func normalizeAnalyticsListLimit(limit int) int {
@@ -634,40 +739,135 @@ func normalizeAnalyticsStatus(status string, allowed []string) (string, error) {
 	return "", fmt.Errorf("invalid status: %s", trimmed)
 }
 
-func (s *SQLiteChatHistoryStore) UpdateFAQCandidateStatus(id, status string) (*model.FAQCandidate, error) {
-	normalized, err := normalizeFAQCandidateStatus(status)
+type analyticsItemUpdate struct {
+	Status    *string
+	Owner     *string
+	Note      *string
+	UpdatedBy *string
+}
+
+func (u analyticsItemUpdate) hasChanges() bool {
+	return u.Status != nil || u.Owner != nil || u.Note != nil || u.UpdatedBy != nil
+}
+
+func normalizeOptionalAnalyticsValue(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	return &trimmed
+}
+
+func buildAnalyticsItemUpdate(req model.AnalyticsStatusUpdateRequest, normalizeStatus func(string) (string, error)) (analyticsItemUpdate, error) {
+	update := analyticsItemUpdate{
+		Owner:     normalizeOptionalAnalyticsValue(req.Owner),
+		Note:      normalizeOptionalAnalyticsValue(req.Note),
+		UpdatedBy: normalizeOptionalAnalyticsValue(req.UpdatedBy),
+	}
+	if req.Status != nil {
+		normalized, err := normalizeStatus(*req.Status)
+		if err != nil {
+			return analyticsItemUpdate{}, err
+		}
+		update.Status = &normalized
+	}
+	if !update.hasChanges() {
+		return analyticsItemUpdate{}, fmt.Errorf("at least one field is required")
+	}
+	return update, nil
+}
+
+func buildAnalyticsBatchItemUpdate(req model.AnalyticsBatchUpdateRequest, normalizeStatus func(string) (string, error)) ([]string, analyticsItemUpdate, error) {
+	seen := make(map[string]struct{})
+	ids := make([]string, 0, len(req.IDs))
+	for _, rawID := range req.IDs {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil, analyticsItemUpdate{}, fmt.Errorf("ids are required")
+	}
+	update, err := buildAnalyticsItemUpdate(model.AnalyticsStatusUpdateRequest{Status: req.Status, Owner: req.Owner, Note: req.Note, UpdatedBy: req.UpdatedBy}, normalizeStatus)
+	if err != nil {
+		return nil, analyticsItemUpdate{}, err
+	}
+	return ids, update, nil
+}
+
+func (s *SQLiteChatHistoryStore) UpdateFAQCandidateStatus(id string, req model.AnalyticsStatusUpdateRequest) (*model.FAQCandidate, error) {
+	update, err := buildAnalyticsItemUpdate(req, normalizeFAQCandidateStatus)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.updateAnalyticsItemStatus("faq_candidates", id, normalized); err != nil {
+	if err := s.updateAnalyticsItem("faq_candidates", id, update); err != nil {
 		return nil, err
 	}
 	return s.getFAQCandidateByID(id)
 }
 
-func (s *SQLiteChatHistoryStore) UpdateKnowledgeGapStatus(id, status string) (*model.KnowledgeGap, error) {
-	normalized, err := normalizeKnowledgeGapStatus(status)
+func (s *SQLiteChatHistoryStore) UpdateKnowledgeGapStatus(id string, req model.AnalyticsStatusUpdateRequest) (*model.KnowledgeGap, error) {
+	update, err := buildAnalyticsItemUpdate(req, normalizeKnowledgeGapStatus)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.updateAnalyticsItemStatus("knowledge_gaps", id, normalized); err != nil {
+	if err := s.updateAnalyticsItem("knowledge_gaps", id, update); err != nil {
 		return nil, err
 	}
 	return s.getKnowledgeGapByID(id)
 }
 
-func (s *SQLiteChatHistoryStore) UpdateLowQualityAnswerStatus(id, status string) (*model.LowQualityAnswer, error) {
-	normalized, err := normalizeLowQualityAnswerStatus(status)
+func (s *SQLiteChatHistoryStore) UpdateLowQualityAnswerStatus(id string, req model.AnalyticsStatusUpdateRequest) (*model.LowQualityAnswer, error) {
+	update, err := buildAnalyticsItemUpdate(req, normalizeLowQualityAnswerStatus)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.updateAnalyticsItemStatus("low_quality_answers", id, normalized); err != nil {
+	if err := s.updateAnalyticsItem("low_quality_answers", id, update); err != nil {
 		return nil, err
 	}
 	return s.getLowQualityAnswerByID(id)
 }
 
-func (s *SQLiteChatHistoryStore) updateAnalyticsItemStatus(table, id, status string) error {
+func (s *SQLiteChatHistoryStore) BatchUpdateFAQCandidates(req model.AnalyticsBatchUpdateRequest) (model.AnalyticsBatchUpdateResponse, error) {
+	ids, update, err := buildAnalyticsBatchItemUpdate(req, normalizeFAQCandidateStatus)
+	if err != nil {
+		return model.AnalyticsBatchUpdateResponse{}, err
+	}
+	if err := s.batchUpdateAnalyticsItems("faq_candidates", ids, update); err != nil {
+		return model.AnalyticsBatchUpdateResponse{}, err
+	}
+	return model.AnalyticsBatchUpdateResponse{UpdatedCount: len(ids), IDs: ids}, nil
+}
+
+func (s *SQLiteChatHistoryStore) BatchUpdateKnowledgeGaps(req model.AnalyticsBatchUpdateRequest) (model.AnalyticsBatchUpdateResponse, error) {
+	ids, update, err := buildAnalyticsBatchItemUpdate(req, normalizeKnowledgeGapStatus)
+	if err != nil {
+		return model.AnalyticsBatchUpdateResponse{}, err
+	}
+	if err := s.batchUpdateAnalyticsItems("knowledge_gaps", ids, update); err != nil {
+		return model.AnalyticsBatchUpdateResponse{}, err
+	}
+	return model.AnalyticsBatchUpdateResponse{UpdatedCount: len(ids), IDs: ids}, nil
+}
+
+func (s *SQLiteChatHistoryStore) BatchUpdateLowQualityAnswers(req model.AnalyticsBatchUpdateRequest) (model.AnalyticsBatchUpdateResponse, error) {
+	ids, update, err := buildAnalyticsBatchItemUpdate(req, normalizeLowQualityAnswerStatus)
+	if err != nil {
+		return model.AnalyticsBatchUpdateResponse{}, err
+	}
+	if err := s.batchUpdateAnalyticsItems("low_quality_answers", ids, update); err != nil {
+		return model.AnalyticsBatchUpdateResponse{}, err
+	}
+	return model.AnalyticsBatchUpdateResponse{UpdatedCount: len(ids), IDs: ids}, nil
+}
+
+func (s *SQLiteChatHistoryStore) updateAnalyticsItem(table, id string, update analyticsItemUpdate) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("sqlite chat history store is nil")
 	}
@@ -675,9 +875,12 @@ func (s *SQLiteChatHistoryStore) updateAnalyticsItemStatus(table, id, status str
 	if id == "" {
 		return fmt.Errorf("id is required")
 	}
-	result, err := s.db.Exec(`UPDATE `+table+` SET status = ?, updated_at = ? WHERE id = ?`, status, util.NowRFC3339(), id)
+	if !update.hasChanges() {
+		return fmt.Errorf("at least one field is required")
+	}
+	result, err := s.execAnalyticsItemUpdate(s.db, table, id, update)
 	if err != nil {
-		return fmt.Errorf("update %s status: %w", table, err)
+		return err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
@@ -689,9 +892,79 @@ func (s *SQLiteChatHistoryStore) updateAnalyticsItemStatus(table, id, status str
 	return nil
 }
 
+func (s *SQLiteChatHistoryStore) batchUpdateAnalyticsItems(table string, ids []string, update analyticsItemUpdate) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("sqlite chat history store is nil")
+	}
+	if len(ids) == 0 {
+		return fmt.Errorf("ids are required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin analytics batch update: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	for _, id := range ids {
+		result, execErr := s.execAnalyticsItemUpdate(tx, table, id, update)
+		if execErr != nil {
+			err = execErr
+			return err
+		}
+		affected, rowsErr := result.RowsAffected()
+		if rowsErr != nil {
+			err = fmt.Errorf("rows affected %s: %w", table, rowsErr)
+			return err
+		}
+		if affected == 0 {
+			err = fmt.Errorf("item not found: %s", id)
+			return err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit analytics batch update: %w", err)
+	}
+	return nil
+}
+
+type analyticsExec interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+func (s *SQLiteChatHistoryStore) execAnalyticsItemUpdate(exec analyticsExec, table, id string, update analyticsItemUpdate) (sql.Result, error) {
+	assignments := make([]string, 0, 5)
+	args := make([]any, 0, 6)
+	if update.Status != nil {
+		assignments = append(assignments, "status = ?")
+		args = append(args, *update.Status)
+	}
+	if update.Owner != nil {
+		assignments = append(assignments, "owner = ?")
+		args = append(args, *update.Owner)
+	}
+	if update.Note != nil {
+		assignments = append(assignments, "note = ?")
+		args = append(args, *update.Note)
+	}
+	if update.UpdatedBy != nil {
+		assignments = append(assignments, "updated_by = ?")
+		args = append(args, *update.UpdatedBy)
+	}
+	assignments = append(assignments, "updated_at = ?")
+	args = append(args, util.NowRFC3339(), id)
+	result, err := exec.Exec(`UPDATE `+table+` SET `+strings.Join(assignments, ", ")+` WHERE id = ?`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("update %s: %w", table, err)
+	}
+	return result, nil
+}
+
 func (s *SQLiteChatHistoryStore) getFAQCandidateByID(id string) (*model.FAQCandidate, error) {
 	var item model.FAQCandidate
-	if err := s.db.QueryRow(`SELECT id, question_normalized, question_text, answer_text, knowledge_base_id, source_message_id, conversation_id, like_count, status, created_at, updated_at FROM faq_candidates WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Scan(&item.ID, &item.QuestionNormalized, &item.QuestionText, &item.AnswerText, &item.KnowledgeBaseID, &item.SourceMessageID, &item.ConversationID, &item.LikeCount, &item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := s.db.QueryRow(`SELECT id, question_normalized, question_text, answer_text, knowledge_base_id, source_message_id, conversation_id, like_count, status, owner, note, updated_by, created_at, updated_at FROM faq_candidates WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Scan(&item.ID, &item.QuestionNormalized, &item.QuestionText, &item.AnswerText, &item.KnowledgeBaseID, &item.SourceMessageID, &item.ConversationID, &item.LikeCount, &item.Status, &item.Owner, &item.Note, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("item not found")
 		}
@@ -702,7 +975,7 @@ func (s *SQLiteChatHistoryStore) getFAQCandidateByID(id string) (*model.FAQCandi
 
 func (s *SQLiteChatHistoryStore) getKnowledgeGapByID(id string) (*model.KnowledgeGap, error) {
 	var item model.KnowledgeGap
-	if err := s.db.QueryRow(`SELECT id, question_normalized, question_text, issue_type, knowledge_base_id, sample_answer, suggested_action, count, status, created_at, updated_at FROM knowledge_gaps WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Scan(&item.ID, &item.QuestionNormalized, &item.QuestionText, &item.IssueType, &item.KnowledgeBaseID, &item.SampleAnswer, &item.SuggestedAction, &item.Count, &item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := s.db.QueryRow(`SELECT id, question_normalized, question_text, issue_type, knowledge_base_id, sample_answer, suggested_action, count, status, owner, note, updated_by, created_at, updated_at FROM knowledge_gaps WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Scan(&item.ID, &item.QuestionNormalized, &item.QuestionText, &item.IssueType, &item.KnowledgeBaseID, &item.SampleAnswer, &item.SuggestedAction, &item.Count, &item.Status, &item.Owner, &item.Note, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("item not found")
 		}
@@ -713,13 +986,31 @@ func (s *SQLiteChatHistoryStore) getKnowledgeGapByID(id string) (*model.Knowledg
 
 func (s *SQLiteChatHistoryStore) getLowQualityAnswerByID(id string) (*model.LowQualityAnswer, error) {
 	var item model.LowQualityAnswer
-	if err := s.db.QueryRow(`SELECT id, source_message_id, conversation_id, question_text, answer_text, knowledge_base_id, primary_reason, dislike_count, status, created_at, updated_at FROM low_quality_answers WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Scan(&item.ID, &item.SourceMessageID, &item.ConversationID, &item.QuestionText, &item.AnswerText, &item.KnowledgeBaseID, &item.PrimaryReason, &item.DislikeCount, &item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := s.db.QueryRow(`SELECT id, source_message_id, conversation_id, question_text, answer_text, knowledge_base_id, primary_reason, dislike_count, status, owner, note, updated_by, created_at, updated_at FROM low_quality_answers WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Scan(&item.ID, &item.SourceMessageID, &item.ConversationID, &item.QuestionText, &item.AnswerText, &item.KnowledgeBaseID, &item.PrimaryReason, &item.DislikeCount, &item.Status, &item.Owner, &item.Note, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("item not found")
 		}
 		return nil, fmt.Errorf("get low quality answer: %w", err)
 	}
 	return &item, nil
+}
+
+func (s *SQLiteChatHistoryStore) countAnalyticsRows(table string, fixedClauses []string, filters []analyticsFilter) (int, error) {
+	query, args := buildAnalyticsCountQuery(`SELECT COUNT(1) FROM `+table, fixedClauses, filters)
+	var count int
+	if err := s.db.QueryRow(query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count %s: %w", table, err)
+	}
+	return count, nil
+}
+
+func beginningOfWeekUTC(now time.Time) time.Time {
+	weekday := int(now.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	start := now.AddDate(0, 0, -(weekday - 1))
+	return time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func (s *SQLiteChatHistoryStore) feedbackSummaryMap(conversationID string) (map[string]model.ServiceDeskFeedbackSummary, error) {

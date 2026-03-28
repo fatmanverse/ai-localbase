@@ -49,10 +49,13 @@ func NewRouter(appHandler *handler.AppHandler) *gin.Engine {
 			serviceDesk.GET("/analytics/summary", appHandler.GetServiceDeskAnalyticsSummary)
 			serviceDesk.GET("/analytics/faq-candidates", appHandler.ListServiceDeskFAQCandidates)
 			serviceDesk.PATCH("/analytics/faq-candidates/:id", appHandler.UpdateServiceDeskFAQCandidateStatus)
+			serviceDesk.PATCH("/analytics/faq-candidates/batch", appHandler.BatchUpdateServiceDeskFAQCandidates)
 			serviceDesk.GET("/analytics/knowledge-gaps", appHandler.ListServiceDeskKnowledgeGaps)
 			serviceDesk.PATCH("/analytics/knowledge-gaps/:id", appHandler.UpdateServiceDeskKnowledgeGapStatus)
+			serviceDesk.PATCH("/analytics/knowledge-gaps/batch", appHandler.BatchUpdateServiceDeskKnowledgeGaps)
 			serviceDesk.GET("/analytics/low-quality-answers", appHandler.ListServiceDeskLowQualityAnswers)
 			serviceDesk.PATCH("/analytics/low-quality-answers/:id", appHandler.UpdateServiceDeskLowQualityAnswerStatus)
+			serviceDesk.PATCH("/analytics/low-quality-answers/batch", appHandler.BatchUpdateServiceDeskLowQualityAnswers)
 			serviceDesk.GET("/analytics/feedback", appHandler.ListServiceDeskFeedback)
 		}
 	}

@@ -340,12 +340,16 @@ Content-Type: application/json
 ## 7. 获取运营分析摘要
 
 ```http
-GET /api/service-desk/analytics/summary
+GET /api/service-desk/analytics/summary?knowledgeBaseId=kb-1
 ```
 
 返回：
 - 总反馈量
 - 点赞 / 点踩数量
+- 待处理 FAQ 数量
+- 待补知识缺口数量
+- 待处理低质量回答数量
+- 本周差评数量
 - FAQ 候选
 - 知识缺口
 - 低质量回答
@@ -367,7 +371,7 @@ GET /api/service-desk/analytics/knowledge-gaps?limit=20&knowledgeBaseId=kb-1&sta
 ### 7.3 获取低质量回答列表
 
 ```http
-GET /api/service-desk/analytics/low-quality-answers?limit=20&knowledgeBaseId=kb-1&status=pending&feedbackReason=内容不完整
+GET /api/service-desk/analytics/low-quality-answers?limit=20&knowledgeBaseId=kb-1&status=open&feedbackReason=内容不完整&owner=ops-quality
 ```
 
 ### 7.4 获取反馈明细列表
@@ -384,43 +388,47 @@ GET /api/service-desk/analytics/feedback?limit=50&knowledgeBaseId=kb-1&feedbackT
 - `feedbackType`
 - `feedbackReason`
 - `issueType`
+- `owner`
 
-### 7.5 更新 FAQ 候选状态
+### 7.5 更新 FAQ / 知识缺口 / 低质量回答
 
 ```http
 PATCH /api/service-desk/analytics/faq-candidates/:id
-Content-Type: application/json
-```
-
-```json
-{
-  "status": "approved"
-}
-```
-
-### 7.6 更新知识缺口状态
-
-```http
 PATCH /api/service-desk/analytics/knowledge-gaps/:id
-Content-Type: application/json
-```
-
-```json
-{
-  "status": "resolved"
-}
-```
-
-### 7.7 更新低质量回答状态
-
-```http
 PATCH /api/service-desk/analytics/low-quality-answers/:id
 Content-Type: application/json
 ```
 
 ```json
 {
-  "status": "resolved"
+  "status": "approved",
+  "owner": "ops-zhangsan",
+  "note": "已整理到标准 FAQ，并计划下周上线",
+  "updatedBy": "ops-zhangsan"
+}
+```
+
+说明：
+- `status` 可选，只改责任人 / 备注时可以不传
+- `owner` 可选，用于责任归属
+- `note` 可选，用于记录处理动作
+- `updatedBy` 可选，用于保留最近操作人
+
+### 7.6 批量更新治理项
+
+```http
+PATCH /api/service-desk/analytics/faq-candidates/batch
+PATCH /api/service-desk/analytics/knowledge-gaps/batch
+PATCH /api/service-desk/analytics/low-quality-answers/batch
+Content-Type: application/json
+```
+
+```json
+{
+  "ids": ["faq-1", "faq-2"],
+  "status": "approved",
+  "owner": "ops-zhangsan",
+  "note": "本周批量整理完成"
 }
 ```
 

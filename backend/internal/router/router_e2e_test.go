@@ -760,6 +760,9 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	if analytics.TotalFeedbacks != 3 || analytics.DislikeCount != 1 || analytics.LikeCount != 2 {
 		t.Fatalf("expected analytics feedback counters to be updated, got %+v", analytics)
 	}
+	if analytics.FAQPendingCount == 0 || analytics.KnowledgeGapCount == 0 || analytics.LowQualityOpenCount == 0 || analytics.ThisWeekDislikeCount == 0 {
+		t.Fatalf("expected analytics counters to include pending/open governance items, got %+v", analytics)
+	}
 	if len(analytics.FAQCandidates) == 0 {
 		t.Fatal("expected faq candidate after like feedback")
 	}
@@ -785,11 +788,28 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 		t.Fatal("expected faq candidates list to return items")
 	}
 
-	faqUpdateResp := performJSONRequest(t, engine, http.MethodPatch, fmt.Sprintf("/api/service-desk/analytics/faq-candidates/%s", faqList.Items[0].ID), map[string]any{"status": "approved"})
+	faqUpdateResp := performJSONRequest(t, engine, http.MethodPatch, fmt.Sprintf("/api/service-desk/analytics/faq-candidates/%s", faqList.Items[0].ID), map[string]any{"status": "approved", "owner": "ops-faq", "note": "已转为标准 FAQ"})
 	if faqUpdateResp.Code != http.StatusOK {
 		t.Fatalf("expected faq update status 200, got %d, body=%s", faqUpdateResp.Code, faqUpdateResp.Body.String())
 	}
-	approvedFAQResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/faq-candidates?limit=10&knowledgeBaseId=%s&status=approved", knowledgeBaseID), nil, "")
+	var faqUpdateResult model.APIResponse
+	decodeJSONResponse(t, faqUpdateResp.Body.Bytes(), &faqUpdateResult)
+	faqUpdateData, _ := json.Marshal(faqUpdateResult.Data)
+	var updatedFAQ model.FAQCandidate
+	decodeJSONResponse(t, faqUpdateData, &updatedFAQ)
+	if updatedFAQ.Status != "approved" || updatedFAQ.Owner != "ops-faq" || updatedFAQ.Note != "已转为标准 FAQ" {
+		t.Fatalf("expected faq update payload to include status/owner/note, got %+v", updatedFAQ)
+	}
+
+	faqBatchResp := performJSONRequest(t, engine, http.MethodPatch, "/api/service-desk/analytics/faq-candidates/batch", map[string]any{
+		"ids":   []string{faqList.Items[0].ID},
+		"owner": "ops-faq-batch",
+		"note":  "已纳入 FAQ 看板",
+	})
+	if faqBatchResp.Code != http.StatusOK {
+		t.Fatalf("expected faq batch update status 200, got %d, body=%s", faqBatchResp.Code, faqBatchResp.Body.String())
+	}
+	approvedFAQResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/faq-candidates?limit=10&knowledgeBaseId=%s&status=approved&owner=%s", knowledgeBaseID, "ops-faq-batch"), nil, "")
 	if approvedFAQResp.Code != http.StatusOK {
 		t.Fatalf("expected approved faq list status 200, got %d, body=%s", approvedFAQResp.Code, approvedFAQResp.Body.String())
 	}
@@ -800,7 +820,7 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 		Items []model.FAQCandidate `json:"items"`
 	}
 	decodeJSONResponse(t, approvedFAQData, &approvedFAQList)
-	if len(approvedFAQList.Items) == 0 || approvedFAQList.Items[0].Status != "approved" {
+	if len(approvedFAQList.Items) == 0 || approvedFAQList.Items[0].Status != "approved" || approvedFAQList.Items[0].Owner != "ops-faq-batch" || approvedFAQList.Items[0].Note != "已纳入 FAQ 看板" {
 		t.Fatalf("expected approved faq item after patch, got %+v", approvedFAQList.Items)
 	}
 
@@ -818,11 +838,16 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	if len(gapList.Items) == 0 {
 		t.Fatal("expected knowledge gap list to return items")
 	}
-	gapUpdateResp := performJSONRequest(t, engine, http.MethodPatch, fmt.Sprintf("/api/service-desk/analytics/knowledge-gaps/%s", gapList.Items[0].ID), map[string]any{"status": "resolved"})
+	gapUpdateResp := performJSONRequest(t, engine, http.MethodPatch, "/api/service-desk/analytics/knowledge-gaps/batch", map[string]any{
+		"ids":    []string{gapList.Items[0].ID},
+		"status": "resolved",
+		"owner":  "ops-gap",
+		"note":   "已补充登录排障文档并重新索引",
+	})
 	if gapUpdateResp.Code != http.StatusOK {
 		t.Fatalf("expected knowledge gap update status 200, got %d, body=%s", gapUpdateResp.Code, gapUpdateResp.Body.String())
 	}
-	resolvedGapResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/knowledge-gaps?limit=10&knowledgeBaseId=%s&status=resolved", knowledgeBaseID), nil, "")
+	resolvedGapResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/knowledge-gaps?limit=10&knowledgeBaseId=%s&status=resolved&owner=%s", knowledgeBaseID, "ops-gap"), nil, "")
 	if resolvedGapResp.Code != http.StatusOK {
 		t.Fatalf("expected resolved knowledge gap list status 200, got %d, body=%s", resolvedGapResp.Code, resolvedGapResp.Body.String())
 	}
@@ -833,7 +858,7 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 		Items []model.KnowledgeGap `json:"items"`
 	}
 	decodeJSONResponse(t, resolvedGapData, &resolvedGapList)
-	if len(resolvedGapList.Items) == 0 || resolvedGapList.Items[0].Status != "resolved" {
+	if len(resolvedGapList.Items) == 0 || resolvedGapList.Items[0].Status != "resolved" || resolvedGapList.Items[0].Owner != "ops-gap" || resolvedGapList.Items[0].Note != "已补充登录排障文档并重新索引" {
 		t.Fatalf("expected resolved knowledge gap item after patch, got %+v", resolvedGapList.Items)
 	}
 
@@ -851,11 +876,16 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	if len(lowQualityList.Items) == 0 {
 		t.Fatal("expected low quality answers list to return items")
 	}
-	lowQualityUpdateResp := performJSONRequest(t, engine, http.MethodPatch, fmt.Sprintf("/api/service-desk/analytics/low-quality-answers/%s", lowQualityList.Items[0].ID), map[string]any{"status": "resolved"})
+	lowQualityUpdateResp := performJSONRequest(t, engine, http.MethodPatch, "/api/service-desk/analytics/low-quality-answers/batch", map[string]any{
+		"ids":    []string{lowQualityList.Items[0].ID},
+		"status": "resolved",
+		"owner":  "ops-quality",
+		"note":   "已补召回词并优化回答模板",
+	})
 	if lowQualityUpdateResp.Code != http.StatusOK {
 		t.Fatalf("expected low quality update status 200, got %d, body=%s", lowQualityUpdateResp.Code, lowQualityUpdateResp.Body.String())
 	}
-	resolvedLowQualityResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/low-quality-answers?limit=10&knowledgeBaseId=%s&status=resolved", knowledgeBaseID), nil, "")
+	resolvedLowQualityResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/low-quality-answers?limit=10&knowledgeBaseId=%s&status=resolved&owner=%s", knowledgeBaseID, "ops-quality"), nil, "")
 	if resolvedLowQualityResp.Code != http.StatusOK {
 		t.Fatalf("expected resolved low quality list status 200, got %d, body=%s", resolvedLowQualityResp.Code, resolvedLowQualityResp.Body.String())
 	}
@@ -866,7 +896,7 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 		Items []model.LowQualityAnswer `json:"items"`
 	}
 	decodeJSONResponse(t, resolvedLowQualityData, &resolvedLowQualityList)
-	if len(resolvedLowQualityList.Items) == 0 || resolvedLowQualityList.Items[0].Status != "resolved" {
+	if len(resolvedLowQualityList.Items) == 0 || resolvedLowQualityList.Items[0].Status != "resolved" || resolvedLowQualityList.Items[0].Owner != "ops-quality" || resolvedLowQualityList.Items[0].Note != "已补召回词并优化回答模板" {
 		t.Fatalf("expected resolved low quality item after patch, got %+v", resolvedLowQualityList.Items)
 	}
 

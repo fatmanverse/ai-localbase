@@ -139,14 +139,15 @@ Content-Type: application/json
 
 ## 运营建议
 
-- 每周查看 `analytics/summary`
+- 每周查看 `analytics/summary`，优先看待处理 FAQ、待补知识缺口、本周差评数
 - 用 `analytics/faq-candidates` 拉取高赞 FAQ 候选
 - 用 `analytics/knowledge-gaps` 筛选高频知识缺口
 - 用 `analytics/low-quality-answers` 看高频差评回答
 - 用 `analytics/feedback` 查看原始反馈明细与原因分布
-- 用 `PATCH /api/service-desk/analytics/faq-candidates/:id` 把 FAQ 候选转为已采纳或忽略
-- 用 `PATCH /api/service-desk/analytics/knowledge-gaps/:id` 标记知识缺口已解决
-- 用 `PATCH /api/service-desk/analytics/low-quality-answers/:id` 标记差评回答已修复
+- 用 `PATCH /api/service-desk/analytics/faq-candidates/:id` 或批量接口同步状态、责任人、备注
+- 用 `PATCH /api/service-desk/analytics/knowledge-gaps/:id` 或批量接口标记知识缺口已解决
+- 用 `PATCH /api/service-desk/analytics/low-quality-answers/:id` 或批量接口标记差评回答已修复
+- 在前端 `?mode=ops-console` / `/ops` 页面直接做勾选、指派、备注和批量处理
 - 优先处理高频点踩的问题
 - 把高赞问题沉淀为 FAQ
 - 把高频失败问题转成知识补充任务

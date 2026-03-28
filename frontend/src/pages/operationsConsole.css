@@ -57,8 +57,17 @@
   color: #234e7b;
 }
 
+.ops-console-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.ops-metric-card,
 .ops-console-toolbar,
 .ops-console-tabs,
+.ops-console-batch,
 .ops-console-list {
   border-radius: 18px;
   background: #ffffff;
@@ -66,45 +75,150 @@
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
 }
 
-.ops-console-toolbar {
+.ops-metric-card {
+  padding: 18px;
+}
+
+.ops-metric-card span {
+  display: block;
+  color: #5f7895;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.ops-metric-card strong {
+  display: block;
+  font-size: 32px;
+  color: #16324f;
+  margin-bottom: 8px;
+}
+
+.ops-metric-card p {
+  margin: 0;
+  color: #516b86;
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.ops-console-toolbar,
+.ops-console-batch {
   display: flex;
   gap: 16px;
   align-items: end;
   flex-wrap: wrap;
   padding: 20px;
+}
+
+.ops-console-toolbar {
   margin-bottom: 20px;
 }
 
-.ops-console-toolbar label {
+.ops-console-batch {
+  margin-bottom: 16px;
+  background: #f8fbff;
+}
+
+.ops-console-toolbar label,
+.ops-console-batch label,
+.ops-card-editor label {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.ops-console-toolbar label,
+.ops-console-batch label {
   min-width: 220px;
 }
 
-.ops-console-toolbar span {
+.ops-console-toolbar span,
+.ops-console-batch span,
+.ops-card-editor span {
   font-size: 13px;
   font-weight: 600;
   color: #385571;
 }
 
+.ops-toolbar-stat {
+  min-width: 120px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: #f2f7fc;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.ops-toolbar-stat strong {
+  font-size: 20px;
+  color: #16324f;
+}
+
+.ops-toolbar-stat span {
+  font-size: 12px;
+  color: #68819b;
+}
+
+.ops-batch-summary {
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ops-batch-summary strong {
+  font-size: 18px;
+  color: #16324f;
+}
+
+.ops-batch-summary span {
+  color: #617a96;
+  font-size: 13px;
+}
+
+.ops-batch-note {
+  flex: 1;
+  min-width: 280px;
+}
+
 .ops-console-toolbar select,
+.ops-console-batch select,
+.ops-console-batch input,
 .ops-refresh-button,
-.ops-card-actions button {
+.ops-secondary-button,
+.ops-card-actions button,
+.ops-card-editor input,
+.ops-card-editor textarea {
   min-height: 40px;
   border-radius: 10px;
   border: 1px solid #c8d8ea;
   background: #fff;
   color: #1c3552;
   padding: 0 12px;
+  font: inherit;
 }
 
-.ops-refresh-button {
+.ops-card-editor textarea {
+  min-height: 96px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.ops-refresh-button,
+.ops-primary-button {
   background: #2b6cb0;
   color: #fff;
   font-weight: 700;
   border-color: #2b6cb0;
   cursor: pointer;
+}
+
+.ops-secondary-button {
+  cursor: pointer;
+  background: #fff;
+  font-weight: 600;
 }
 
 .ops-console-tabs {
@@ -211,6 +325,22 @@
   font-size: 13px;
 }
 
+.ops-card-select {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 6px !important;
+  color: #385571;
+  font-weight: 600;
+}
+
+.ops-card-select input {
+  min-height: auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
 .ops-card h3 {
   margin: 0 0 10px;
   font-size: 18px;
@@ -220,6 +350,17 @@
   margin: 0 0 10px;
   color: #37516f;
   line-height: 1.65;
+}
+
+.ops-card-editor {
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  gap: 14px;
+  margin: 14px 0;
+}
+
+.ops-card-editor label.is-note {
+  min-width: 0;
 }
 
 .ops-card-actions {
@@ -234,7 +375,9 @@
 }
 
 .ops-card-actions button:disabled,
-.ops-refresh-button:disabled {
+.ops-refresh-button:disabled,
+.ops-secondary-button:disabled,
+.ops-primary-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -270,6 +413,12 @@
   color: #c53030;
 }
 
+@media (max-width: 1200px) {
+  .ops-console-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 960px) {
   .ops-console-page {
     padding: 20px;
@@ -279,6 +428,17 @@
     flex-direction: column;
   }
 
+  .ops-console-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ops-card-editor {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .ops-console-metrics,
   .ops-console-tabs {
     grid-template-columns: 1fr;
   }

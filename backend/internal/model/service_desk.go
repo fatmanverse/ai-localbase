@@ -156,6 +156,9 @@ type FAQCandidate struct {
 	ConversationID     string `json:"conversationId"`
 	LikeCount          int    `json:"likeCount"`
 	Status             string `json:"status"`
+	Owner              string `json:"owner,omitempty"`
+	Note               string `json:"note,omitempty"`
+	UpdatedBy          string `json:"updatedBy,omitempty"`
 	CreatedAt          string `json:"createdAt"`
 	UpdatedAt          string `json:"updatedAt"`
 }
@@ -170,6 +173,9 @@ type KnowledgeGap struct {
 	SuggestedAction    string `json:"suggestedAction,omitempty"`
 	Count              int    `json:"count"`
 	Status             string `json:"status"`
+	Owner              string `json:"owner,omitempty"`
+	Note               string `json:"note,omitempty"`
+	UpdatedBy          string `json:"updatedBy,omitempty"`
 	CreatedAt          string `json:"createdAt"`
 	UpdatedAt          string `json:"updatedAt"`
 }
@@ -184,6 +190,9 @@ type LowQualityAnswer struct {
 	PrimaryReason   string `json:"primaryReason,omitempty"`
 	DislikeCount    int    `json:"dislikeCount"`
 	Status          string `json:"status"`
+	Owner           string `json:"owner,omitempty"`
+	Note            string `json:"note,omitempty"`
+	UpdatedBy       string `json:"updatedBy,omitempty"`
 	CreatedAt       string `json:"createdAt"`
 	UpdatedAt       string `json:"updatedAt"`
 }
@@ -195,10 +204,27 @@ type AnalyticsListOptions struct {
 	FeedbackType    string `json:"feedbackType,omitempty"`
 	FeedbackReason  string `json:"feedbackReason,omitempty"`
 	IssueType       string `json:"issueType,omitempty"`
+	Owner           string `json:"owner,omitempty"`
 }
 
 type AnalyticsStatusUpdateRequest struct {
-	Status string `json:"status"`
+	Status    *string `json:"status,omitempty"`
+	Owner     *string `json:"owner,omitempty"`
+	Note      *string `json:"note,omitempty"`
+	UpdatedBy *string `json:"updatedBy,omitempty"`
+}
+
+type AnalyticsBatchUpdateRequest struct {
+	IDs       []string `json:"ids"`
+	Status    *string  `json:"status,omitempty"`
+	Owner     *string  `json:"owner,omitempty"`
+	Note      *string  `json:"note,omitempty"`
+	UpdatedBy *string  `json:"updatedBy,omitempty"`
+}
+
+type AnalyticsBatchUpdateResponse struct {
+	UpdatedCount int      `json:"updatedCount"`
+	IDs          []string `json:"ids"`
 }
 
 type WeeklyFeedbackMetric struct {
@@ -209,12 +235,16 @@ type WeeklyFeedbackMetric struct {
 }
 
 type ServiceDeskAnalyticsSummary struct {
-	TotalFeedbacks    int                          `json:"totalFeedbacks"`
-	LikeCount         int                          `json:"likeCount"`
-	DislikeCount      int                          `json:"dislikeCount"`
-	FAQCandidates     []FAQCandidate               `json:"faqCandidates"`
-	KnowledgeGaps     []KnowledgeGap               `json:"knowledgeGaps"`
-	LowQualityAnswers []LowQualityAnswer           `json:"lowQualityAnswers"`
-	RecentFeedback    []ServiceDeskMessageFeedback `json:"recentFeedback"`
-	WeeklyMetrics     []WeeklyFeedbackMetric       `json:"weeklyMetrics"`
+	TotalFeedbacks       int                          `json:"totalFeedbacks"`
+	LikeCount            int                          `json:"likeCount"`
+	DislikeCount         int                          `json:"dislikeCount"`
+	FAQPendingCount      int                          `json:"faqPendingCount"`
+	KnowledgeGapCount    int                          `json:"knowledgeGapCount"`
+	LowQualityOpenCount  int                          `json:"lowQualityOpenCount"`
+	ThisWeekDislikeCount int                          `json:"thisWeekDislikeCount"`
+	FAQCandidates        []FAQCandidate               `json:"faqCandidates"`
+	KnowledgeGaps        []KnowledgeGap               `json:"knowledgeGaps"`
+	LowQualityAnswers    []LowQualityAnswer           `json:"lowQualityAnswers"`
+	RecentFeedback       []ServiceDeskMessageFeedback `json:"recentFeedback"`
+	WeeklyMetrics        []WeeklyFeedbackMetric       `json:"weeklyMetrics"`
 }

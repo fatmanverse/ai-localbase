@@ -139,7 +139,7 @@ func (h *AppHandler) GetServiceDeskAnalyticsSummary(c *gin.Context) {
 		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
 		return
 	}
-	summary, err := h.serviceDeskService.AnalyticsSummary()
+	summary, err := h.serviceDeskService.AnalyticsSummary(analyticsListOptionsFromQuery(c))
 	if err != nil {
 		writeAPIError(c, http.StatusInternalServerError, "analytics_failed", err.Error())
 		return
@@ -210,15 +210,33 @@ func (h *AppHandler) UpdateServiceDeskFAQCandidateStatus(c *gin.Context) {
 	}
 	var req model.AnalyticsStatusUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		writeAPIError(c, http.StatusBadRequest, "invalid_request", "invalid faq candidate status request body")
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", "invalid faq candidate update request body")
 		return
 	}
-	item, err := h.serviceDeskService.UpdateFAQCandidateStatus(c.Param("id"), req.Status)
+	item, err := h.serviceDeskService.UpdateFAQCandidateStatus(c.Param("id"), req)
 	if err != nil {
 		writeAPIError(c, http.StatusBadRequest, "update_faq_candidate_failed", err.Error())
 		return
 	}
 	writeAPISuccess(c, http.StatusOK, item)
+}
+
+func (h *AppHandler) BatchUpdateServiceDeskFAQCandidates(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
+	var req model.AnalyticsBatchUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", "invalid faq candidate batch request body")
+		return
+	}
+	result, err := h.serviceDeskService.BatchUpdateFAQCandidates(req)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "batch_update_faq_candidates_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, result)
 }
 
 func (h *AppHandler) UpdateServiceDeskKnowledgeGapStatus(c *gin.Context) {
@@ -228,15 +246,33 @@ func (h *AppHandler) UpdateServiceDeskKnowledgeGapStatus(c *gin.Context) {
 	}
 	var req model.AnalyticsStatusUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		writeAPIError(c, http.StatusBadRequest, "invalid_request", "invalid knowledge gap status request body")
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", "invalid knowledge gap update request body")
 		return
 	}
-	item, err := h.serviceDeskService.UpdateKnowledgeGapStatus(c.Param("id"), req.Status)
+	item, err := h.serviceDeskService.UpdateKnowledgeGapStatus(c.Param("id"), req)
 	if err != nil {
 		writeAPIError(c, http.StatusBadRequest, "update_knowledge_gap_failed", err.Error())
 		return
 	}
 	writeAPISuccess(c, http.StatusOK, item)
+}
+
+func (h *AppHandler) BatchUpdateServiceDeskKnowledgeGaps(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
+	var req model.AnalyticsBatchUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", "invalid knowledge gap batch request body")
+		return
+	}
+	result, err := h.serviceDeskService.BatchUpdateKnowledgeGaps(req)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "batch_update_knowledge_gaps_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, result)
 }
 
 func (h *AppHandler) UpdateServiceDeskLowQualityAnswerStatus(c *gin.Context) {
@@ -246,15 +282,33 @@ func (h *AppHandler) UpdateServiceDeskLowQualityAnswerStatus(c *gin.Context) {
 	}
 	var req model.AnalyticsStatusUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		writeAPIError(c, http.StatusBadRequest, "invalid_request", "invalid low quality answer status request body")
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", "invalid low quality answer update request body")
 		return
 	}
-	item, err := h.serviceDeskService.UpdateLowQualityAnswerStatus(c.Param("id"), req.Status)
+	item, err := h.serviceDeskService.UpdateLowQualityAnswerStatus(c.Param("id"), req)
 	if err != nil {
 		writeAPIError(c, http.StatusBadRequest, "update_low_quality_answer_failed", err.Error())
 		return
 	}
 	writeAPISuccess(c, http.StatusOK, item)
+}
+
+func (h *AppHandler) BatchUpdateServiceDeskLowQualityAnswers(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
+	var req model.AnalyticsBatchUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", "invalid low quality answer batch request body")
+		return
+	}
+	result, err := h.serviceDeskService.BatchUpdateLowQualityAnswers(req)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "batch_update_low_quality_answers_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, result)
 }
 
 func analyticsListOptionsFromQuery(c *gin.Context) model.AnalyticsListOptions {
@@ -271,6 +325,7 @@ func analyticsListOptionsFromQuery(c *gin.Context) model.AnalyticsListOptions {
 		FeedbackType:    strings.TrimSpace(c.Query("feedbackType")),
 		FeedbackReason:  strings.TrimSpace(c.Query("feedbackReason")),
 		IssueType:       strings.TrimSpace(c.Query("issueType")),
+		Owner:           strings.TrimSpace(c.Query("owner")),
 	}
 }
 

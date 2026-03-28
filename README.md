@@ -250,20 +250,20 @@ curl -X POST http://localhost:8080/api/knowledge-bases/<kbId>/reindex
 curl -X POST http://localhost:8080/api/knowledge-bases/<kbId>/documents/<documentId>/reindex
 ```
 
-治理状态流转：
+治理状态流转 / 责任人 / 备注：
 
 ```bash
 curl -X PATCH http://localhost:8080/api/service-desk/analytics/faq-candidates/<id> \
   -H 'Content-Type: application/json' \
-  -d '{"status":"approved"}'
+  -d '{"status":"approved","owner":"ops-zhangsan","note":"已整理到标准 FAQ"}'
 
 curl -X PATCH http://localhost:8080/api/service-desk/analytics/knowledge-gaps/<id> \
   -H 'Content-Type: application/json' \
-  -d '{"status":"resolved"}'
+  -d '{"status":"resolved","owner":"delivery-li","note":"已补文档并重新索引"}'
 
-curl -X PATCH http://localhost:8080/api/service-desk/analytics/low-quality-answers/<id> \
+curl -X PATCH http://localhost:8080/api/service-desk/analytics/low-quality-answers/batch \
   -H 'Content-Type: application/json' \
-  -d '{"status":"resolved"}'
+  -d '{"ids":["lqa-1","lqa-2"],"status":"resolved","owner":"ops-quality","note":"已补召回词并优化回答模板"}'
 ```
 
 前端最简治理页：
@@ -272,6 +272,13 @@ curl -X PATCH http://localhost:8080/api/service-desk/analytics/low-quality-answe
 http://localhost:5173/?mode=ops-console
 http://localhost:5173/ops
 ```
+
+治理页已支持：
+- 运营摘要卡片
+- 单条状态流转
+- 责任人编辑
+- 处理备注记录
+- 批量勾选与批量更新
 
 ---
 
