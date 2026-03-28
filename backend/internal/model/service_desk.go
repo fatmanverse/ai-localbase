@@ -188,6 +188,15 @@ type LowQualityAnswer struct {
 	UpdatedAt       string `json:"updatedAt"`
 }
 
+type AnalyticsListOptions struct {
+	Limit           int    `json:"limit,omitempty"`
+	KnowledgeBaseID string `json:"knowledgeBaseId,omitempty"`
+	Status          string `json:"status,omitempty"`
+	FeedbackType    string `json:"feedbackType,omitempty"`
+	FeedbackReason  string `json:"feedbackReason,omitempty"`
+	IssueType       string `json:"issueType,omitempty"`
+}
+
 type WeeklyFeedbackMetric struct {
 	WeekStart    string `json:"weekStart"`
 	LikeCount    int    `json:"likeCount"`

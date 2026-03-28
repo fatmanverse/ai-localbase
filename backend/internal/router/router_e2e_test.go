@@ -161,6 +161,28 @@ Redis 支持过期时间设置，适合用作会话缓存或临时数据存储�
 		t.Fatalf("expected content preview to contain indexed text, got %q", uploadResult.Uploaded.ContentPreview)
 	}
 
+	documentReindexResp := performRequest(
+		t,
+		engine,
+		http.MethodPost,
+		fmt.Sprintf("/api/knowledge-bases/%s/documents/%s/reindex", knowledgeBaseID, uploadResult.Uploaded.ID),
+		nil,
+		"",
+	)
+	if documentReindexResp.Code != http.StatusOK {
+		t.Fatalf("expected document reindex status 200, got %d, body=%s", documentReindexResp.Code, documentReindexResp.Body.String())
+	}
+	var documentReindexResult struct {
+		Document model.Document `json:"document"`
+	}
+	decodeJSONResponse(t, documentReindexResp.Body.Bytes(), &documentReindexResult)
+	if documentReindexResult.Document.ID != uploadResult.Uploaded.ID {
+		t.Fatalf("expected reindexed document id %s, got %s", uploadResult.Uploaded.ID, documentReindexResult.Document.ID)
+	}
+	if documentReindexResult.Document.Status != "indexed" {
+		t.Fatalf("expected document status indexed after document reindex, got %s", documentReindexResult.Document.Status)
+	}
+
 	reindexResp := performRequest(
 		t,
 		engine,
@@ -729,5 +751,62 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	}
 	if len(analytics.LowQualityAnswers) == 0 {
 		t.Fatal("expected low quality answer entry after dislike feedback")
+	}
+
+	faqListResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/faq-candidates?limit=10&knowledgeBaseId=%s", knowledgeBaseID), nil, "")
+	if faqListResp.Code != http.StatusOK {
+		t.Fatalf("expected faq list status 200, got %d, body=%s", faqListResp.Code, faqListResp.Body.String())
+	}
+	var faqListResult model.APIResponse
+	decodeJSONResponse(t, faqListResp.Body.Bytes(), &faqListResult)
+	faqListData, _ := json.Marshal(faqListResult.Data)
+	var faqList struct {
+		Items []model.FAQCandidate `json:"items"`
+	}
+	decodeJSONResponse(t, faqListData, &faqList)
+
+	gapListResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/knowledge-gaps?limit=10&knowledgeBaseId=%s&feedbackReason=%s", knowledgeBaseID, ""), nil, "")
+	if gapListResp.Code != http.StatusOK {
+		t.Fatalf("expected knowledge gap list status 200, got %d, body=%s", gapListResp.Code, gapListResp.Body.String())
+	}
+	var gapListResult model.APIResponse
+	decodeJSONResponse(t, gapListResp.Body.Bytes(), &gapListResult)
+	gapListData, _ := json.Marshal(gapListResult.Data)
+	var gapList struct {
+		Items []model.KnowledgeGap `json:"items"`
+	}
+	decodeJSONResponse(t, gapListData, &gapList)
+	if len(gapList.Items) == 0 {
+		t.Fatal("expected knowledge gap list to return items")
+	}
+
+	lowQualityResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/low-quality-answers?limit=10&knowledgeBaseId=%s&feedbackReason=%s", knowledgeBaseID, "内容不完整"), nil, "")
+	if lowQualityResp.Code != http.StatusOK {
+		t.Fatalf("expected low quality answers status 200, got %d, body=%s", lowQualityResp.Code, lowQualityResp.Body.String())
+	}
+	var lowQualityResult model.APIResponse
+	decodeJSONResponse(t, lowQualityResp.Body.Bytes(), &lowQualityResult)
+	lowQualityData, _ := json.Marshal(lowQualityResult.Data)
+	var lowQualityList struct {
+		Items []model.LowQualityAnswer `json:"items"`
+	}
+	decodeJSONResponse(t, lowQualityData, &lowQualityList)
+	if len(lowQualityList.Items) == 0 {
+		t.Fatal("expected low quality answers list to return items")
+	}
+
+	feedbackListResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/feedback?limit=10&knowledgeBaseId=%s&feedbackType=dislike&feedbackReason=%s", knowledgeBaseID, "内容不完整"), nil, "")
+	if feedbackListResp.Code != http.StatusOK {
+		t.Fatalf("expected feedback list status 200, got %d, body=%s", feedbackListResp.Code, feedbackListResp.Body.String())
+	}
+	var feedbackListResult model.APIResponse
+	decodeJSONResponse(t, feedbackListResp.Body.Bytes(), &feedbackListResult)
+	feedbackListData, _ := json.Marshal(feedbackListResult.Data)
+	var feedbackList struct {
+		Items []model.ServiceDeskMessageFeedback `json:"items"`
+	}
+	decodeJSONResponse(t, feedbackListData, &feedbackList)
+	if len(feedbackList.Items) != 1 {
+		t.Fatalf("expected 1 filtered feedback item, got %d", len(feedbackList.Items))
 	}
 }

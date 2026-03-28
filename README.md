@@ -234,6 +234,22 @@ curl -s http://localhost:8080/api/knowledge-bases | jq .
 curl -s http://localhost:8080/api/service-desk/analytics/summary | jq .
 ```
 
+查看 FAQ / 知识缺口 / 低质量回答 / 反馈明细：
+
+```bash
+curl -s "http://localhost:8080/api/service-desk/analytics/faq-candidates?limit=20" | jq .
+curl -s "http://localhost:8080/api/service-desk/analytics/knowledge-gaps?limit=20" | jq .
+curl -s "http://localhost:8080/api/service-desk/analytics/low-quality-answers?limit=20" | jq .
+curl -s "http://localhost:8080/api/service-desk/analytics/feedback?limit=20&feedbackType=dislike" | jq .
+```
+
+重建索引：
+
+```bash
+curl -X POST http://localhost:8080/api/knowledge-bases/<kbId>/reindex
+curl -X POST http://localhost:8080/api/knowledge-bases/<kbId>/documents/<documentId>/reindex
+```
+
 ---
 
 ## Linux 打包 / 镜像

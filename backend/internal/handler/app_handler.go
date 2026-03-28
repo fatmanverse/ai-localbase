@@ -251,6 +251,20 @@ func (h *AppHandler) ReindexKnowledgeBase(c *gin.Context) {
 	})
 }
 
+func (h *AppHandler) ReindexDocument(c *gin.Context) {
+	document, err := h.appService.ReindexDocument(c.Param("id"), c.Param("documentId"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":         "document reindexed",
+		"knowledgeBaseId": c.Param("id"),
+		"document":        document,
+	})
+}
+
 func (h *AppHandler) DeleteDocument(c *gin.Context) {
 	removedDocument, err := h.appService.DeleteDocument(c.Param("id"), c.Param("documentId"))
 	if err != nil {

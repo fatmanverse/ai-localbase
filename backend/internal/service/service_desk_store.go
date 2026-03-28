@@ -462,7 +462,18 @@ func (s *SQLiteChatHistoryStore) GetServiceDeskAnalyticsSummary() (model.Service
 }
 
 func (s *SQLiteChatHistoryStore) ListFAQCandidates(limit int) ([]model.FAQCandidate, error) {
-	rows, err := s.db.Query(`SELECT id, question_normalized, question_text, answer_text, knowledge_base_id, source_message_id, conversation_id, like_count, status, created_at, updated_at FROM faq_candidates WHERE like_count >= 2 ORDER BY like_count DESC, updated_at DESC LIMIT ?`, normalizeLimit(limit, 20))
+	return s.ListFAQCandidatesByOptions(model.AnalyticsListOptions{Limit: limit})
+}
+
+func (s *SQLiteChatHistoryStore) ListFAQCandidatesByOptions(opts model.AnalyticsListOptions) ([]model.FAQCandidate, error) {
+	query, args := buildAnalyticsListQuery(
+		`SELECT id, question_normalized, question_text, answer_text, knowledge_base_id, source_message_id, conversation_id, like_count, status, created_at, updated_at FROM faq_candidates`,
+		[]string{"like_count >= 2"},
+		[]analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}, {Column: "status", Value: opts.Status}},
+		" ORDER BY like_count DESC, updated_at DESC LIMIT ?",
+		normalizeAnalyticsListLimit(opts.Limit),
+	)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list faq candidates: %w", err)
 	}
@@ -479,7 +490,18 @@ func (s *SQLiteChatHistoryStore) ListFAQCandidates(limit int) ([]model.FAQCandid
 }
 
 func (s *SQLiteChatHistoryStore) ListKnowledgeGaps(limit int) ([]model.KnowledgeGap, error) {
-	rows, err := s.db.Query(`SELECT id, question_normalized, question_text, issue_type, knowledge_base_id, sample_answer, suggested_action, count, status, created_at, updated_at FROM knowledge_gaps WHERE count >= 1 ORDER BY count DESC, updated_at DESC LIMIT ?`, normalizeLimit(limit, 20))
+	return s.ListKnowledgeGapsByOptions(model.AnalyticsListOptions{Limit: limit})
+}
+
+func (s *SQLiteChatHistoryStore) ListKnowledgeGapsByOptions(opts model.AnalyticsListOptions) ([]model.KnowledgeGap, error) {
+	query, args := buildAnalyticsListQuery(
+		`SELECT id, question_normalized, question_text, issue_type, knowledge_base_id, sample_answer, suggested_action, count, status, created_at, updated_at FROM knowledge_gaps`,
+		[]string{"count >= 1"},
+		[]analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}, {Column: "status", Value: opts.Status}, {Column: "issue_type", Value: opts.IssueType}},
+		" ORDER BY count DESC, updated_at DESC LIMIT ?",
+		normalizeAnalyticsListLimit(opts.Limit),
+	)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list knowledge gaps: %w", err)
 	}
@@ -496,7 +518,18 @@ func (s *SQLiteChatHistoryStore) ListKnowledgeGaps(limit int) ([]model.Knowledge
 }
 
 func (s *SQLiteChatHistoryStore) ListLowQualityAnswers(limit int) ([]model.LowQualityAnswer, error) {
-	rows, err := s.db.Query(`SELECT id, source_message_id, conversation_id, question_text, answer_text, knowledge_base_id, primary_reason, dislike_count, status, created_at, updated_at FROM low_quality_answers WHERE dislike_count >= 1 ORDER BY dislike_count DESC, updated_at DESC LIMIT ?`, normalizeLimit(limit, 20))
+	return s.ListLowQualityAnswersByOptions(model.AnalyticsListOptions{Limit: limit})
+}
+
+func (s *SQLiteChatHistoryStore) ListLowQualityAnswersByOptions(opts model.AnalyticsListOptions) ([]model.LowQualityAnswer, error) {
+	query, args := buildAnalyticsListQuery(
+		`SELECT id, source_message_id, conversation_id, question_text, answer_text, knowledge_base_id, primary_reason, dislike_count, status, created_at, updated_at FROM low_quality_answers`,
+		[]string{"dislike_count >= 1"},
+		[]analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}, {Column: "status", Value: opts.Status}, {Column: "primary_reason", Value: opts.FeedbackReason}},
+		" ORDER BY dislike_count DESC, updated_at DESC LIMIT ?",
+		normalizeAnalyticsListLimit(opts.Limit),
+	)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list low quality answers: %w", err)
 	}
@@ -513,7 +546,18 @@ func (s *SQLiteChatHistoryStore) ListLowQualityAnswers(limit int) ([]model.LowQu
 }
 
 func (s *SQLiteChatHistoryStore) ListRecentFeedback(limit int) ([]model.ServiceDeskMessageFeedback, error) {
-	rows, err := s.db.Query(`SELECT id, conversation_id, message_id, user_id, feedback_type, feedback_reason, feedback_text, question_text, answer_text, knowledge_base_id, kb_version, retrieved_context, source_documents_json, source_platform, tenant_id, ticket_id, metadata_json, created_at FROM message_feedback ORDER BY created_at DESC LIMIT ?`, normalizeLimit(limit, 20))
+	return s.ListRecentFeedbackByOptions(model.AnalyticsListOptions{Limit: limit})
+}
+
+func (s *SQLiteChatHistoryStore) ListRecentFeedbackByOptions(opts model.AnalyticsListOptions) ([]model.ServiceDeskMessageFeedback, error) {
+	query, args := buildAnalyticsListQuery(
+		`SELECT id, conversation_id, message_id, user_id, feedback_type, feedback_reason, feedback_text, question_text, answer_text, knowledge_base_id, kb_version, retrieved_context, source_documents_json, source_platform, tenant_id, ticket_id, metadata_json, created_at FROM message_feedback`,
+		nil,
+		[]analyticsFilter{{Column: "knowledge_base_id", Value: opts.KnowledgeBaseID}, {Column: "feedback_type", Value: opts.FeedbackType}, {Column: "feedback_reason", Value: opts.FeedbackReason}},
+		" ORDER BY created_at DESC LIMIT ?",
+		normalizeAnalyticsListLimit(opts.Limit),
+	)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list recent feedback: %w", err)
 	}
@@ -530,6 +574,39 @@ func (s *SQLiteChatHistoryStore) ListRecentFeedback(limit int) ([]model.ServiceD
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+type analyticsFilter struct {
+	Column string
+	Value  string
+}
+
+func buildAnalyticsListQuery(base string, fixedClauses []string, filters []analyticsFilter, suffix string, limit int) (string, []any) {
+	clauses := make([]string, 0, len(fixedClauses)+len(filters))
+	clauses = append(clauses, fixedClauses...)
+	args := make([]any, 0, len(filters)+1)
+	for _, filter := range filters {
+		value := strings.TrimSpace(filter.Value)
+		column := strings.TrimSpace(filter.Column)
+		if value == "" || column == "" {
+			continue
+		}
+		clauses = append(clauses, column+" = ?")
+		args = append(args, value)
+	}
+	query := base
+	if len(clauses) > 0 {
+		query += " WHERE " + strings.Join(clauses, " AND ")
+	}
+	if strings.TrimSpace(suffix) != "" {
+		query += suffix
+	}
+	args = append(args, normalizeAnalyticsListLimit(limit))
+	return query, args
+}
+
+func normalizeAnalyticsListLimit(limit int) int {
+	return normalizeLimit(limit, 20)
 }
 
 func (s *SQLiteChatHistoryStore) feedbackSummaryMap(conversationID string) (map[string]model.ServiceDeskFeedbackSummary, error) {

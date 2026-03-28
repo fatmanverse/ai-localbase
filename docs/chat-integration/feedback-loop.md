@@ -140,6 +140,10 @@ Content-Type: application/json
 ## 运营建议
 
 - 每周查看 `analytics/summary`
+- 用 `analytics/faq-candidates` 拉取高赞 FAQ 候选
+- 用 `analytics/knowledge-gaps` 筛选高频知识缺口
+- 用 `analytics/low-quality-answers` 看高频差评回答
+- 用 `analytics/feedback` 查看原始反馈明细与原因分布
 - 优先处理高频点踩的问题
 - 把高赞问题沉淀为 FAQ
 - 把高频失败问题转成知识补充任务

@@ -930,6 +930,30 @@ func (s *AppService) IndexDocumentWithProgress(
 	return indexedDocument, nil
 }
 
+func (s *AppService) ReindexDocument(knowledgeBaseID, documentID string) (model.Document, error) {
+	if s == nil {
+		return model.Document{}, fmt.Errorf("app service is nil")
+	}
+	knowledgeBaseID = strings.TrimSpace(knowledgeBaseID)
+	documentID = strings.TrimSpace(documentID)
+	if knowledgeBaseID == "" {
+		return model.Document{}, fmt.Errorf("knowledge base id is required")
+	}
+	if documentID == "" {
+		return model.Document{}, fmt.Errorf("document id is required")
+	}
+	knowledgeBase, err := s.ReindexKnowledgeBase(knowledgeBaseID)
+	if err != nil {
+		return model.Document{}, err
+	}
+	for _, document := range knowledgeBase.Documents {
+		if document.ID == documentID {
+			return document, nil
+		}
+	}
+	return model.Document{}, fmt.Errorf("document not found")
+}
+
 func (s *AppService) ReindexKnowledgeBase(knowledgeBaseID string) (model.KnowledgeBase, error) {
 	if s == nil {
 		return model.KnowledgeBase{}, fmt.Errorf("app service is nil")

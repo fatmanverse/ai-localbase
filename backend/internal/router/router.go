@@ -35,6 +35,7 @@ func NewRouter(appHandler *handler.AppHandler) *gin.Engine {
 		api.GET("/knowledge-bases/:id/document-uploads/:taskId", appHandler.GetUploadTask)
 		api.DELETE("/knowledge-bases/:id/document-uploads/:taskId", appHandler.CancelUploadTask)
 		api.POST("/knowledge-bases/:id/reindex", appHandler.ReindexKnowledgeBase)
+		api.POST("/knowledge-bases/:id/documents/:documentId/reindex", appHandler.ReindexDocument)
 		api.DELETE("/knowledge-bases/:id/documents/:documentId", appHandler.DeleteDocument)
 
 		serviceDesk := api.Group("/service-desk")
@@ -46,6 +47,10 @@ func NewRouter(appHandler *handler.AppHandler) *gin.Engine {
 			serviceDesk.POST("/conversations/:id/messages/stream", appHandler.StreamServiceDeskMessage)
 			serviceDesk.POST("/messages/:id/feedback", appHandler.SubmitServiceDeskFeedback)
 			serviceDesk.GET("/analytics/summary", appHandler.GetServiceDeskAnalyticsSummary)
+			serviceDesk.GET("/analytics/faq-candidates", appHandler.ListServiceDeskFAQCandidates)
+			serviceDesk.GET("/analytics/knowledge-gaps", appHandler.ListServiceDeskKnowledgeGaps)
+			serviceDesk.GET("/analytics/low-quality-answers", appHandler.ListServiceDeskLowQualityAnswers)
+			serviceDesk.GET("/analytics/feedback", appHandler.ListServiceDeskFeedback)
 		}
 	}
 

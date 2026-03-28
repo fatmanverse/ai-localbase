@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"ai-localbase/internal/model"
@@ -144,6 +145,63 @@ func (h *AppHandler) GetServiceDeskAnalyticsSummary(c *gin.Context) {
 		return
 	}
 	writeAPISuccess(c, http.StatusOK, summary)
+}
+
+func (h *AppHandler) ListServiceDeskFAQCandidates(c *gin.Context) {
+	opts := analyticsListOptionsFromQuery(c)
+	items, err := h.serviceDeskService.ListFAQCandidates(opts)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "faq_candidates_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, gin.H{"items": items, "filters": opts})
+}
+
+func (h *AppHandler) ListServiceDeskKnowledgeGaps(c *gin.Context) {
+	opts := analyticsListOptionsFromQuery(c)
+	items, err := h.serviceDeskService.ListKnowledgeGaps(opts)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "knowledge_gaps_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, gin.H{"items": items, "filters": opts})
+}
+
+func (h *AppHandler) ListServiceDeskLowQualityAnswers(c *gin.Context) {
+	opts := analyticsListOptionsFromQuery(c)
+	items, err := h.serviceDeskService.ListLowQualityAnswers(opts)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "low_quality_answers_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, gin.H{"items": items, "filters": opts})
+}
+
+func (h *AppHandler) ListServiceDeskFeedback(c *gin.Context) {
+	opts := analyticsListOptionsFromQuery(c)
+	items, err := h.serviceDeskService.ListRecentFeedback(opts)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "feedback_list_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, gin.H{"items": items, "filters": opts})
+}
+
+func analyticsListOptionsFromQuery(c *gin.Context) model.AnalyticsListOptions {
+	limit := 20
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	return model.AnalyticsListOptions{
+		Limit:           limit,
+		KnowledgeBaseID: strings.TrimSpace(c.Query("knowledgeBaseId")),
+		Status:          strings.TrimSpace(c.Query("status")),
+		FeedbackType:    strings.TrimSpace(c.Query("feedbackType")),
+		FeedbackReason:  strings.TrimSpace(c.Query("feedbackReason")),
+		IssueType:       strings.TrimSpace(c.Query("issueType")),
+	}
 }
 
 func writeAPISuccess(c *gin.Context, statusCode int, data any) {

@@ -352,9 +352,70 @@ GET /api/service-desk/analytics/summary
 - 最近反馈
 - 周趋势指标
 
+### 7.1 获取 FAQ 候选列表
+
+```http
+GET /api/service-desk/analytics/faq-candidates?limit=20&knowledgeBaseId=kb-1&status=candidate
+```
+
+### 7.2 获取知识缺口列表
+
+```http
+GET /api/service-desk/analytics/knowledge-gaps?limit=20&knowledgeBaseId=kb-1&status=pending&issueType=内容不完整
+```
+
+### 7.3 获取低质量回答列表
+
+```http
+GET /api/service-desk/analytics/low-quality-answers?limit=20&knowledgeBaseId=kb-1&status=pending&feedbackReason=内容不完整
+```
+
+### 7.4 获取反馈明细列表
+
+```http
+GET /api/service-desk/analytics/feedback?limit=50&knowledgeBaseId=kb-1&feedbackType=dislike&feedbackReason=内容不完整
+```
+
+支持的筛选参数：
+
+- `limit`
+- `knowledgeBaseId`
+- `status`
+- `feedbackType`
+- `feedbackReason`
+- `issueType`
+
 ---
 
-## 8. 数据对象
+## 8. 重建索引
+
+### 8.1 重建整个知识库索引
+
+```http
+POST /api/knowledge-bases/:id/reindex
+```
+
+适用场景：
+
+- 调整切片策略后希望整库重建
+- 新增 `chunk_type / chunk_profile / chunk_topic` 后希望旧数据刷新
+- 图片知识处理链路升级后，希望重新入索引
+
+### 8.2 重建单个文档索引
+
+```http
+POST /api/knowledge-bases/:id/documents/:documentId/reindex
+```
+
+说明：
+
+- 当前实现以**索引一致性优先**为原则
+- 服务端会返回目标文档信息
+- 为避免旧 chunk 残留，当前内部会重建该知识库集合后再返回目标文档结果
+
+---
+
+## 9. 数据对象
 
 ### conversation
 - `id`

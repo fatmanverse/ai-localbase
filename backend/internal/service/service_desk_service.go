@@ -152,6 +152,34 @@ func (s *ServiceDeskService) AnalyticsSummary() (model.ServiceDeskAnalyticsSumma
 	return s.store.GetServiceDeskAnalyticsSummary()
 }
 
+func (s *ServiceDeskService) ListFAQCandidates(opts model.AnalyticsListOptions) ([]model.FAQCandidate, error) {
+	if s == nil || s.store == nil {
+		return nil, fmt.Errorf("service desk store is not configured")
+	}
+	return s.store.ListFAQCandidatesByOptions(opts)
+}
+
+func (s *ServiceDeskService) ListKnowledgeGaps(opts model.AnalyticsListOptions) ([]model.KnowledgeGap, error) {
+	if s == nil || s.store == nil {
+		return nil, fmt.Errorf("service desk store is not configured")
+	}
+	return s.store.ListKnowledgeGapsByOptions(opts)
+}
+
+func (s *ServiceDeskService) ListLowQualityAnswers(opts model.AnalyticsListOptions) ([]model.LowQualityAnswer, error) {
+	if s == nil || s.store == nil {
+		return nil, fmt.Errorf("service desk store is not configured")
+	}
+	return s.store.ListLowQualityAnswersByOptions(opts)
+}
+
+func (s *ServiceDeskService) ListRecentFeedback(opts model.AnalyticsListOptions) ([]model.ServiceDeskMessageFeedback, error) {
+	if s == nil || s.store == nil {
+		return nil, fmt.Errorf("service desk store is not configured")
+	}
+	return s.store.ListRecentFeedbackByOptions(opts)
+}
+
 func (s *ServiceDeskService) generateResponse(conversationID string, req model.SendServiceDeskMessageRequest, onEvent func(event string, payload map[string]any) error) (*model.ServiceDeskConversation, model.ServiceDeskMessage, model.ServiceDeskMessage, error) {
 	if s == nil || s.store == nil || s.appService == nil || s.llmService == nil {
 		return nil, model.ServiceDeskMessage{}, model.ServiceDeskMessage{}, fmt.Errorf("service desk service is not configured")
