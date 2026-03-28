@@ -57,8 +57,9 @@ SAVE_TAR=1 bash scripts/linux/build_images.sh
 ---
 
 ### CentOS 7 / EL7 说明
-项目脚本会自动识别老版本 glibc，并在 `x64` 环境下载 **glibc-2.17 兼容的 Node.js 二进制**。
-如果仍然失败，建议直接使用 Docker 完成前端构建。
+项目脚本会自动识别老版本 glibc。
+在 `CentOS 7 / EL7 x64` 环境会自动切换到 **Node.js 16.20.2 兼容版本**，避免 Node 20 在老系统上的 `GLIBC` / `GLIBCXX` 报错。
+如果你不想在宿主机装 Node，建议直接使用 Docker 完成前端构建。
 
 ---
 

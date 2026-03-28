@@ -98,15 +98,27 @@ bash scripts/linux/build_images.sh
 - `GLIBCXX_3.4.21 not found`
 
 ### 原因
-系统自带的 glibc / libstdc++ 太旧，无法运行官方 Node 20 Linux 二进制。
+CentOS 7 / EL7 的 glibc 和 libstdc++ 太旧，直接运行 Node 18 / 20 容易出现：
+- `GLIBC_2.27 not found`
+- `GLIBC_2.28 not found`
+- `GLIBCXX_3.4.21 not found`
 
 ### 现在的处理方式
-项目脚本会自动识别老版本 glibc，并在 `x64` 环境切换到 **glibc-2.17 兼容的 Node.js 包**。
+项目脚本会自动识别老版本 glibc，并在 `x64` 环境切换到 **Node.js 16.20.2 兼容版本**。
 
-请直接重新执行：
+请先清理旧链接，再重新执行：
 
 ```bash
+rm -f /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx
+rm -rf /usr/local/lib/nodejs/node-v20.19.5-linux-x64
+rm -rf /usr/local/lib/nodejs/node-v20.19.5-linux-x64-glibc-217
+rm -rf /usr/local/lib/nodejs/node-v16.20.2-linux-x64
+
 bash scripts/linux/install_go_npm_env.sh
+which node
+readlink -f /usr/local/bin/node
+node --version
+npm --version
 ```
 
-如果仍然失败，建议直接改用 Docker 完成构建。
+如果你不想在宿主机处理 Node 兼容问题，建议直接改用 Docker 完成前端构建。

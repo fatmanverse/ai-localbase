@@ -6,6 +6,7 @@ set -euo pipefail
 
 GO_VERSION="${GO_VERSION:-1.25.0}"
 NODE_VERSION="${NODE_VERSION:-20.19.5}"
+LEGACY_NODE_VERSION="${LEGACY_NODE_VERSION:-16.20.2}"
 INSTALL_DOCKER="${INSTALL_DOCKER:-0}"
 
 if [[ "${EUID}" -ne 0 ]]; then
@@ -90,31 +91,36 @@ resolve_node_package() {
   local glibc_version=""
   glibc_version="$(get_glibc_version || true)"
 
-  local node_pkg="node-v${NODE_VERSION}-linux-${NODE_ARCH}"
-  local node_url="https://nodejs.org/dist/v${NODE_VERSION}/${node_pkg}.tar.xz"
+  local resolved_node_version="${NODE_VERSION}"
+  local node_pkg="node-v${resolved_node_version}-linux-${NODE_ARCH}"
+  local node_url="https://nodejs.org/dist/v${resolved_node_version}/${node_pkg}.tar.xz"
 
   if [[ "${NODE_ARCH}" == "x64" && -n "${glibc_version}" ]] && version_lt "${glibc_version}" "2.28"; then
-    node_pkg="node-v${NODE_VERSION}-linux-${NODE_ARCH}-glibc-217"
-    node_url="https://unofficial-builds.nodejs.org/download/release/v${NODE_VERSION}/${node_pkg}.tar.xz"
-    echo "==> 检测到 glibc ${glibc_version}，自动切换到 Node.js glibc-2.17 兼容包" >&2
+    resolved_node_version="${LEGACY_NODE_VERSION}"
+    node_pkg="node-v${resolved_node_version}-linux-${NODE_ARCH}"
+    node_url="https://nodejs.org/dist/v${resolved_node_version}/${node_pkg}.tar.xz"
+    echo "==> 检测到 glibc ${glibc_version}，自动切换到 Node.js ${resolved_node_version} 兼容包（适用于 CentOS 7 / EL7）" >&2
   elif [[ "${NODE_ARCH}" != "x64" && -n "${glibc_version}" ]] && version_lt "${glibc_version}" "2.28"; then
     echo "当前系统 glibc 版本为 ${glibc_version}，且架构为 ${NODE_ARCH}。官方 Node.js ${NODE_VERSION} 预编译包可能无法运行。" >&2
     echo "建议改用较新的 Linux 发行版，或直接使用 Docker 构建前端。" >&2
     exit 1
   fi
 
-  printf '%s|%s
-' "${node_pkg}" "${node_url}"
+  printf '%s|%s|%s
+' "${resolved_node_version}" "${node_pkg}" "${node_url}"
 }
 
 install_node() {
   local package_info
   package_info="$(resolve_node_package)"
-  local node_pkg="${package_info%%|*}"
-  local node_url="${package_info##*|}"
+
+  local resolved_node_version="${package_info%%|*}"
+  local remainder="${package_info#*|}"
+  local node_pkg="${remainder%%|*}"
+  local node_url="${remainder##*|}"
   local node_tar="/tmp/${node_pkg}.tar.xz"
 
-  echo "==> 安装 Node.js ${NODE_VERSION} (${NODE_ARCH})"
+  echo "==> 安装 Node.js ${resolved_node_version} (${NODE_ARCH})"
   curl -fsSL "${node_url}" -o "${node_tar}"
   ${SUDO} mkdir -p /usr/local/lib/nodejs
   ${SUDO} rm -rf "/usr/local/lib/nodejs/${node_pkg}"
@@ -122,6 +128,7 @@ install_node() {
   ${SUDO} ln -sf "/usr/local/lib/nodejs/${node_pkg}/bin/node" /usr/local/bin/node
   ${SUDO} ln -sf "/usr/local/lib/nodejs/${node_pkg}/bin/npm" /usr/local/bin/npm
   ${SUDO} ln -sf "/usr/local/lib/nodejs/${node_pkg}/bin/npx" /usr/local/bin/npx
+  hash -r || true
 }
 
 install_docker() {

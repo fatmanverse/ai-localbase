@@ -62,6 +62,8 @@ npm ci
 npm run dev
 ```
 
+> CentOS 7 / EL7：请先执行 `bash scripts/linux/install_go_npm_env.sh`，脚本会自动切到兼容的 Node.js 16.20.2。
+
 开发地址：
 - 前端：`http://localhost:5173`
 - 后端：`http://localhost:8080`
