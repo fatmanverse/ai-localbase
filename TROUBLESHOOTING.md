@@ -138,6 +138,16 @@ export NO_PROXY=localhost,127.0.0.1,host.docker.internal,qdrant,backend,frontend
 docker compose build --no-cache
 ```
 
+如果你的系统只配置了小写变量，也可以直接使用：
+
+```bash
+export http_proxy=http://127.0.0.1:7890
+export https_proxy=http://127.0.0.1:7890
+export no_proxy=localhost,127.0.0.1,host.docker.internal,qdrant,backend,frontend
+
+docker compose build --no-cache
+```
+
 如果你使用脚本构建镜像：
 
 ```bash

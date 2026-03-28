@@ -38,6 +38,14 @@ export NO_PROXY=localhost,127.0.0.1,host.docker.internal,qdrant,backend,frontend
 docker compose up --build -d
 ```
 
+也支持 Linux 常见的小写变量：
+```bash
+export http_proxy=http://127.0.0.1:7890
+export https_proxy=http://127.0.0.1:7890
+export no_proxy=localhost,127.0.0.1,host.docker.internal,qdrant,backend,frontend
+docker compose up --build -d
+```
+
 访问地址：
 - 前端：`http://localhost:4173`
 - 后端：`http://localhost:8080`
