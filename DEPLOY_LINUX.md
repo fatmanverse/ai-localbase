@@ -62,6 +62,16 @@ bash scripts/linux/build_images.sh
 SAVE_TAR=1 bash scripts/linux/build_images.sh
 ```
 
+### 构建并推送到镜像仓库
+```bash
+REGISTRY_PREFIX=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase TAG=$(git rev-parse --short HEAD) bash scripts/linux/build_and_push.sh
+```
+
+如需顺手推 `latest`：
+```bash
+REGISTRY_PREFIX=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase TAG=$(git rev-parse --short HEAD) PUSH_LATEST=1 bash scripts/linux/build_and_push.sh
+```
+
 ---
 
 ### CentOS 7 / EL7 说明

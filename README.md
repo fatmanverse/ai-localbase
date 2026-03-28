@@ -108,11 +108,19 @@ npm run dev
 - `scripts/linux/install_go_npm_env.sh`
 - `scripts/linux/package_release.sh`
 - `scripts/linux/build_images.sh`
+- `scripts/linux/build_and_push.sh`
 - `.env.example`
 
 ---
 
 ## 常见命令
+
+### 构建并推送镜像
+```bash
+REGISTRY_PREFIX=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase \
+TAG=$(git rev-parse --short HEAD) \
+bash scripts/linux/build_and_push.sh
+```
 
 ### 查看当前配置
 ```bash
