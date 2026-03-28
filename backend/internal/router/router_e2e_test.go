@@ -161,7 +161,31 @@ Redis 支持过期时间设置，适合用作会话缓存或临时数据存储�
 		t.Fatalf("expected content preview to contain indexed text, got %q", uploadResult.Uploaded.ContentPreview)
 	}
 
+	reindexResp := performRequest(
+		t,
+		engine,
+		http.MethodPost,
+		fmt.Sprintf("/api/knowledge-bases/%s/reindex", knowledgeBaseID),
+		nil,
+		"",
+	)
+	if reindexResp.Code != http.StatusOK {
+		t.Fatalf("expected reindex status 200, got %d, body=%s", reindexResp.Code, reindexResp.Body.String())
+	}
+
+	var reindexResult struct {
+		KnowledgeBase model.KnowledgeBase `json:"knowledgeBase"`
+	}
+	decodeJSONResponse(t, reindexResp.Body.Bytes(), &reindexResult)
+	if len(reindexResult.KnowledgeBase.Documents) != 1 {
+		t.Fatalf("expected reindexed knowledge base to keep documents, got %d", len(reindexResult.KnowledgeBase.Documents))
+	}
+	if reindexResult.KnowledgeBase.Documents[0].Status != "indexed" {
+		t.Fatalf("expected reindexed document status indexed, got %s", reindexResult.KnowledgeBase.Documents[0].Status)
+	}
+
 	chatPayload := map[string]any{
+		"conversationId":  "conv-test-1",
 		"model":           "chat-test-model",
 		"knowledgeBaseId": knowledgeBaseID,
 		"documentId":      uploadResult.Uploaded.ID,
@@ -203,6 +227,7 @@ func newTestRouter(t *testing.T) (*http.ServeMux, string, func()) {
 	t.Helper()
 
 	uploadDir := t.TempDir()
+	chatHistoryPath := filepath.Join(uploadDir, "chat-history.db")
 	qdrantState := &qdrantTestServer{collections: map[string]*qdrantCollectionState{}}
 	qdrantHTTP := httptest.NewServer(http.HandlerFunc(qdrantState.handle))
 	modelHTTP := httptest.NewServer(http.HandlerFunc(handleModelAPI))
@@ -218,8 +243,13 @@ func newTestRouter(t *testing.T) (*http.ServeMux, string, func()) {
 	}
 
 	qdrantService := service.NewQdrantService(serverConfig)
-	appService := service.NewAppService(qdrantService, service.NewAppStateStore(""), serverConfig)
-	_, err := appService.UpdateConfig(model.ConfigUpdateRequest{
+	chatHistoryStore, err := service.NewSQLiteChatHistoryStore(chatHistoryPath)
+	if err != nil {
+		t.Fatalf("init chat history store: %v", err)
+	}
+	appService := service.NewAppService(qdrantService, service.NewAppStateStore(""), chatHistoryStore, serverConfig)
+
+	_, err = appService.UpdateConfig(model.ConfigUpdateRequest{
 		Chat: model.ChatConfig{
 			Provider:    "ollama",
 			BaseURL:     modelHTTP.URL,
@@ -245,6 +275,7 @@ func newTestRouter(t *testing.T) (*http.ServeMux, string, func()) {
 	mux.Handle("/", ginEngine)
 
 	cleanup := func() {
+		_ = chatHistoryStore.Close()
 		modelHTTP.Close()
 		qdrantHTTP.Close()
 		_ = os.RemoveAll(uploadDir)

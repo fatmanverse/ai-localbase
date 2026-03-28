@@ -167,6 +167,19 @@ func (h *AppHandler) Upload(c *gin.Context) {
 	h.handleUpload(c, c.PostForm("knowledgeBaseId"))
 }
 
+func (h *AppHandler) ReindexKnowledgeBase(c *gin.Context) {
+	knowledgeBase, err := h.appService.ReindexKnowledgeBase(c.Param("id"))
+	if err != nil {
+		writeError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "knowledge base reindexed",
+		"knowledgeBase": knowledgeBase,
+	})
+}
+
 func (h *AppHandler) DeleteDocument(c *gin.Context) {
 	removedDocument, err := h.appService.DeleteDocument(c.Param("id"), c.Param("documentId"))
 	if err != nil {
@@ -316,6 +329,7 @@ func (h *AppHandler) prepareChatRequest(req model.ChatCompletionRequest) (model.
 
 	preparedReq := req
 	preparedReq.Config = h.appService.CurrentChatConfig()
+	preparedReq.Embedding = h.appService.CurrentEmbeddingConfig()
 	preparedReq.Config.ContextMessageLimit = h.appService.ContextMessageLimit()
 	preparedReq.Messages = h.appService.TrimChatMessages(req.Messages)
 	latestQuestion := ""
@@ -455,9 +469,10 @@ func (h *AppHandler) handleUpload(c *gin.Context, candidateKnowledgeBaseID strin
 func validateUploadFile(file *multipart.FileHeader) error {
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	allowed := map[string]struct{}{
-		".txt": {},
-		".md":  {},
-		".pdf": {},
+		".txt":  {},
+		".md":   {},
+		".pdf":  {},
+		".docx": {},
 	}
 
 	if _, ok := allowed[ext]; !ok {
@@ -469,7 +484,7 @@ func validateUploadFile(file *multipart.FileHeader) error {
 
 func errUnsupportedFileType(ext string) error {
 	if ext == "" {
-		return fmt.Errorf("unsupported file type: missing extension, allowed types are .txt, .md, .pdf")
+		return fmt.Errorf("unsupported file type: missing extension, allowed types are .txt, .md, .pdf, .docx")
 	}
 
 	return &fileTypeError{Extension: ext}
@@ -480,7 +495,7 @@ type fileTypeError struct {
 }
 
 func (e *fileTypeError) Error() string {
-	return "unsupported file type: " + e.Extension + ", allowed types are .txt, .md, .pdf"
+	return "unsupported file type: " + e.Extension + ", allowed types are .txt, .md, .pdf, .docx"
 }
 
 func buildStoredConversationMessages(messages []model.ChatMessage, assistantContent string, metadata map[string]any) []model.StoredChatMessage {

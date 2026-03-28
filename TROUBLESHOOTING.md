@@ -19,7 +19,7 @@
 ollama list
 
 # 拉取需要的模型（如无则执行）
-ollama pull qwen3.5:0.8b
+ollama pull qwen2.5:7b
 ollama pull nomic-embed-text
 
 # 启动 Ollama 服务（或确保已在后台运行）
@@ -93,7 +93,7 @@ docker compose exec backend sh -c "apk add --no-cache curl && curl -v http://hos
 1. **确认 Embedding 模型的向量维度**：
    ```bash
    ollama list
-   # 查看 embedding 模型名称，比如 nomic-embed-text（通常 1024）
+   # 查看 embedding 模型名称，比如 nomic-embed-text（通常 768）
    ```
 
 2. **修改 `docker-compose.yml` 的 `QDRANT_VECTOR_SIZE`**：
@@ -101,7 +101,7 @@ docker compose exec backend sh -c "apk add --no-cache curl && curl -v http://hos
    services:
      backend:
        environment:
-         QDRANT_VECTOR_SIZE: "1024"  # 或 "768"，取决于 embedding 模型
+         QDRANT_VECTOR_SIZE: "768"  # nomic-embed-text 默认 768；如果改成 bge-m3 等模型，再按实际维度调整
    ```
 
 3. **清理旧数据并重启**（重要，必须删除旧 collection）：
@@ -144,7 +144,7 @@ docker compose exec backend sh -c "apk add --no-cache curl && curl -v http://hos
 
 3. **若模型未下载，执行 pull**：
    ```bash
-   ollama pull qwen3.5:0.8b
+   ollama pull qwen2.5:7b
    ollama pull nomic-embed-text
    ```
 
@@ -156,9 +156,9 @@ docker compose exec backend sh -c "apk add --no-cache curl && curl -v http://hos
        "chat": {
          "provider": "ollama",
          "baseUrl": "http://host.docker.internal:11434",
-         "model": "qwen3.5:0.8b",
+         "model": "qwen2.5:7b",
          "apiKey": "",
-         "temperature": 0.7,
+         "temperature": 0.2,
          "contextMessageLimit": 12
        },
        "embedding": {

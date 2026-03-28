@@ -206,7 +206,7 @@ docker pull ghcr.io/veyliss/ai-localbase-backend:latest
 # 例如使用 nomic-embed-text (768维)
 docker compose -f docker-compose.prod.yml up -d
 
-# 或自定义维度
+# 或自定义维度（例如 bge-m3 常见为 1024 维）
 QDRANT_VECTOR_SIZE=1024 docker compose -f docker-compose.prod.yml up -d
 ```
 

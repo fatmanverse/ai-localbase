@@ -1,6 +1,7 @@
 package service
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -136,6 +137,42 @@ func TestExtractContentPreviewFromMarkdown(t *testing.T) {
 	}
 }
 
+func TestExtractDocumentTextFromDOCX(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "demo.docx")
+	if err := writeTestDOCX(path, map[string]string{
+		"word/document.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>第一段内容</w:t></w:r></w:p><w:p><w:r><w:t>第二段内容</w:t></w:r></w:p></w:body></w:document>`,
+	}); err != nil {
+		t.Fatalf("write docx file: %v", err)
+	}
+
+	text, err := util.ExtractDocumentText(path)
+	if err != nil {
+		t.Fatalf("extract docx text: %v", err)
+	}
+	if !strings.Contains(text, "第一段内容") || !strings.Contains(text, "第二段内容") {
+		t.Fatalf("expected extracted docx text to contain paragraphs, got %q", text)
+	}
+}
+
+func TestExtractContentPreviewFromDOCX(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "preview.docx")
+	if err := writeTestDOCX(path, map[string]string{
+		"word/document.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>` + strings.Repeat("DOCX预览内容。", 20) + `</w:t></w:r></w:p></w:body></w:document>`,
+	}); err != nil {
+		t.Fatalf("write docx preview file: %v", err)
+	}
+
+	preview := util.ExtractContentPreview(path)
+	if !strings.Contains(preview, "DOCX预览内容") {
+		t.Fatalf("expected docx preview to contain file content, got %q", preview)
+	}
+	if len([]rune(preview)) > 123 {
+		t.Fatalf("expected docx preview to be truncated, got %d runes", len([]rune(preview)))
+	}
+}
+
 func TestAppServiceIndexDocumentWithExtractedText(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "indexed.md")
@@ -144,7 +181,7 @@ func TestAppServiceIndexDocumentWithExtractedText(t *testing.T) {
 		t.Fatalf("write indexed markdown file: %v", err)
 	}
 
-	service := NewAppService(nil, NewAppStateStore(""), model.ServerConfig{})
+	service := NewAppService(nil, NewAppStateStore(""), nil, model.ServerConfig{})
 	knowledgeBases := service.ListKnowledgeBases()
 	if len(knowledgeBases) == 0 {
 		t.Fatal("expected default knowledge base")
@@ -372,4 +409,26 @@ func TestLLMQueryRewriterParsing(t *testing.T) {
 	assertContains("查询二")
 	assertContains("查询三")
 	assertContains("原始问题")
+}
+
+func writeTestDOCX(path string, files map[string]string) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	zipWriter := zip.NewWriter(file)
+	for name, content := range files {
+		entry, err := zipWriter.Create(name)
+		if err != nil {
+			_ = zipWriter.Close()
+			return err
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			_ = zipWriter.Close()
+			return err
+		}
+	}
+	return zipWriter.Close()
 }

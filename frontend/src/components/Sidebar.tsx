@@ -1,9 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import {
   AppConfig,
-  ChatConfig,
   Conversation,
-  EmbeddingConfig,
   KnowledgeBase,
 } from '../App'
 import KnowledgePanel from './knowledge/KnowledgePanel'
@@ -21,6 +19,8 @@ interface SidebarProps {
   onDeleteKnowledgeBase: (knowledgeBaseId: string) => void
   onUploadFiles: (knowledgeBaseId: string, files: FileList | null) => void
   onRemoveDocument: (knowledgeBaseId: string, documentId: string) => void
+  onReindexKnowledgeBase: (knowledgeBaseId: string) => Promise<void>
+  reindexingKnowledgeBaseId: string | null
   conversations: Conversation[]
   activeConversationId: string | null
   onSelectConversation: (conversationId: string) => void
@@ -32,11 +32,10 @@ interface SidebarProps {
   isKnowledgePanelOpen: boolean
   onToggleSettings: () => void
   onToggleKnowledgePanel: () => void
-  onChatConfigChange: <K extends keyof ChatConfig>(key: K, value: ChatConfig[K]) => void
-  onEmbeddingConfigChange: <K extends keyof EmbeddingConfig>(
-    key: K,
-    value: EmbeddingConfig[K],
-  ) => void
+  onSaveConfig: (config: AppConfig) => Promise<void>
+  isSavingConfig: boolean
+  configSaveError: string | null
+  configSaveSuccess: string | null
 }
 
 const formatDateTime = (value: string) =>
@@ -59,6 +58,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onDeleteKnowledgeBase,
   onUploadFiles,
   onRemoveDocument,
+  onReindexKnowledgeBase,
+  reindexingKnowledgeBaseId,
   conversations,
   activeConversationId,
   onSelectConversation,
@@ -70,8 +71,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   isKnowledgePanelOpen,
   onToggleSettings,
   onToggleKnowledgePanel,
-  onChatConfigChange,
-  onEmbeddingConfigChange,
+  onSaveConfig,
+  isSavingConfig,
+  configSaveError,
+  configSaveSuccess,
 }) => {
   const [collapsedKnowledgeBases, setCollapsedKnowledgeBases] = useState<
     Record<string, boolean>
@@ -283,8 +286,10 @@ const Sidebar: React.FC<SidebarProps> = ({
         <SettingsPanel
           config={config}
           onClose={onToggleSettings}
-          onChatConfigChange={onChatConfigChange}
-          onEmbeddingConfigChange={onEmbeddingConfigChange}
+          onSave={onSaveConfig}
+          isSaving={isSavingConfig}
+          saveError={configSaveError}
+          saveSuccess={configSaveSuccess}
         />
       )}
 
@@ -301,6 +306,8 @@ const Sidebar: React.FC<SidebarProps> = ({
         onDeleteKnowledgeBase={onDeleteKnowledgeBase}
         onUploadFiles={onUploadFiles}
         onRemoveDocument={onRemoveDocument}
+        onReindexKnowledgeBase={onReindexKnowledgeBase}
+        reindexingKnowledgeBaseId={reindexingKnowledgeBaseId}
         onClose={onToggleKnowledgePanel}
       />
     </>

@@ -29,6 +29,7 @@ func NewRouter(appHandler *handler.AppHandler) *gin.Engine {
 		api.DELETE("/knowledge-bases/:id", appHandler.DeleteKnowledgeBase)
 		api.GET("/knowledge-bases/:id/documents", appHandler.ListDocuments)
 		api.POST("/knowledge-bases/:id/documents", appHandler.UploadToKnowledgeBase)
+		api.POST("/knowledge-bases/:id/reindex", appHandler.ReindexKnowledgeBase)
 		api.DELETE("/knowledge-bases/:id/documents/:documentId", appHandler.DeleteDocument)
 	}
 

@@ -1,29 +1,93 @@
-import React from 'react'
-import { AppConfig, ChatConfig, EmbeddingConfig } from '../../App'
+import React, { useEffect, useMemo, useState } from 'react'
+import { AppConfig, ChatConfig, EmbeddingConfig, recommendedConfig } from '../../App'
 
 interface SettingsPanelProps {
   config: AppConfig
   onClose: () => void
-  onChatConfigChange: <K extends keyof ChatConfig>(key: K, value: ChatConfig[K]) => void
-  onEmbeddingConfigChange: <K extends keyof EmbeddingConfig>(
-    key: K,
-    value: EmbeddingConfig[K],
-  ) => void
+  onSave: (config: AppConfig) => Promise<void>
+  isSaving: boolean
+  saveError: string | null
+  saveSuccess: string | null
 }
+
+const normalizeContextLimit = (value: number) => Math.max(1, Math.min(100, Number(value) || 1))
+
+const createRecommendedConfig = (): AppConfig => ({
+  chat: { ...recommendedConfig.chat },
+  embedding: { ...recommendedConfig.embedding },
+})
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({
   config,
   onClose,
-  onChatConfigChange,
-  onEmbeddingConfigChange,
+  onSave,
+  isSaving,
+  saveError,
+  saveSuccess,
 }) => {
+  const [draftConfig, setDraftConfig] = useState<AppConfig>(config)
+
+  const recommendedDraft = useMemo(() => createRecommendedConfig(), [])
+
+  useEffect(() => {
+    setDraftConfig(config)
+  }, [config])
+
+  const hasChanges = useMemo(
+    () => JSON.stringify(draftConfig) !== JSON.stringify(config),
+    [config, draftConfig],
+  )
+
+  const isUsingRecommendedConfig = useMemo(
+    () => JSON.stringify(draftConfig) === JSON.stringify(recommendedDraft),
+    [draftConfig, recommendedDraft],
+  )
+
+  const handleChatConfigChange = <K extends keyof ChatConfig>(
+    key: K,
+    value: ChatConfig[K],
+  ) => {
+    setDraftConfig((prev) => ({
+      ...prev,
+      chat: {
+        ...prev.chat,
+        [key]: key === 'contextMessageLimit' ? normalizeContextLimit(Number(value)) : value,
+      },
+    }))
+  }
+
+  const handleEmbeddingConfigChange = <K extends keyof EmbeddingConfig>(
+    key: K,
+    value: EmbeddingConfig[K],
+  ) => {
+    setDraftConfig((prev) => ({
+      ...prev,
+      embedding: {
+        ...prev.embedding,
+        [key]: value,
+      },
+    }))
+  }
+
+  const handleSave = async () => {
+    await onSave(draftConfig)
+  }
+
+  const handleReset = () => {
+    setDraftConfig(config)
+  }
+
+  const handleApplyRecommended = () => {
+    setDraftConfig(createRecommendedConfig())
+  }
+
   return (
     <div className="settings-modal-backdrop" onClick={onClose}>
       <div className="settings-modal settings-modal-single" onClick={(event) => event.stopPropagation()}>
         <div className="settings-modal-header">
           <div>
             <h3>AI 设置</h3>
-            <p>分别管理聊天模型与 Embedding 模型配置</p>
+            <p>编辑后点击保存，后端会统一持久化并立即生效。</p>
           </div>
           <button type="button" className="ghost-btn settings-close-btn" onClick={onClose}>
             关闭
@@ -40,9 +104,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <label className="settings-field">
                 <span>Provider</span>
                 <select
-                  value={config.chat.provider}
+                  value={draftConfig.chat.provider}
                   onChange={(event) =>
-                    onChatConfigChange('provider', event.target.value as ChatConfig['provider'])
+                    handleChatConfigChange('provider', event.target.value as ChatConfig['provider'])
                   }
                 >
                   <option value="ollama">Ollama</option>
@@ -53,12 +117,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <label className="settings-field">
                 <span>Base URL</span>
                 <input
-                  value={config.chat.baseUrl}
-                  onChange={(event) => onChatConfigChange('baseUrl', event.target.value)}
+                  value={draftConfig.chat.baseUrl}
+                  onChange={(event) => handleChatConfigChange('baseUrl', event.target.value)}
                   placeholder={
-                    config.chat.provider === 'ollama'
+                    draftConfig.chat.provider === 'ollama'
                       ? 'http://localhost:11434'
-                      : 'http://localhost:11434/v1'
+                      : 'https://your-api.example.com/v1'
                   }
                 />
               </label>
@@ -66,9 +130,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <label className="settings-field">
                 <span>Model</span>
                 <input
-                  value={config.chat.model}
-                  onChange={(event) => onChatConfigChange('model', event.target.value)}
-                  placeholder="llama3.2"
+                  value={draftConfig.chat.model}
+                  onChange={(event) => handleChatConfigChange('model', event.target.value)}
+                  placeholder="qwen2.5:7b"
                 />
               </label>
 
@@ -76,22 +140,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <span>API Key</span>
                 <input
                   type="password"
-                  value={config.chat.apiKey}
-                  onChange={(event) => onChatConfigChange('apiKey', event.target.value)}
+                  value={draftConfig.chat.apiKey}
+                  onChange={(event) => handleChatConfigChange('apiKey', event.target.value)}
                   placeholder="选填"
                 />
               </label>
 
               <label className="settings-field settings-field-full">
-                <span>Temperature: {config.chat.temperature.toFixed(1)}</span>
+                <span>Temperature: {draftConfig.chat.temperature.toFixed(1)}</span>
                 <input
                   type="range"
                   min="0"
                   max="1"
                   step="0.1"
-                  value={config.chat.temperature}
+                  value={draftConfig.chat.temperature}
                   onChange={(event) =>
-                    onChatConfigChange('temperature', Number(event.target.value))
+                    handleChatConfigChange('temperature', Number(event.target.value))
                   }
                 />
               </label>
@@ -102,9 +166,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   type="number"
                   min="1"
                   max="100"
-                  value={config.chat.contextMessageLimit}
+                  value={draftConfig.chat.contextMessageLimit}
                   onChange={(event) =>
-                    onChatConfigChange('contextMessageLimit', Number(event.target.value))
+                    handleChatConfigChange('contextMessageLimit', Number(event.target.value))
                   }
                   placeholder="12"
                 />
@@ -122,9 +186,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <label className="settings-field">
                 <span>Provider</span>
                 <select
-                  value={config.embedding.provider}
+                  value={draftConfig.embedding.provider}
                   onChange={(event) =>
-                    onEmbeddingConfigChange(
+                    handleEmbeddingConfigChange(
                       'provider',
                       event.target.value as EmbeddingConfig['provider'],
                     )
@@ -138,12 +202,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <label className="settings-field">
                 <span>Base URL</span>
                 <input
-                  value={config.embedding.baseUrl}
-                  onChange={(event) => onEmbeddingConfigChange('baseUrl', event.target.value)}
+                  value={draftConfig.embedding.baseUrl}
+                  onChange={(event) => handleEmbeddingConfigChange('baseUrl', event.target.value)}
                   placeholder={
-                    config.embedding.provider === 'ollama'
+                    draftConfig.embedding.provider === 'ollama'
                       ? 'http://localhost:11434'
-                      : 'http://localhost:11434/v1'
+                      : 'https://your-api.example.com/v1'
                   }
                 />
               </label>
@@ -151,8 +215,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <label className="settings-field">
                 <span>Model</span>
                 <input
-                  value={config.embedding.model}
-                  onChange={(event) => onEmbeddingConfigChange('model', event.target.value)}
+                  value={draftConfig.embedding.model}
+                  onChange={(event) => handleEmbeddingConfigChange('model', event.target.value)}
                   placeholder="nomic-embed-text"
                 />
               </label>
@@ -161,13 +225,65 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <span>API Key</span>
                 <input
                   type="password"
-                  value={config.embedding.apiKey}
-                  onChange={(event) => onEmbeddingConfigChange('apiKey', event.target.value)}
+                  value={draftConfig.embedding.apiKey}
+                  onChange={(event) => handleEmbeddingConfigChange('apiKey', event.target.value)}
                   placeholder="选填"
                 />
               </label>
             </div>
+
+            <div className="settings-hint settings-hint-profile">
+              <strong>当前内置推荐配置</strong>
+              <ul className="settings-hint-list">
+                <li>聊天模型：<code>qwen2.5:7b</code>，Temperature 默认 <code>0.2</code></li>
+                <li>向量模型：<code>nomic-embed-text</code>，默认向量维度 <code>768</code></li>
+                <li>RAG 内置策略：语义切片 <code>800</code> / Overlap <code>120</code></li>
+                <li>检索策略：文档内 TopK <code>5</code>，知识库 TopK <code>6</code>，单文档最多 <code>2</code> 个切片</li>
+              </ul>
+            </div>
+
+            <p className="settings-hint">
+              切换 Embedding 模型后，旧文档向量不会自动重建。为了保证检索准确率，请重新上传文档或重建知识库索引。
+            </p>
           </section>
+
+          <div className="settings-modal-actions">
+            <div className="settings-status-group">
+              {saveError ? <div className="settings-status settings-status-error">{saveError}</div> : null}
+              {!saveError && saveSuccess ? (
+                <div className="settings-status settings-status-success">{saveSuccess}</div>
+              ) : null}
+            </div>
+
+            <div className="settings-action-buttons">
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={handleReset}
+                disabled={!hasChanges || isSaving}
+              >
+                重置为已保存
+              </button>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={handleApplyRecommended}
+                disabled={isUsingRecommendedConfig || isSaving}
+              >
+                恢复推荐默认
+              </button>
+              <button
+                type="button"
+                className="btn-primary settings-save-btn"
+                onClick={() => {
+                  void handleSave()
+                }}
+                disabled={!hasChanges || isSaving}
+              >
+                {isSaving ? '保存中...' : '保存并生效'}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

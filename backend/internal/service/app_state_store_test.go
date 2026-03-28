@@ -99,7 +99,7 @@ func TestNewAppServiceLoadsPersistedState(t *testing.T) {
 		t.Fatalf("save persisted state: %v", err)
 	}
 
-	service := NewAppService(nil, store, model.ServerConfig{})
+	service := NewAppService(nil, store, nil, model.ServerConfig{})
 	config := service.GetConfig()
 	if config.Chat.Model != "persisted-chat-model" {
 		t.Fatalf("expected persisted chat model, got %s", config.Chat.Model)
@@ -115,7 +115,7 @@ func TestNewAppServicePersistsDefaultState(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "default-state.json")
 	store := NewAppStateStore(statePath)
 
-	service := NewAppService(nil, store, model.ServerConfig{})
+	service := NewAppService(nil, store, nil, model.ServerConfig{})
 	if service == nil {
 		t.Fatal("expected app service")
 	}
@@ -126,5 +126,82 @@ func TestNewAppServicePersistsDefaultState(t *testing.T) {
 	}
 	if len(content) == 0 {
 		t.Fatal("expected non-empty persisted state file")
+	}
+}
+
+func TestNewAppServiceUsesRecommendedDefaultConfig(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "recommended-default-state.json")
+	store := NewAppStateStore(statePath)
+
+	service := NewAppService(nil, store, nil, model.ServerConfig{OllamaBaseURL: "http://localhost:11434"})
+	cfg := service.GetConfig()
+
+	if cfg.Chat.Model != recommendedChatModel {
+		t.Fatalf("expected recommended chat model %s, got %s", recommendedChatModel, cfg.Chat.Model)
+	}
+	if cfg.Chat.Temperature != recommendedChatTemperature {
+		t.Fatalf("expected recommended chat temperature %v, got %v", recommendedChatTemperature, cfg.Chat.Temperature)
+	}
+	if cfg.Chat.ContextMessageLimit != recommendedContextMessageLimit {
+		t.Fatalf("expected recommended context message limit %d, got %d", recommendedContextMessageLimit, cfg.Chat.ContextMessageLimit)
+	}
+	if cfg.Embedding.Model != recommendedEmbeddingModel {
+		t.Fatalf("expected recommended embedding model %s, got %s", recommendedEmbeddingModel, cfg.Embedding.Model)
+	}
+}
+
+func TestNewAppServiceMigratesLegacyDefaultConfig(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "legacy-default-state.json")
+	store := NewAppStateStore(statePath)
+	persisted := persistentAppState{
+		Config: model.AppConfig{
+			Chat: model.ChatConfig{
+				Provider:            recommendedChatProvider,
+				BaseURL:             "http://localhost:11434",
+				Model:               legacyDefaultChatModel,
+				APIKey:              "",
+				Temperature:         legacyDefaultChatTemperature,
+				ContextMessageLimit: legacyDefaultContextMessageLimit,
+			},
+			Embedding: model.EmbeddingConfig{
+				Provider: recommendedEmbeddingProvider,
+				BaseURL:  "http://localhost:11434",
+				Model:    recommendedEmbeddingModel,
+				APIKey:   "",
+			},
+		},
+		KnowledgeBases: map[string]model.KnowledgeBase{
+			"kb-legacy": {
+				ID:        "kb-legacy",
+				Name:      "legacy",
+				CreatedAt: "2026-03-12T00:00:00Z",
+			},
+		},
+	}
+	if err := store.Save(persisted); err != nil {
+		t.Fatalf("save legacy default state: %v", err)
+	}
+
+	service := NewAppService(nil, store, nil, model.ServerConfig{OllamaBaseURL: "http://localhost:11434"})
+	cfg := service.GetConfig()
+	if cfg.Chat.Model != recommendedChatModel {
+		t.Fatalf("expected migrated chat model %s, got %s", recommendedChatModel, cfg.Chat.Model)
+	}
+	if cfg.Chat.Temperature != recommendedChatTemperature {
+		t.Fatalf("expected migrated chat temperature %v, got %v", recommendedChatTemperature, cfg.Chat.Temperature)
+	}
+	if cfg.Chat.ContextMessageLimit != recommendedContextMessageLimit {
+		t.Fatalf("expected migrated context message limit %d, got %d", recommendedContextMessageLimit, cfg.Chat.ContextMessageLimit)
+	}
+
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load migrated state: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("expected migrated state to exist")
+	}
+	if loaded.Config.Chat.Model != recommendedChatModel {
+		t.Fatalf("expected persisted migrated chat model %s, got %s", recommendedChatModel, loaded.Config.Chat.Model)
 	}
 }

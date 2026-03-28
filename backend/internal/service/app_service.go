@@ -18,10 +18,20 @@ import (
 )
 
 const (
-	ragSearchTopKDocument          = 6
-	ragSearchCandidateTopKDocument = 12
-	ragSearchTopKKnowledgeBase     = 10
-	ragSearchCandidateTopKAllDocs  = 32
+	recommendedChatProvider          = "ollama"
+	recommendedChatModel             = "qwen2.5:7b"
+	recommendedChatTemperature       = 0.2
+	recommendedContextMessageLimit   = 12
+	recommendedEmbeddingProvider     = "ollama"
+	recommendedEmbeddingModel        = "nomic-embed-text"
+	legacyDefaultChatModel           = "qwen3.5:0.8b"
+	legacyDefaultChatTemperature     = 0.7
+	legacyDefaultContextMessageLimit = 12
+
+	ragSearchTopKDocument          = 5
+	ragSearchCandidateTopKDocument = 10
+	ragSearchTopKKnowledgeBase     = 6
+	ragSearchCandidateTopKAllDocs  = 24
 	ragMaxChunksPerDocument        = 2
 
 	rerankVectorWeight  = 0.72
@@ -351,6 +361,7 @@ func NewAppService(qdrant *QdrantService, store *AppStateStore, chatHistory Chat
 	if len(service.state.KnowledgeBases) == 0 {
 		service.state = defaultAppState(serverConfig)
 	}
+	service.state.Config = normalizeAppConfig(service.state.Config, serverConfig)
 
 	for kbID := range service.state.KnowledgeBases {
 		if err := service.ensureKnowledgeBaseCollection(kbID); err != nil {
@@ -395,30 +406,137 @@ func cloneKnowledgeBases(source map[string]model.KnowledgeBase) map[string]model
 	return cloned
 }
 
-func defaultAppState(serverConfig model.ServerConfig) *model.AppState {
-	now := time.Now().UTC().Format(time.RFC3339)
-	kbID := util.NextID("kb")
-	ollamaBaseURL := serverConfig.OllamaBaseURL
+func normalizeBaseURLForProvider(provider string, serverConfig model.ServerConfig) string {
+	provider = strings.TrimSpace(provider)
+	ollamaBaseURL := strings.TrimSpace(serverConfig.OllamaBaseURL)
 	if ollamaBaseURL == "" {
 		ollamaBaseURL = "http://localhost:11434"
 	}
-	return &model.AppState{
-		Config: model.AppConfig{
-			Chat: model.ChatConfig{
-				Provider:            "ollama",
-				BaseURL:             ollamaBaseURL,
-				Model:               "qwen3.5:0.8b",
-				APIKey:              "",
-				Temperature:         0.7,
-				ContextMessageLimit: 12,
-			},
-			Embedding: model.EmbeddingConfig{
-				Provider: "ollama",
-				BaseURL:  ollamaBaseURL,
-				Model:    "nomic-embed-text",
-				APIKey:   "",
-			},
+	if provider == "openai-compatible" {
+		return ollamaBaseURL + "/v1"
+	}
+	return ollamaBaseURL
+}
+
+func recommendedAppConfig(serverConfig model.ServerConfig) model.AppConfig {
+	chatBaseURL := normalizeBaseURLForProvider(recommendedChatProvider, serverConfig)
+	embeddingBaseURL := normalizeBaseURLForProvider(recommendedEmbeddingProvider, serverConfig)
+	return model.AppConfig{
+		Chat: model.ChatConfig{
+			Provider:            recommendedChatProvider,
+			BaseURL:             chatBaseURL,
+			Model:               recommendedChatModel,
+			APIKey:              "",
+			Temperature:         recommendedChatTemperature,
+			ContextMessageLimit: recommendedContextMessageLimit,
 		},
+		Embedding: model.EmbeddingConfig{
+			Provider: recommendedEmbeddingProvider,
+			BaseURL:  embeddingBaseURL,
+			Model:    recommendedEmbeddingModel,
+			APIKey:   "",
+		},
+	}
+}
+
+func almostEqual(a, b float64) bool {
+	return math.Abs(a-b) < 1e-9
+}
+
+func isLegacyDefaultAppConfig(cfg model.AppConfig, serverConfig model.ServerConfig) bool {
+	chatProvider := strings.TrimSpace(cfg.Chat.Provider)
+	if chatProvider == "" {
+		chatProvider = recommendedChatProvider
+	}
+	chatBaseURL := strings.TrimSpace(cfg.Chat.BaseURL)
+	if chatBaseURL == "" {
+		chatBaseURL = normalizeBaseURLForProvider(chatProvider, serverConfig)
+	}
+
+	embedProvider := strings.TrimSpace(cfg.Embedding.Provider)
+	if embedProvider == "" {
+		embedProvider = recommendedEmbeddingProvider
+	}
+	embedBaseURL := strings.TrimSpace(cfg.Embedding.BaseURL)
+	if embedBaseURL == "" {
+		embedBaseURL = normalizeBaseURLForProvider(embedProvider, serverConfig)
+	}
+
+	return chatProvider == recommendedChatProvider &&
+		chatBaseURL == normalizeBaseURLForProvider(recommendedChatProvider, serverConfig) &&
+		strings.TrimSpace(cfg.Chat.Model) == legacyDefaultChatModel &&
+		strings.TrimSpace(cfg.Chat.APIKey) == "" &&
+		almostEqual(cfg.Chat.Temperature, legacyDefaultChatTemperature) &&
+		(cfg.Chat.ContextMessageLimit == 0 || cfg.Chat.ContextMessageLimit == legacyDefaultContextMessageLimit) &&
+		embedProvider == recommendedEmbeddingProvider &&
+		embedBaseURL == normalizeBaseURLForProvider(recommendedEmbeddingProvider, serverConfig) &&
+		strings.TrimSpace(cfg.Embedding.Model) == recommendedEmbeddingModel &&
+		strings.TrimSpace(cfg.Embedding.APIKey) == ""
+}
+
+func normalizeAppConfig(cfg model.AppConfig, serverConfig model.ServerConfig) model.AppConfig {
+	recommended := recommendedAppConfig(serverConfig)
+	if isLegacyDefaultAppConfig(cfg, serverConfig) {
+		return recommended
+	}
+
+	chatProvider := strings.TrimSpace(cfg.Chat.Provider)
+	if chatProvider == "" {
+		chatProvider = recommended.Chat.Provider
+	}
+	chatBaseURL := strings.TrimSpace(cfg.Chat.BaseURL)
+	if chatBaseURL == "" {
+		chatBaseURL = normalizeBaseURLForProvider(chatProvider, serverConfig)
+	}
+	chatModel := strings.TrimSpace(cfg.Chat.Model)
+	if chatModel == "" {
+		chatModel = recommended.Chat.Model
+	}
+	chatTemperature := cfg.Chat.Temperature
+	if chatTemperature < 0 || chatTemperature > 2 {
+		chatTemperature = recommended.Chat.Temperature
+	}
+	contextMessageLimit := cfg.Chat.ContextMessageLimit
+	if contextMessageLimit <= 0 || contextMessageLimit > 100 {
+		contextMessageLimit = recommended.Chat.ContextMessageLimit
+	}
+
+	embedProvider := strings.TrimSpace(cfg.Embedding.Provider)
+	if embedProvider == "" {
+		embedProvider = recommended.Embedding.Provider
+	}
+	embedBaseURL := strings.TrimSpace(cfg.Embedding.BaseURL)
+	if embedBaseURL == "" {
+		embedBaseURL = normalizeBaseURLForProvider(embedProvider, serverConfig)
+	}
+	embedModel := strings.TrimSpace(cfg.Embedding.Model)
+	if embedModel == "" {
+		embedModel = recommended.Embedding.Model
+	}
+
+	return model.AppConfig{
+		Chat: model.ChatConfig{
+			Provider:            chatProvider,
+			BaseURL:             chatBaseURL,
+			Model:               chatModel,
+			APIKey:              strings.TrimSpace(cfg.Chat.APIKey),
+			Temperature:         chatTemperature,
+			ContextMessageLimit: contextMessageLimit,
+		},
+		Embedding: model.EmbeddingConfig{
+			Provider: embedProvider,
+			BaseURL:  embedBaseURL,
+			Model:    embedModel,
+			APIKey:   strings.TrimSpace(cfg.Embedding.APIKey),
+		},
+	}
+}
+
+func defaultAppState(serverConfig model.ServerConfig) *model.AppState {
+	now := time.Now().UTC().Format(time.RFC3339)
+	kbID := util.NextID("kb")
+	return &model.AppState{
+		Config: normalizeAppConfig(recommendedAppConfig(serverConfig), serverConfig),
 		KnowledgeBases: map[string]model.KnowledgeBase{
 			kbID: {
 				ID:          kbID,
@@ -455,13 +573,9 @@ func (s *AppService) GetHealthConfigMap(serverConfig model.ServerConfig) map[str
 
 func (s *AppService) GetConfig() model.AppConfig {
 	s.state.Mu.RLock()
-	defer s.state.Mu.RUnlock()
-
 	cfg := s.state.Config
-	if cfg.Chat.ContextMessageLimit <= 0 {
-		cfg.Chat.ContextMessageLimit = 12
-	}
-	return cfg
+	s.state.Mu.RUnlock()
+	return normalizeAppConfig(cfg, s.serverConfig)
 }
 
 func (s *AppService) defaultBaseURL(provider string) string {
@@ -499,7 +613,7 @@ func (s *AppService) UpdateConfig(req model.ConfigUpdateRequest) (model.AppConfi
 
 	contextMessageLimit := req.Chat.ContextMessageLimit
 	if contextMessageLimit <= 0 {
-		contextMessageLimit = 12
+		contextMessageLimit = recommendedContextMessageLimit
 	}
 	if contextMessageLimit > 100 {
 		return model.AppConfig{}, fmt.Errorf("context message limit must be between 1 and 100")
@@ -643,30 +757,88 @@ func (s *AppService) ResolveKnowledgeBaseID(candidate string) (string, error) {
 }
 
 func (s *AppService) IndexDocument(document model.Document) (model.Document, error) {
+	indexedDocument, chunks, vectors, err := s.buildIndexedDocument(document, s.currentEmbeddingConfig())
+	if err != nil {
+		return model.Document{}, err
+	}
+
+	if len(chunks) > 0 {
+		if err := s.upsertDocumentChunks(document.KnowledgeBaseID, chunks, vectors); err != nil {
+			return model.Document{}, err
+		}
+	}
+
+	return s.AddDocument(document.KnowledgeBaseID, indexedDocument), nil
+}
+
+func (s *AppService) ReindexKnowledgeBase(knowledgeBaseID string) (model.KnowledgeBase, error) {
+	if s == nil {
+		return model.KnowledgeBase{}, fmt.Errorf("app service is nil")
+	}
+
+	s.state.Mu.RLock()
+	knowledgeBase, ok := s.state.KnowledgeBases[knowledgeBaseID]
+	s.state.Mu.RUnlock()
+	if !ok {
+		return model.KnowledgeBase{}, fmt.Errorf("knowledge base not found")
+	}
+
+	embeddingConfig := s.currentEmbeddingConfig()
+	reindexedDocuments := make([]model.Document, 0, len(knowledgeBase.Documents))
+	allPoints := make([]QdrantPoint, 0)
+
+	for _, document := range knowledgeBase.Documents {
+		indexedDocument, chunks, vectors, err := s.buildIndexedDocument(document, embeddingConfig)
+		if err != nil {
+			return model.KnowledgeBase{}, fmt.Errorf("reindex document %s: %w", document.Name, err)
+		}
+
+		reindexedDocuments = append(reindexedDocuments, indexedDocument)
+		allPoints = append(allPoints, s.buildQdrantPoints(chunks, vectors)...)
+	}
+
+	if err := s.rebuildKnowledgeBaseCollection(knowledgeBaseID, allPoints); err != nil {
+		return model.KnowledgeBase{}, err
+	}
+
+	s.state.Mu.Lock()
+	latestKnowledgeBase, ok := s.state.KnowledgeBases[knowledgeBaseID]
+	if !ok {
+		s.state.Mu.Unlock()
+		return model.KnowledgeBase{}, fmt.Errorf("knowledge base not found")
+	}
+	latestKnowledgeBase.Documents = reindexedDocuments
+	s.state.KnowledgeBases[knowledgeBaseID] = latestKnowledgeBase
+	s.state.Mu.Unlock()
+
+	if err := s.saveState(); err != nil {
+		return model.KnowledgeBase{}, err
+	}
+
+	return latestKnowledgeBase, nil
+}
+
+func (s *AppService) buildIndexedDocument(document model.Document, embeddingConfig model.EmbeddingModelConfig) (model.Document, []DocumentChunk, [][]float64, error) {
 	content, err := util.ExtractDocumentText(document.Path)
 	if err != nil {
-		return model.Document{}, fmt.Errorf("extract uploaded document text: %w", err)
+		return model.Document{}, nil, nil, fmt.Errorf("extract uploaded document text: %w", err)
 	}
 
 	chunks := s.rag.BuildDocumentChunks(document, content)
 	if len(chunks) == 0 {
 		document.ContentPreview = util.BuildContentPreviewFromText(content)
 		document.Status = "ready"
-		return s.AddDocument(document.KnowledgeBaseID, document), nil
+		return document, nil, nil, nil
 	}
 
-	vectors, err := s.rag.EmbedTexts(context.Background(), s.currentEmbeddingConfig(), chunkTexts(chunks), s.qdrantVectorSize())
+	vectors, err := s.rag.EmbedTexts(context.Background(), embeddingConfig, chunkTexts(chunks), s.qdrantVectorSize())
 	if err != nil {
-		return model.Document{}, err
-	}
-
-	if err := s.upsertDocumentChunks(document.KnowledgeBaseID, chunks, vectors); err != nil {
-		return model.Document{}, err
+		return model.Document{}, nil, nil, err
 	}
 
 	document.Status = "indexed"
 	document.ContentPreview = previewFromChunks(chunks)
-	return s.AddDocument(document.KnowledgeBaseID, document), nil
+	return document, chunks, vectors, nil
 }
 
 func (s *AppService) AddDocument(knowledgeBaseID string, document model.Document) model.Document {
@@ -857,32 +1029,31 @@ func (s *AppService) deleteKnowledgeBaseCollection(knowledgeBaseID string) error
 
 func (s *AppService) currentEmbeddingConfig() model.EmbeddingModelConfig {
 	s.state.Mu.RLock()
-	defer s.state.Mu.RUnlock()
+	cfg := s.state.Config
+	s.state.Mu.RUnlock()
 
+	normalized := normalizeAppConfig(cfg, s.serverConfig)
 	return model.EmbeddingModelConfig{
-		Provider: strings.TrimSpace(s.state.Config.Embedding.Provider),
-		BaseURL:  strings.TrimSpace(s.state.Config.Embedding.BaseURL),
-		Model:    strings.TrimSpace(s.state.Config.Embedding.Model),
-		APIKey:   strings.TrimSpace(s.state.Config.Embedding.APIKey),
+		Provider: strings.TrimSpace(normalized.Embedding.Provider),
+		BaseURL:  strings.TrimSpace(normalized.Embedding.BaseURL),
+		Model:    strings.TrimSpace(normalized.Embedding.Model),
+		APIKey:   strings.TrimSpace(normalized.Embedding.APIKey),
 	}
 }
 
 func (s *AppService) currentChatConfig() model.ChatModelConfig {
 	s.state.Mu.RLock()
-	defer s.state.Mu.RUnlock()
+	cfg := s.state.Config
+	s.state.Mu.RUnlock()
 
-	contextMessageLimit := s.state.Config.Chat.ContextMessageLimit
-	if contextMessageLimit <= 0 {
-		contextMessageLimit = 12
-	}
-
+	normalized := normalizeAppConfig(cfg, s.serverConfig)
 	return model.ChatModelConfig{
-		Provider:            strings.TrimSpace(s.state.Config.Chat.Provider),
-		BaseURL:             strings.TrimSpace(s.state.Config.Chat.BaseURL),
-		Model:               strings.TrimSpace(s.state.Config.Chat.Model),
-		APIKey:              strings.TrimSpace(s.state.Config.Chat.APIKey),
-		Temperature:         s.state.Config.Chat.Temperature,
-		ContextMessageLimit: contextMessageLimit,
+		Provider:            strings.TrimSpace(normalized.Chat.Provider),
+		BaseURL:             strings.TrimSpace(normalized.Chat.BaseURL),
+		Model:               strings.TrimSpace(normalized.Chat.Model),
+		APIKey:              strings.TrimSpace(normalized.Chat.APIKey),
+		Temperature:         normalized.Chat.Temperature,
+		ContextMessageLimit: normalized.Chat.ContextMessageLimit,
 	}
 }
 
@@ -915,11 +1086,11 @@ func (s *AppService) resolveChatConfig(req model.ChatCompletionRequest) model.Ch
 
 func (s *AppService) ContextMessageLimit() int {
 	if s == nil {
-		return 12
+		return recommendedContextMessageLimit
 	}
 	limit := s.currentChatConfig().ContextMessageLimit
 	if limit <= 0 {
-		return 12
+		return recommendedContextMessageLimit
 	}
 	return limit
 }
@@ -1027,10 +1198,11 @@ func (s *AppService) qdrantVectorSize() int {
 	return 768
 }
 
-func (s *AppService) upsertDocumentChunks(knowledgeBaseID string, chunks []DocumentChunk, vectors [][]float64) error {
-	if s.qdrant == nil || !s.qdrant.IsEnabled() || len(chunks) == 0 {
+func (s *AppService) buildQdrantPoints(chunks []DocumentChunk, vectors [][]float64) []QdrantPoint {
+	if len(chunks) == 0 {
 		return nil
 	}
+
 	points := make([]QdrantPoint, 0, len(chunks))
 	for index, chunk := range chunks {
 		vector := make([]float64, s.qdrantVectorSize())
@@ -1050,7 +1222,38 @@ func (s *AppService) upsertDocumentChunks(knowledgeBaseID string, chunks []Docum
 			},
 		})
 	}
+	return points
+}
 
+func (s *AppService) rebuildKnowledgeBaseCollection(knowledgeBaseID string, points []QdrantPoint) error {
+	if s.qdrant == nil || !s.qdrant.IsEnabled() {
+		return nil
+	}
+
+	if err := s.deleteKnowledgeBaseCollection(knowledgeBaseID); err != nil {
+		return err
+	}
+	if err := s.ensureKnowledgeBaseCollection(knowledgeBaseID); err != nil {
+		return err
+	}
+	if len(points) == 0 {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	if err := s.qdrant.UpsertPoints(ctx, knowledgeBaseID, points); err != nil {
+		return fmt.Errorf("rebuild qdrant points: %w", err)
+	}
+	return nil
+}
+
+func (s *AppService) upsertDocumentChunks(knowledgeBaseID string, chunks []DocumentChunk, vectors [][]float64) error {
+	if s.qdrant == nil || !s.qdrant.IsEnabled() || len(chunks) == 0 {
+		return nil
+	}
+
+	points := s.buildQdrantPoints(chunks, vectors)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	if err := s.qdrant.UpsertPoints(ctx, knowledgeBaseID, points); err != nil {

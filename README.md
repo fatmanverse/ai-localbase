@@ -1,5 +1,7 @@
 # AI LocalBase
 
+> 说明：本仓库代码 **基于他人项目 Fork 而来，并在此基础上做了本地化与可用性优化**。当前维护目标为独立演进，不向原作者仓库直接推送发布产物。原始参考仓库：`https://github.com/veyliss/ai-localbase`。
+
 一个本地优先的 AI 知识库系统（RAG），用于把本地文档接入向量检索与大模型对话流程。项目提供完整的 Web UI，支持知识库管理、文档上传、检索增强问答、聊天记录持久化，以及基于 Ollama 或 OpenAI 兼容接口的模型接入。
 
 后端基于 Go + Gin，前端基于 React + Vite + TypeScript，向量数据库使用 Qdrant，适合个人或小团队在本地环境、自托管环境中快速搭建可用的知识库问答系统。
@@ -15,7 +17,7 @@
 ### 核心能力
 
 - 知识库管理：创建、删除知识库，查看文档列表
-- 文档上传与索引：支持 TXT、Markdown、PDF 文件上传与解析
+- 文档上传与索引：支持 TXT、Markdown、PDF、DOCX 文件上传与解析
 - 检索增强问答：基于 Qdrant 做向量检索并把命中内容注入对话上下文
 - 聊天记录持久化：会话消息保存到本地 SQLite 数据库，重启后仍可恢复
 - 配置持久化：模型配置与知识库状态保存到本地 JSON 文件
@@ -53,7 +55,7 @@
 | 后端 | Go + Gin |
 | 前端 | React 18 + Vite 5 + TypeScript |
 | 向量数据库 | Qdrant |
-| 文档解析 | TXT / Markdown / PDF |
+| 文档解析 | TXT / Markdown / PDF / DOCX |
 | 数据持久化 | JSON + SQLite |
 | 模型接口 | Ollama / OpenAI Compatible API |
 | 部署方式 | 本地启动 / Docker Compose |
@@ -195,7 +197,7 @@ docker compose -f docker-compose.app.yml up --build
 
 ### 1. 配置模型
 
-打开前端后，进入 Settings 页面，分别配置 Chat 与 Embedding。
+打开前端后，进入 Settings 页面，分别配置 Chat 与 Embedding，**修改后点击“保存并生效”**。
 
 ![设置页面](./assets/setting.png)
 
@@ -219,17 +221,19 @@ docker compose -f docker-compose.app.yml up --build
 
 **Chat 配置**
 
-- Provider: `openai`
+- Provider: `openai-compatible`
 - Base URL: 你的兼容接口地址，例如 `https://your-api.example.com/v1`
 - Model: 对应聊天模型名
 - API Key: 对应访问密钥
 
 **Embedding 配置**
 
-- Provider: `openai`
+- Provider: `openai-compatible`
 - Base URL: 你的兼容接口地址
 - Model: 对应嵌入模型名
 - API Key: 对应访问密钥
+
+> 内置默认推荐配置：**Chat = `qwen2.5:7b`、Temperature = `0.2`、Embedding = `nomic-embed-text`、语义切片 = `800` / Overlap `120`、文档内 TopK = `5`、知识库 TopK = `6`。**
 
 ### 2. 创建知识库并上传文档
 
@@ -237,6 +241,8 @@ docker compose -f docker-compose.app.yml up --build
 2. 创建一个新的知识库
 3. 选择 TXT、Markdown 或 PDF 文档上传
 4. 等待文档状态变为 `indexed`
+
+> 如果你切换了 Embedding 模型，可以在知识库面板中点击 **“重建索引”**，使用当前 Embedding 配置为该知识库重新生成全部文档向量。
 
 ### 3. 发起问答
 
@@ -303,6 +309,14 @@ docker compose -f docker-compose.qdrant.yml up -d
 docker compose up --build
 ```
 
+### Linux 环境安装与打包脚本
+
+```bash
+bash scripts/linux/install_go_npm_env.sh
+PATH=/usr/local/go/bin:$PATH bash scripts/linux/package_release.sh
+bash scripts/linux/build_images.sh
+```
+
 ## 关键环境变量
 
 后端环境变量由 `backend/internal/config/config.go` 加载，常用项如下：
@@ -316,7 +330,7 @@ docker compose up --build
 | `QDRANT_URL` | `http://localhost:6333` | Qdrant 地址 |
 | `QDRANT_API_KEY` | 空 | Qdrant API Key |
 | `QDRANT_COLLECTION_PREFIX` | `kb_` | 知识库集合名前缀 |
-| `QDRANT_VECTOR_SIZE` | `1024` | 向量维度 |
+| `QDRANT_VECTOR_SIZE` | `768` | 向量维度（默认适配 `nomic-embed-text`） |
 | `QDRANT_DISTANCE` | `Cosine` | 距离算法 |
 | `QDRANT_TIMEOUT_SECONDS` | `5` | Qdrant 超时秒数 |
 | `ENABLE_HYBRID_SEARCH` | `false` | 启用 Hybrid Search |
@@ -325,7 +339,7 @@ docker compose up --build
 | `ENABLE_SEMANTIC_CACHE` | `false` | 启用语义缓存 |
 | `ENABLE_CONTEXT_COMPRESSION` | `false` | 启用上下文压缩 |
 
-> 注意：`QDRANT_VECTOR_SIZE` 必须与所使用的嵌入模型输出维度一致。切换嵌入模型时，如果维度变化，建议清理旧集合或创建新的知识库。
+> 注意：`QDRANT_VECTOR_SIZE` 必须与所使用的嵌入模型输出维度一致。**只要切换了 Embedding 模型（不论维度是否变化），都建议重新上传文档或重建知识库索引**，否则旧文档向量与新查询向量可能不在同一向量空间。
 
 ## 对外接口概览
 

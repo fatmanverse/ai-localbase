@@ -1,13 +1,16 @@
 package util
 
 import (
+	"archive/zip"
 	"bytes"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -21,6 +24,8 @@ func ExtractDocumentText(path string) (string, error) {
 		return extractPlainTextFile(path)
 	case ".pdf":
 		return extractPDFText(path)
+	case ".docx":
+		return extractDOCXText(path)
 	default:
 		return "", fmt.Errorf("unsupported file type: %s", ext)
 	}
@@ -166,6 +171,126 @@ func extractPDFTextWithGoLib(path string) (string, error) {
 	}
 
 	return normalizeExtractedText(string(content)), nil
+}
+
+func extractDOCXText(path string) (string, error) {
+	reader, err := zip.OpenReader(path)
+	if err != nil {
+		return "", fmt.Errorf("open docx: %w", err)
+	}
+	defer reader.Close()
+
+	contentFiles := make([]*zip.File, 0)
+	for _, file := range reader.File {
+		if isDOCXContentFile(file.Name) {
+			contentFiles = append(contentFiles, file)
+		}
+	}
+	if len(contentFiles) == 0 {
+		return "", fmt.Errorf("docx content xml not found")
+	}
+
+	sort.Slice(contentFiles, func(i, j int) bool {
+		return docxContentOrder(contentFiles[i].Name) < docxContentOrder(contentFiles[j].Name)
+	})
+
+	parts := make([]string, 0, len(contentFiles))
+	for _, file := range contentFiles {
+		rc, err := file.Open()
+		if err != nil {
+			return "", fmt.Errorf("open docx entry %s: %w", file.Name, err)
+		}
+
+		text, extractErr := extractDOCXXMLText(rc)
+		_ = rc.Close()
+		if extractErr != nil {
+			return "", fmt.Errorf("extract docx xml %s: %w", file.Name, extractErr)
+		}
+		if strings.TrimSpace(text) != "" {
+			parts = append(parts, text)
+		}
+	}
+
+	if len(parts) == 0 {
+		return "", fmt.Errorf("docx content is empty")
+	}
+
+	return normalizeExtractedText(strings.Join(parts, "\n\n")), nil
+}
+
+func isDOCXContentFile(name string) bool {
+	switch {
+	case name == "word/document.xml":
+		return true
+	case strings.HasPrefix(name, "word/header") && strings.HasSuffix(name, ".xml"):
+		return true
+	case strings.HasPrefix(name, "word/footer") && strings.HasSuffix(name, ".xml"):
+		return true
+	case name == "word/footnotes.xml", name == "word/endnotes.xml":
+		return true
+	default:
+		return false
+	}
+}
+
+func docxContentOrder(name string) string {
+	switch {
+	case name == "word/document.xml":
+		return "0-" + name
+	case strings.HasPrefix(name, "word/header"):
+		return "1-" + name
+	case name == "word/footnotes.xml":
+		return "2-" + name
+	case name == "word/endnotes.xml":
+		return "3-" + name
+	case strings.HasPrefix(name, "word/footer"):
+		return "4-" + name
+	default:
+		return "9-" + name
+	}
+}
+
+func extractDOCXXMLText(reader io.Reader) (string, error) {
+	decoder := xml.NewDecoder(reader)
+	var builder strings.Builder
+	inText := false
+
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return "", err
+		}
+
+		switch typed := token.(type) {
+		case xml.StartElement:
+			switch typed.Name.Local {
+			case "t":
+				inText = true
+			case "tab":
+				builder.WriteString("\t")
+			case "br", "cr":
+				builder.WriteString("\n")
+			}
+		case xml.EndElement:
+			switch typed.Name.Local {
+			case "t":
+				inText = false
+			case "p":
+				builder.WriteString("\n\n")
+			case "tr":
+				builder.WriteString("\n")
+			}
+		case xml.CharData:
+			if inText {
+				builder.Write([]byte(typed))
+			}
+		}
+	}
+
+	return builder.String(), nil
 }
 
 func normalizeExtractedText(text string) string {
@@ -379,6 +504,9 @@ func SemanticChunk(text string, cfg SemanticChunkConfig) []string {
 
 func normalizeSemanticChunkConfig(cfg SemanticChunkConfig) SemanticChunkConfig {
 	defaults := DefaultSemanticChunkConfig()
+	if cfg == (SemanticChunkConfig{}) {
+		return defaults
+	}
 	if cfg.MaxChunkSize <= 0 {
 		cfg.MaxChunkSize = defaults.MaxChunkSize
 	}
@@ -388,9 +516,6 @@ func normalizeSemanticChunkConfig(cfg SemanticChunkConfig) SemanticChunkConfig {
 	if cfg.OverlapSize < 0 {
 		cfg.OverlapSize = defaults.OverlapSize
 	}
-	if !cfg.PreserveNewline {
-		cfg.PreserveNewline = defaults.PreserveNewline
-	}
 	return cfg
 }
 
@@ -399,12 +524,19 @@ func normalizeChunkText(text string) string {
 	text = strings.ReplaceAll(text, "\r", "\n")
 	lines := strings.Split(text, "\n")
 	cleanedLines := make([]string, 0, len(lines))
+	lastWasBlank := true
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
+			if lastWasBlank {
+				continue
+			}
+			cleanedLines = append(cleanedLines, "")
+			lastWasBlank = true
 			continue
 		}
 		cleanedLines = append(cleanedLines, line)
+		lastWasBlank = false
 	}
 	return strings.TrimSpace(strings.Join(cleanedLines, "\n"))
 }

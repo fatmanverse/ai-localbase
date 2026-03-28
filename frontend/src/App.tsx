@@ -111,7 +111,28 @@ interface StreamEventPayload {
 }
 
 const API_BASE_PATH = ''
-const AI_CONFIG_STORAGE_KEY = 'ai-localbase:app-config'
+
+export const recommendedConfig: AppConfig = {
+  chat: {
+    provider: 'ollama',
+    baseUrl: 'http://localhost:11434',
+    model: 'qwen2.5:7b',
+    apiKey: '',
+    temperature: 0.2,
+    contextMessageLimit: 12,
+  },
+  embedding: {
+    provider: 'ollama',
+    baseUrl: 'http://localhost:11434',
+    model: 'nomic-embed-text',
+    apiKey: '',
+  },
+}
+
+const cloneAppConfig = (config: AppConfig): AppConfig => ({
+  chat: { ...config.chat },
+  embedding: { ...config.embedding },
+})
 
 const createId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -174,6 +195,11 @@ interface BackendConversation {
 
 interface UploadResponse {
   uploaded: BackendDocumentItem
+}
+
+interface ReindexKnowledgeBaseResponse {
+  message: string
+  knowledgeBase: BackendKnowledgeBase
 }
 
 const normalizeDocument = (document: BackendDocumentItem): DocumentItem => ({
@@ -258,6 +284,11 @@ function App() {
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isKnowledgePanelOpen, setIsKnowledgePanelOpen] = useState(false)
+  const [config, setConfig] = useState<AppConfig>(() => cloneAppConfig(recommendedConfig))
+  const [isSavingConfig, setIsSavingConfig] = useState(false)
+  const [configSaveError, setConfigSaveError] = useState<string | null>(null)
+  const [configSaveSuccess, setConfigSaveSuccess] = useState<string | null>(null)
+  const [reindexingKnowledgeBaseId, setReindexingKnowledgeBaseId] = useState<string | null>(null)
 
   const loadConversationDetail = async (conversationId: string): Promise<Conversation> => {
     const response = await fetch(`${API_BASE_PATH}/api/conversations/${conversationId}`)
@@ -267,43 +298,6 @@ function App() {
 
     return normalizeConversation((await response.json()) as BackendConversation)
   }
-  const [config, setConfig] = useState<AppConfig>(() => {
-    const defaultConfig: AppConfig = {
-      chat: {
-        provider: 'ollama',
-        baseUrl: 'http://localhost:11434/v1',
-        model: 'llama3.2',
-        apiKey: '',
-        temperature: 0.7,
-        contextMessageLimit: 12,
-      },
-      embedding: {
-        provider: 'ollama',
-        baseUrl: 'http://localhost:11434/v1',
-        model: 'nomic-embed-text',
-        apiKey: '',
-      },
-    }
-
-    if (typeof window === 'undefined') {
-      return defaultConfig
-    }
-
-    try {
-      const cachedConfig = window.localStorage.getItem(AI_CONFIG_STORAGE_KEY)
-
-      if (!cachedConfig) {
-        return defaultConfig
-      }
-
-      return {
-        ...defaultConfig,
-        ...(JSON.parse(cachedConfig) as Partial<AppConfig>),
-      }
-    } catch {
-      return defaultConfig
-    }
-  })
 
   const activeConversation = useMemo(
     () =>
@@ -361,30 +355,9 @@ function App() {
         const conversationsData =
           (await conversationsResponse.json()) as ConversationListResponse
         const nextKnowledgeBases = knowledgeBaseData.items.map(normalizeKnowledgeBase)
-        const cachedConfig =
-          typeof window === 'undefined'
-            ? null
-            : window.localStorage.getItem(AI_CONFIG_STORAGE_KEY)
 
         setKnowledgeBases(nextKnowledgeBases)
-        setConfig((current) => {
-          if (!cachedConfig) {
-            return configData
-          }
-
-          return {
-            ...configData,
-            ...current,
-            chat: {
-              ...configData.chat,
-              ...current.chat,
-            },
-            embedding: {
-              ...configData.embedding,
-              ...current.embedding,
-            },
-          }
-        })
+        setConfig(configData)
         setSelectedKnowledgeBaseId((current) => current ?? nextKnowledgeBases[0]?.id ?? null)
         setSelectedDocumentId(null)
 
@@ -437,14 +410,6 @@ function App() {
 
     void bootstrapApp()
   }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
-
-    window.localStorage.setItem(AI_CONFIG_STORAGE_KEY, JSON.stringify(config))
-  }, [config])
 
   const handleCreateConversation = () => {
     const conversation = createWelcomeConversation()
@@ -771,6 +736,70 @@ function App() {
     }
   }
 
+  const handleReindexKnowledgeBase = async (knowledgeBaseId: string) => {
+    const targetKnowledgeBase = knowledgeBases.find((knowledgeBase) => knowledgeBase.id === knowledgeBaseId)
+    if (!targetKnowledgeBase) {
+      return
+    }
+
+    if (targetKnowledgeBase.documents.length === 0) {
+      window.alert('当前知识库暂无文档，无需重建索引。')
+      return
+    }
+
+    const confirmed = window.confirm(
+      `确定重建知识库“${targetKnowledgeBase.name}”的索引吗？这会使用当前 Embedding 配置重新生成全部文档向量。`,
+    )
+    if (!confirmed) {
+      return
+    }
+
+    setReindexingKnowledgeBaseId(knowledgeBaseId)
+    setKnowledgeBases((prev) =>
+      prev.map((knowledgeBase) =>
+        knowledgeBase.id === knowledgeBaseId
+          ? {
+              ...knowledgeBase,
+              documents: knowledgeBase.documents.map((document) => ({
+                ...document,
+                status: 'processing',
+              })),
+            }
+          : knowledgeBase,
+      ),
+    )
+
+    try {
+      const response = await fetch(`${API_BASE_PATH}/api/knowledge-bases/${knowledgeBaseId}/reindex`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        throw new Error(await extractErrorMessage(response))
+      }
+
+      const data = (await response.json()) as ReindexKnowledgeBaseResponse
+      const nextKnowledgeBase = normalizeKnowledgeBase(data.knowledgeBase)
+      setKnowledgeBases((prev) =>
+        prev.map((knowledgeBase) =>
+          knowledgeBase.id === knowledgeBaseId ? nextKnowledgeBase : knowledgeBase,
+        ),
+      )
+      window.alert('知识库索引重建完成。')
+    } catch (error) {
+      setKnowledgeBases((prev) =>
+        prev.map((knowledgeBase) =>
+          knowledgeBase.id === knowledgeBaseId ? targetKnowledgeBase : knowledgeBase,
+        ),
+      )
+      const message =
+        error instanceof Error ? error.message : '重建索引失败，请稍后重试。'
+      window.alert(`重建索引失败：${message}`)
+    } finally {
+      setReindexingKnowledgeBaseId(null)
+    }
+  }
+
   const handleSendMessage = async (content: string) => {
     if (!activeConversation || streamingConversationId) {
       return
@@ -996,33 +1025,43 @@ function App() {
     }
   }
 
-  const handleChatConfigChange = <K extends keyof ChatConfig>(
-    key: K,
-    value: ChatConfig[K],
-  ) => {
-    setConfig((prev) => ({
-      ...prev,
-      chat: {
-        ...prev.chat,
-        [key]:
-          key === 'contextMessageLimit'
-            ? Math.max(1, Math.min(100, Number(value) || 1))
-            : value,
-      },
-    }))
-  }
+  const handleSaveConfig = async (nextConfig: AppConfig) => {
+    setIsSavingConfig(true)
+    setConfigSaveError(null)
+    setConfigSaveSuccess(null)
 
-  const handleEmbeddingConfigChange = <K extends keyof EmbeddingConfig>(
-    key: K,
-    value: EmbeddingConfig[K],
-  ) => {
-    setConfig((prev) => ({
-      ...prev,
-      embedding: {
-        ...prev.embedding,
-        [key]: value,
-      },
-    }))
+    try {
+      const response = await fetch(`${API_BASE_PATH}/api/config`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(nextConfig),
+      })
+
+      if (!response.ok) {
+        throw new Error(await extractErrorMessage(response))
+      }
+
+      const savedConfig = (await response.json()) as ConfigResponse
+      const embeddingChanged =
+        config.embedding.provider !== savedConfig.embedding.provider ||
+        config.embedding.baseUrl !== savedConfig.embedding.baseUrl ||
+        config.embedding.model !== savedConfig.embedding.model
+
+      setConfig(savedConfig)
+      setConfigSaveSuccess('配置已保存，新的聊天模型与向量模型已生效。')
+
+      if (embeddingChanged) {
+        setConfigSaveSuccess('配置已保存。Embedding 模型已变更，请重新上传文档或重建知识库索引。')
+      }
+    } catch (error) {
+      setConfigSaveError(
+        error instanceof Error ? error.message : '保存配置失败，请稍后重试。',
+      )
+    } finally {
+      setIsSavingConfig(false)
+    }
   }
 
   const handleToggleSettings = () => {
@@ -1030,6 +1069,8 @@ function App() {
       const next = !prev
       if (next) {
         setIsKnowledgePanelOpen(false)
+        setConfigSaveError(null)
+        setConfigSaveSuccess(null)
       }
       return next
     })
@@ -1059,6 +1100,8 @@ function App() {
         onDeleteKnowledgeBase={handleDeleteKnowledgeBase}
         onUploadFiles={handleUploadFiles}
         onRemoveDocument={handleRemoveDocument}
+        onReindexKnowledgeBase={handleReindexKnowledgeBase}
+        reindexingKnowledgeBaseId={reindexingKnowledgeBaseId}
         conversations={conversations}
         activeConversationId={activeConversation?.id ?? null}
         onSelectConversation={handleSelectConversation}
@@ -1070,8 +1113,10 @@ function App() {
         isKnowledgePanelOpen={isKnowledgePanelOpen}
         onToggleSettings={handleToggleSettings}
         onToggleKnowledgePanel={handleToggleKnowledgePanel}
-        onChatConfigChange={handleChatConfigChange}
-        onEmbeddingConfigChange={handleEmbeddingConfigChange}
+        onSaveConfig={handleSaveConfig}
+        isSavingConfig={isSavingConfig}
+        configSaveError={configSaveError}
+        configSaveSuccess={configSaveSuccess}
       />
       <ChatArea
         sidebarOpen={sidebarOpen}

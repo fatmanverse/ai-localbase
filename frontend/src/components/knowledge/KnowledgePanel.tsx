@@ -14,6 +14,8 @@ interface KnowledgePanelProps {
   onDeleteKnowledgeBase: (knowledgeBaseId: string) => void
   onUploadFiles: (knowledgeBaseId: string, files: FileList | null) => void
   onRemoveDocument: (knowledgeBaseId: string, documentId: string) => void
+  onReindexKnowledgeBase: (knowledgeBaseId: string) => Promise<void>
+  reindexingKnowledgeBaseId: string | null
   onClose: () => void
 }
 
@@ -30,6 +32,8 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
   onDeleteKnowledgeBase,
   onUploadFiles,
   onRemoveDocument,
+  onReindexKnowledgeBase,
+  reindexingKnowledgeBaseId,
   onClose,
 }) => {
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -142,6 +146,16 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                               onChange={(e) => handleFileChange(kb.id, e)}
                             />
                           </label>
+                          <button
+                            className="kb-reindex-btn"
+                            onClick={() => {
+                              void onReindexKnowledgeBase(kb.id)
+                            }}
+                            disabled={kb.documents.length === 0 || reindexingKnowledgeBaseId === kb.id}
+                            title={kb.documents.length === 0 ? '当前知识库暂无文档' : '使用当前 Embedding 配置重建索引'}
+                          >
+                            {reindexingKnowledgeBaseId === kb.id ? '重建中...' : '重建索引'}
+                          </button>
                           <button
                             className="kb-collapse-btn"
                             onClick={() => onToggleCollapse(kb.id)}

@@ -78,3 +78,40 @@ func TestSemanticChunkMinSize(t *testing.T) {
 		t.Fatalf("unexpected chunk: %q", chunks[0])
 	}
 }
+
+func TestSemanticChunkPreservesParagraphBoundary(t *testing.T) {
+	text := "第一段第一句。\n\n第二段第一句。\n\n第三段第一句。"
+	cfg := DefaultSemanticChunkConfig()
+	cfg.MaxChunkSize = 12
+	cfg.MinChunkSize = 1
+	cfg.OverlapSize = 0
+
+	chunks := SemanticChunk(text, cfg)
+	if len(chunks) < 2 {
+		t.Fatalf("expected paragraph-aware split, got %d", len(chunks))
+	}
+	if chunks[0] != "第一段第一句。" {
+		t.Fatalf("expected first paragraph chunk, got %q", chunks[0])
+	}
+	if chunks[1] != "第二段第一句。" {
+		t.Fatalf("expected second paragraph chunk, got %q", chunks[1])
+	}
+}
+
+func TestSemanticChunkAllowsDisablePreserveNewline(t *testing.T) {
+	text := "第一行\n第二行\n第三行"
+	cfg := SemanticChunkConfig{
+		MaxChunkSize:    20,
+		MinChunkSize:    1,
+		OverlapSize:     0,
+		PreserveNewline: false,
+	}
+
+	chunks := SemanticChunk(text, cfg)
+	if len(chunks) != 1 {
+		t.Fatalf("expected newline to be merged when preserveNewline=false, got %d", len(chunks))
+	}
+	if !strings.Contains(chunks[0], "第二行") {
+		t.Fatalf("expected merged chunk to contain full content, got %q", chunks[0])
+	}
+}

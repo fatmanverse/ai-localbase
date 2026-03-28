@@ -13,20 +13,25 @@ services:
 
   backend:
     build:
-      context: .
-      dockerfile: ./docker/backend.Dockerfile
+      context: ./backend
+      dockerfile: ../docker/backend.Dockerfile
     container_name: ai-localbase-backend
     restart: unless-stopped
     depends_on:
       - qdrant
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       PORT: "8080"
-      UPLOAD_DIR: /app/data/uploads
+      UPLOAD_DIR: data/uploads
+      STATE_FILE: data/app-state.json
+      CHAT_HISTORY_FILE: data/chat-history.db
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION_PREFIX: kb_
       QDRANT_VECTOR_SIZE: "768"
       QDRANT_DISTANCE: Cosine
       QDRANT_TIMEOUT_SECONDS: "5"
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
     ports:
       - "8080:8080"
     volumes:
