@@ -66,6 +66,12 @@ export interface ModelEndpointConfig {
   apiKey: string
 }
 
+export interface CircuitBreakerConfig {
+  failureThreshold: number
+  cooldownSeconds: number
+  halfOpenMaxRequests: number
+}
+
 export interface ChatConfig {
   provider: 'ollama' | 'openai-compatible'
   baseUrl: string
@@ -74,6 +80,7 @@ export interface ChatConfig {
   temperature: number
   contextMessageLimit: number
   candidates: ModelEndpointConfig[]
+  circuitBreaker: CircuitBreakerConfig
 }
 
 export interface EmbeddingConfig {
@@ -82,6 +89,7 @@ export interface EmbeddingConfig {
   model: string
   apiKey: string
   candidates: ModelEndpointConfig[]
+  circuitBreaker: CircuitBreakerConfig
 }
 
 export interface AppConfig {
@@ -147,6 +155,11 @@ export const recommendedConfig: AppConfig = {
     temperature: 0.2,
     contextMessageLimit: 12,
     candidates: [],
+    circuitBreaker: {
+      failureThreshold: 2,
+      cooldownSeconds: 30,
+      halfOpenMaxRequests: 1,
+    },
   },
   embedding: {
     provider: 'ollama',
@@ -154,6 +167,11 @@ export const recommendedConfig: AppConfig = {
     model: 'nomic-embed-text',
     apiKey: '',
     candidates: [],
+    circuitBreaker: {
+      failureThreshold: 2,
+      cooldownSeconds: 30,
+      halfOpenMaxRequests: 1,
+    },
   },
 }
 
@@ -161,10 +179,12 @@ const cloneAppConfig = (config: AppConfig): AppConfig => ({
   chat: {
     ...config.chat,
     candidates: (config.chat.candidates ?? []).map((item) => ({ ...item })),
+    circuitBreaker: { ...(config.chat.circuitBreaker ?? recommendedConfig.chat.circuitBreaker) },
   },
   embedding: {
     ...config.embedding,
     candidates: (config.embedding.candidates ?? []).map((item) => ({ ...item })),
+    circuitBreaker: { ...(config.embedding.circuitBreaker ?? recommendedConfig.embedding.circuitBreaker) },
   },
 })
 
@@ -559,7 +579,7 @@ function App() {
         const nextKnowledgeBases = knowledgeBaseData.items.map(normalizeKnowledgeBase)
 
         setKnowledgeBases(nextKnowledgeBases)
-        setConfig(configData)
+        setConfig(cloneAppConfig(configData))
         setSelectedKnowledgeBaseId((current) => current ?? nextKnowledgeBases[0]?.id ?? null)
         setSelectedDocumentId(null)
 
@@ -1575,7 +1595,7 @@ function App() {
       const embeddingChanged =
         JSON.stringify(config.embedding) !== JSON.stringify(savedConfig.embedding)
 
-      setConfig(savedConfig)
+      setConfig(cloneAppConfig(savedConfig))
       setConfigSaveSuccess('配置已保存，新的聊天模型与向量模型已生效。')
 
       if (embeddingChanged) {

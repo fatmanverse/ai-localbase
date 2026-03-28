@@ -173,12 +173,14 @@ Content-Type: application/json
 
 ## 4.1 模型容灾说明
 
-系统现已支持**聊天模型**与**向量模型**的主配置 + 多候选容灾：
+系统现已支持**聊天模型**与**向量模型**的主配置 + 多候选容灾，并支持提供方级别的**熔断 + 自动切换**：
 
 1. 优先尝试主模型 / 主 embedding。
-2. 主配置失败后，按 `candidates` 顺序依次切换。
-3. **只有全部候选都失败**时，才向提问方返回友好降级提示。
-4. 向量模型全部失败时，会退回 deterministic embedding，保证检索链路尽量不中断。
+2. 主配置连续失败达到阈值后，对当前提供方临时熔断。
+3. 熔断期间自动跳过该提供方，按 `candidates` 顺序切换到下一项。
+4. 冷却时间结束后进入半开状态，仅放行少量探测请求验证恢复。
+5. **只有全部候选都失败**时，才向提问方返回友好降级提示。
+6. 向量模型全部失败时，会退回 deterministic embedding，保证检索链路尽量不中断。
 
 ### 配置方式
 
@@ -186,6 +188,8 @@ Content-Type: application/json
 
 - `chat.candidates`
 - `embedding.candidates`
+- `chat.circuitBreaker`
+- `embedding.circuitBreaker`
 
 每个候选项字段：
 
@@ -193,6 +197,12 @@ Content-Type: application/json
 - `baseUrl`
 - `model`
 - `apiKey`
+
+熔断配置字段：
+
+- `failureThreshold`：连续失败多少次后熔断
+- `cooldownSeconds`：熔断后冷却多久再尝试恢复
+- `halfOpenMaxRequests`：半开阶段允许多少个探测请求
 
 ### `/v1/chat/completions` 响应中的 failover metadata
 
@@ -203,6 +213,9 @@ Content-Type: application/json
 - `activeModel`：最终生效的模型
 - `failoverUsed`：是否发生了主模型 -> 备用模型切换
 - `modelFailoverHistory`：失败尝试历史
+- `circuitBreakerUsed`：是否因熔断跳过了某些提供方
+- `circuitBreakerSkips`：被熔断跳过的提供方列表
+- `circuitBreakerPolicy`：本次生效的熔断策略
 - `degraded`：是否进入降级响应
 - `fallbackStrategy`：降级策略，如 `model-failover`、`local-message-after-failover`
 - `upstreamError`：全部失败时的上游错误汇总

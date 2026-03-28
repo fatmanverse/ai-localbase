@@ -534,10 +534,11 @@ func normalizeEmbeddingConfigCandidates(cfg model.EmbeddingModelConfig) ([]model
 			apiKey = primary.APIKey
 		}
 		normalized, candidateErr := normalizeSingleEmbeddingConfig(model.EmbeddingModelConfig{
-			Provider: provider,
-			BaseURL:  baseURL,
-			Model:    modelName,
-			APIKey:   apiKey,
+			Provider:       provider,
+			BaseURL:        baseURL,
+			Model:          modelName,
+			APIKey:         apiKey,
+			CircuitBreaker: primary.CircuitBreaker,
 		})
 		if candidateErr != nil {
 			continue
@@ -570,6 +571,7 @@ func normalizeSingleEmbeddingConfig(cfg model.EmbeddingModelConfig) (model.Embed
 		}
 	}
 	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
+	cfg.CircuitBreaker = normalizeFailoverPolicy(cfg.CircuitBreaker)
 	return cfg, nil
 }
 
@@ -587,13 +589,22 @@ func (s *RagService) requestEmbeddingsWithFailover(ctx context.Context, cfg mode
 		return nil, model.EmbeddingModelConfig{}, err
 	}
 
+	policy := normalizeFailoverPolicy(cfg.CircuitBreaker)
 	attemptErrors := make([]string, 0, len(configs))
 	for _, candidate := range configs {
+		label := formatEmbeddingConfigLabel(candidate)
+		permit, allowed, reason := defaultEndpointCircuitBreaker.allow("embedding", label, policy)
+		if !allowed {
+			attemptErrors = append(attemptErrors, fmt.Sprintf("%s => skipped: %s", label, reason))
+			continue
+		}
 		vectors, requestErr := s.requestEmbeddings(ctx, candidate, texts)
 		if requestErr == nil {
+			permit.Success()
 			return vectors, candidate, nil
 		}
-		attemptErrors = append(attemptErrors, fmt.Sprintf("%s => %s", formatEmbeddingConfigLabel(candidate), requestErr.Error()))
+		permit.Failure(requestErr, policy)
+		attemptErrors = append(attemptErrors, fmt.Sprintf("%s => %s", label, requestErr.Error()))
 	}
 	return nil, model.EmbeddingModelConfig{}, fmt.Errorf("all embedding models failed: %s", strings.Join(attemptErrors, " | "))
 }

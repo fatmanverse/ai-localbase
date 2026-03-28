@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AppConfig, ChatConfig, EmbeddingConfig, ModelEndpointConfig, recommendedConfig } from '../../App'
+import { AppConfig, ChatConfig, CircuitBreakerConfig, EmbeddingConfig, ModelEndpointConfig, recommendedConfig } from '../../App'
 
 interface SettingsPanelProps {
   config: AppConfig
@@ -11,6 +11,13 @@ interface SettingsPanelProps {
 }
 
 const normalizeContextLimit = (value: number) => Math.max(1, Math.min(100, Number(value) || 1))
+const normalizeCircuitBreakerNumber = (value: number, min: number, max: number, fallback: number) => {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return fallback
+  }
+  return Math.max(min, Math.min(max, parsed))
+}
 
 const cloneCandidates = (items: ModelEndpointConfig[] | undefined) =>
   (items ?? []).map((item) => ({ ...item }))
@@ -19,10 +26,12 @@ const createRecommendedConfig = (): AppConfig => ({
   chat: {
     ...recommendedConfig.chat,
     candidates: cloneCandidates(recommendedConfig.chat.candidates),
+    circuitBreaker: { ...recommendedConfig.chat.circuitBreaker },
   },
   embedding: {
     ...recommendedConfig.embedding,
     candidates: cloneCandidates(recommendedConfig.embedding.candidates),
+    circuitBreaker: { ...recommendedConfig.embedding.circuitBreaker },
   },
 })
 
@@ -190,6 +199,48 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }))
   }
 
+  const handleChatCircuitBreakerChange = <K extends keyof CircuitBreakerConfig>(
+    key: K,
+    value: CircuitBreakerConfig[K],
+  ) => {
+    setDraftConfig((prev) => ({
+      ...prev,
+      chat: {
+        ...prev.chat,
+        circuitBreaker: {
+          ...prev.chat.circuitBreaker,
+          [key]: normalizeCircuitBreakerNumber(
+            Number(value),
+            1,
+            key === 'cooldownSeconds' ? 3600 : 20,
+            prev.chat.circuitBreaker[key],
+          ),
+        },
+      },
+    }))
+  }
+
+  const handleEmbeddingCircuitBreakerChange = <K extends keyof CircuitBreakerConfig>(
+    key: K,
+    value: CircuitBreakerConfig[K],
+  ) => {
+    setDraftConfig((prev) => ({
+      ...prev,
+      embedding: {
+        ...prev.embedding,
+        circuitBreaker: {
+          ...prev.embedding.circuitBreaker,
+          [key]: normalizeCircuitBreakerNumber(
+            Number(value),
+            1,
+            key === 'cooldownSeconds' ? 3600 : 20,
+            prev.embedding.circuitBreaker[key],
+          ),
+        },
+      },
+    }))
+  }
+
   const handleSave = async () => {
     await onSave(effectiveDraftConfig)
   }
@@ -301,6 +352,48 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <small>限制每次发送给模型的最近消息条数，范围 1-100。</small>
               </label>
 
+              <label className="settings-field">
+                <span>聊天熔断阈值</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={draftConfig.chat.circuitBreaker.failureThreshold}
+                  onChange={(event) =>
+                    handleChatCircuitBreakerChange('failureThreshold', Number(event.target.value))
+                  }
+                />
+                <small>同一提供方连续失败达到该次数后，暂时熔断。</small>
+              </label>
+
+              <label className="settings-field">
+                <span>聊天冷却秒数</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="3600"
+                  value={draftConfig.chat.circuitBreaker.cooldownSeconds}
+                  onChange={(event) =>
+                    handleChatCircuitBreakerChange('cooldownSeconds', Number(event.target.value))
+                  }
+                />
+                <small>熔断后等待多久再放一个探测请求。</small>
+              </label>
+
+              <label className="settings-field">
+                <span>聊天半开探测数</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={draftConfig.chat.circuitBreaker.halfOpenMaxRequests}
+                  onChange={(event) =>
+                    handleChatCircuitBreakerChange('halfOpenMaxRequests', Number(event.target.value))
+                  }
+                />
+                <small>冷却结束后允许多少个请求先试探恢复。</small>
+              </label>
+
               <label className="settings-field settings-field-full">
                 <span>聊天备用模型</span>
                 <textarea
@@ -371,6 +464,48 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 />
               </label>
 
+              <label className="settings-field">
+                <span>向量熔断阈值</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={draftConfig.embedding.circuitBreaker.failureThreshold}
+                  onChange={(event) =>
+                    handleEmbeddingCircuitBreakerChange('failureThreshold', Number(event.target.value))
+                  }
+                />
+                <small>同一向量提供方连续失败达到该次数后，暂时熔断。</small>
+              </label>
+
+              <label className="settings-field">
+                <span>向量冷却秒数</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="3600"
+                  value={draftConfig.embedding.circuitBreaker.cooldownSeconds}
+                  onChange={(event) =>
+                    handleEmbeddingCircuitBreakerChange('cooldownSeconds', Number(event.target.value))
+                  }
+                />
+                <small>熔断后等待多久再放一个探测请求。</small>
+              </label>
+
+              <label className="settings-field">
+                <span>向量半开探测数</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={draftConfig.embedding.circuitBreaker.halfOpenMaxRequests}
+                  onChange={(event) =>
+                    handleEmbeddingCircuitBreakerChange('halfOpenMaxRequests', Number(event.target.value))
+                  }
+                />
+                <small>冷却结束后允许多少个请求先试探恢复。</small>
+              </label>
+
               <label className="settings-field settings-field-full">
                 <span>Embedding 备用模型</span>
                 <textarea
@@ -393,6 +528,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <li>向量模型：<code>nomic-embed-text</code>，默认向量维度 <code>768</code></li>
                 <li>RAG 内置策略：语义切片 <code>800</code> / Overlap <code>120</code></li>
                 <li>检索策略：文档内 TopK <code>5</code>，知识库 TopK <code>6</code>，单文档最多 <code>2</code> 个切片</li>
+                <li>容灾策略：支持多提供方顺序切换，默认熔断阈值 <code>2</code>，冷却 <code>30s</code></li>
               </ul>
             </div>
 

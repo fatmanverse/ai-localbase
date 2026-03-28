@@ -514,13 +514,15 @@ func recommendedAppConfig(serverConfig model.ServerConfig) model.AppConfig {
 			Temperature:         recommendedChatTemperature,
 			ContextMessageLimit: recommendedContextMessageLimit,
 			Candidates:          nil,
+			CircuitBreaker:      normalizeFailoverPolicy(model.FailoverPolicy{}),
 		},
 		Embedding: model.EmbeddingConfig{
-			Provider:   embeddingPrimary.Provider,
-			BaseURL:    embeddingPrimary.BaseURL,
-			Model:      embeddingPrimary.Model,
-			APIKey:     embeddingPrimary.APIKey,
-			Candidates: nil,
+			Provider:       embeddingPrimary.Provider,
+			BaseURL:        embeddingPrimary.BaseURL,
+			Model:          embeddingPrimary.Model,
+			APIKey:         embeddingPrimary.APIKey,
+			Candidates:     nil,
+			CircuitBreaker: normalizeFailoverPolicy(model.FailoverPolicy{}),
 		},
 	}
 }
@@ -603,13 +605,15 @@ func normalizeAppConfig(cfg model.AppConfig, serverConfig model.ServerConfig) mo
 			Temperature:         chatTemperature,
 			ContextMessageLimit: contextMessageLimit,
 			Candidates:          chatCandidates,
+			CircuitBreaker:      normalizeFailoverPolicy(cfg.Chat.CircuitBreaker),
 		},
 		Embedding: model.EmbeddingConfig{
-			Provider:   embeddingPrimary.Provider,
-			BaseURL:    embeddingPrimary.BaseURL,
-			Model:      embeddingPrimary.Model,
-			APIKey:     embeddingPrimary.APIKey,
-			Candidates: embeddingCandidates,
+			Provider:       embeddingPrimary.Provider,
+			BaseURL:        embeddingPrimary.BaseURL,
+			Model:          embeddingPrimary.Model,
+			APIKey:         embeddingPrimary.APIKey,
+			Candidates:     embeddingCandidates,
+			CircuitBreaker: normalizeFailoverPolicy(cfg.Embedding.CircuitBreaker),
 		},
 	}
 }
@@ -700,13 +704,15 @@ func (s *AppService) UpdateConfig(req model.ConfigUpdateRequest) (model.AppConfi
 			Temperature:         req.Chat.Temperature,
 			ContextMessageLimit: contextMessageLimit,
 			Candidates:          req.Chat.Candidates,
+			CircuitBreaker:      normalizeFailoverPolicy(req.Chat.CircuitBreaker),
 		},
 		Embedding: model.EmbeddingConfig{
-			Provider:   embedProvider,
-			BaseURL:    strings.TrimSpace(req.Embedding.BaseURL),
-			Model:      embedModel,
-			APIKey:     strings.TrimSpace(req.Embedding.APIKey),
-			Candidates: req.Embedding.Candidates,
+			Provider:       embedProvider,
+			BaseURL:        strings.TrimSpace(req.Embedding.BaseURL),
+			Model:          embedModel,
+			APIKey:         strings.TrimSpace(req.Embedding.APIKey),
+			Candidates:     req.Embedding.Candidates,
+			CircuitBreaker: normalizeFailoverPolicy(req.Embedding.CircuitBreaker),
 		},
 	}, s.serverConfig)
 
@@ -1292,11 +1298,12 @@ func (s *AppService) currentEmbeddingConfig() model.EmbeddingModelConfig {
 
 	normalized := normalizeAppConfig(cfg, s.serverConfig)
 	return model.EmbeddingModelConfig{
-		Provider:   strings.TrimSpace(normalized.Embedding.Provider),
-		BaseURL:    strings.TrimSpace(normalized.Embedding.BaseURL),
-		Model:      strings.TrimSpace(normalized.Embedding.Model),
-		APIKey:     strings.TrimSpace(normalized.Embedding.APIKey),
-		Candidates: append([]model.ModelEndpointConfig(nil), normalized.Embedding.Candidates...),
+		Provider:       strings.TrimSpace(normalized.Embedding.Provider),
+		BaseURL:        strings.TrimSpace(normalized.Embedding.BaseURL),
+		Model:          strings.TrimSpace(normalized.Embedding.Model),
+		APIKey:         strings.TrimSpace(normalized.Embedding.APIKey),
+		Candidates:     append([]model.ModelEndpointConfig(nil), normalized.Embedding.Candidates...),
+		CircuitBreaker: normalizeFailoverPolicy(normalized.Embedding.CircuitBreaker),
 	}
 }
 
@@ -1314,6 +1321,7 @@ func (s *AppService) currentChatConfig() model.ChatModelConfig {
 		Temperature:         normalized.Chat.Temperature,
 		ContextMessageLimit: normalized.Chat.ContextMessageLimit,
 		Candidates:          append([]model.ModelEndpointConfig(nil), normalized.Chat.Candidates...),
+		CircuitBreaker:      normalizeFailoverPolicy(normalized.Chat.CircuitBreaker),
 	}
 }
 
@@ -1330,12 +1338,17 @@ func (s *AppService) resolveEmbeddingConfig(req model.ChatCompletionRequest) mod
 		Model:    cfg.Model,
 		APIKey:   cfg.APIKey,
 	}, s.serverConfig, fallback.Provider, fallback.Model)
+	policy := cfg.CircuitBreaker
+	if policy.FailureThreshold <= 0 && policy.CooldownSeconds <= 0 && policy.HalfOpenMaxRequests <= 0 {
+		policy = fallback.CircuitBreaker
+	}
 	return model.EmbeddingModelConfig{
-		Provider:   primary.Provider,
-		BaseURL:    primary.BaseURL,
-		Model:      primary.Model,
-		APIKey:     primary.APIKey,
-		Candidates: normalizeConfiguredEndpointCandidates(primary, cfg.Candidates, s.serverConfig),
+		Provider:       primary.Provider,
+		BaseURL:        primary.BaseURL,
+		Model:          primary.Model,
+		APIKey:         primary.APIKey,
+		Candidates:     normalizeConfiguredEndpointCandidates(primary, cfg.Candidates, s.serverConfig),
+		CircuitBreaker: normalizeFailoverPolicy(policy),
 	}
 }
 
@@ -1356,6 +1369,10 @@ func (s *AppService) resolveChatConfig(req model.ChatCompletionRequest) model.Ch
 	if contextMessageLimit <= 0 {
 		contextMessageLimit = fallback.ContextMessageLimit
 	}
+	policy := cfg.CircuitBreaker
+	if policy.FailureThreshold <= 0 && policy.CooldownSeconds <= 0 && policy.HalfOpenMaxRequests <= 0 {
+		policy = fallback.CircuitBreaker
+	}
 	return model.ChatModelConfig{
 		Provider:            primary.Provider,
 		BaseURL:             primary.BaseURL,
@@ -1364,6 +1381,7 @@ func (s *AppService) resolveChatConfig(req model.ChatCompletionRequest) model.Ch
 		Temperature:         cfg.Temperature,
 		ContextMessageLimit: contextMessageLimit,
 		Candidates:          normalizeConfiguredEndpointCandidates(primary, cfg.Candidates, s.serverConfig),
+		CircuitBreaker:      normalizeFailoverPolicy(policy),
 	}
 }
 

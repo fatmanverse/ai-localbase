@@ -150,3 +150,135 @@ func TestRagServiceEmbeddingFailoverToCandidate(t *testing.T) {
 		t.Fatalf("expected backup embedding vector, got %#v", vectors[0])
 	}
 }
+
+func TestLLMServiceChatCircuitBreakerSkipsOpenPrimary(t *testing.T) {
+	resetDefaultEndpointCircuitBreaker()
+	defer resetDefaultEndpointCircuitBreaker()
+
+	primaryHits := 0
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		primaryHits++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{"message": "primary unavailable"},
+		})
+	}))
+	defer primary.Close()
+
+	backupHits := 0
+	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backupHits++
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(openAIChatResponse{
+			ID:      "chatcmpl-backup",
+			Object:  "chat.completion",
+			Created: 123,
+			Model:   "backup-model",
+			Choices: []model.ChatCompletionChoice{{
+				Index:   0,
+				Message: model.ChatMessage{Role: "assistant", Content: "来自备用模型的回答"},
+			}},
+		})
+	}))
+	defer backup.Close()
+
+	service := &LLMService{client: backup.Client()}
+	req := model.ChatCompletionRequest{
+		Config: model.ChatModelConfig{
+			Provider:    "openai-compatible",
+			BaseURL:     primary.URL,
+			Model:       "primary-model",
+			Temperature: 0.2,
+			CircuitBreaker: model.FailoverPolicy{
+				FailureThreshold:    1,
+				CooldownSeconds:     60,
+				HalfOpenMaxRequests: 1,
+			},
+			Candidates: []model.ModelEndpointConfig{{
+				Provider: "openai-compatible",
+				BaseURL:  backup.URL,
+				Model:    "backup-model",
+			}},
+		},
+		Messages: []model.ChatMessage{{Role: "user", Content: "你好"}},
+	}
+
+	if _, err := service.Chat(req); err != nil {
+		t.Fatalf("first chat with breaker: %v", err)
+	}
+	primaryHitsAfterFirstCall := primaryHits
+	resp, err := service.Chat(req)
+	if err != nil {
+		t.Fatalf("second chat with breaker: %v", err)
+	}
+	if primaryHits != primaryHitsAfterFirstCall {
+		t.Fatalf("expected primary to be skipped after breaker open, got %d -> %d hits", primaryHitsAfterFirstCall, primaryHits)
+	}
+	if backupHits != 2 {
+		t.Fatalf("expected backup to serve both calls, got %d hits", backupHits)
+	}
+	if resp.Metadata["circuitBreakerUsed"] != true {
+		t.Fatalf("expected circuitBreakerUsed metadata, got %#v", resp.Metadata)
+	}
+}
+
+func TestRagServiceEmbeddingCircuitBreakerSkipsOpenPrimary(t *testing.T) {
+	resetDefaultEndpointCircuitBreaker()
+	defer resetDefaultEndpointCircuitBreaker()
+
+	primaryHits := 0
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		primaryHits++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{"message": "primary embedding unavailable"},
+		})
+	}))
+	defer primary.Close()
+
+	backupHits := 0
+	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backupHits++
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{{
+				"index":     0,
+				"embedding": []float64{0.1, 0.2, 0.3},
+			}},
+		})
+	}))
+	defer backup.Close()
+
+	rag := NewRagService()
+	rag.client = backup.Client()
+	cfg := model.EmbeddingModelConfig{
+		Provider: "openai-compatible",
+		BaseURL:  primary.URL,
+		Model:    "primary-embed",
+		CircuitBreaker: model.FailoverPolicy{
+			FailureThreshold:    1,
+			CooldownSeconds:     60,
+			HalfOpenMaxRequests: 1,
+		},
+		Candidates: []model.ModelEndpointConfig{{
+			Provider: "openai-compatible",
+			BaseURL:  backup.URL,
+			Model:    "backup-embed",
+		}},
+	}
+
+	if _, err := rag.EmbedTexts(t.Context(), cfg, []string{"embedding failover"}, 3); err != nil {
+		t.Fatalf("first embedding with breaker: %v", err)
+	}
+	if _, err := rag.EmbedTexts(t.Context(), cfg, []string{"embedding failover again"}, 3); err != nil {
+		t.Fatalf("second embedding with breaker: %v", err)
+	}
+	if primaryHits != 1 {
+		t.Fatalf("expected primary embedding to be skipped after breaker open, got %d hits", primaryHits)
+	}
+	if backupHits != 2 {
+		t.Fatalf("expected backup embedding to serve both calls, got %d hits", backupHits)
+	}
+}

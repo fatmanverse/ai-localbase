@@ -40,6 +40,12 @@ type ModelEndpointConfig struct {
 	APIKey   string `json:"apiKey"`
 }
 
+type FailoverPolicy struct {
+	FailureThreshold    int `json:"failureThreshold"`
+	CooldownSeconds     int `json:"cooldownSeconds"`
+	HalfOpenMaxRequests int `json:"halfOpenMaxRequests"`
+}
+
 type ChatConfig struct {
 	Provider            string                `json:"provider"`
 	BaseURL             string                `json:"baseUrl"`
@@ -48,14 +54,16 @@ type ChatConfig struct {
 	Temperature         float64               `json:"temperature"`
 	ContextMessageLimit int                   `json:"contextMessageLimit"`
 	Candidates          []ModelEndpointConfig `json:"candidates,omitempty"`
+	CircuitBreaker      FailoverPolicy        `json:"circuitBreaker"`
 }
 
 type EmbeddingConfig struct {
-	Provider   string                `json:"provider"`
-	BaseURL    string                `json:"baseUrl"`
-	Model      string                `json:"model"`
-	APIKey     string                `json:"apiKey"`
-	Candidates []ModelEndpointConfig `json:"candidates,omitempty"`
+	Provider       string                `json:"provider"`
+	BaseURL        string                `json:"baseUrl"`
+	Model          string                `json:"model"`
+	APIKey         string                `json:"apiKey"`
+	Candidates     []ModelEndpointConfig `json:"candidates,omitempty"`
+	CircuitBreaker FailoverPolicy        `json:"circuitBreaker"`
 }
 
 type AppConfig struct {
@@ -109,14 +117,16 @@ type ChatModelConfig struct {
 	Temperature         float64               `json:"temperature"`
 	ContextMessageLimit int                   `json:"contextMessageLimit"`
 	Candidates          []ModelEndpointConfig `json:"candidates,omitempty"`
+	CircuitBreaker      FailoverPolicy        `json:"circuitBreaker"`
 }
 
 type EmbeddingModelConfig struct {
-	Provider   string                `json:"provider"`
-	BaseURL    string                `json:"baseUrl"`
-	Model      string                `json:"model"`
-	APIKey     string                `json:"apiKey"`
-	Candidates []ModelEndpointConfig `json:"candidates,omitempty"`
+	Provider       string                `json:"provider"`
+	BaseURL        string                `json:"baseUrl"`
+	Model          string                `json:"model"`
+	APIKey         string                `json:"apiKey"`
+	Candidates     []ModelEndpointConfig `json:"candidates,omitempty"`
+	CircuitBreaker FailoverPolicy        `json:"circuitBreaker"`
 }
 
 type ChatCompletionRequest struct {

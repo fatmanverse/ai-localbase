@@ -96,13 +96,25 @@ func (s *LLMService) Chat(req model.ChatCompletionRequest) (model.ChatCompletion
 		return model.ChatCompletionResponse{}, err
 	}
 
+	policy := normalizeFailoverPolicy(req.Config.CircuitBreaker)
 	attemptErrors := make([]string, 0, len(configs))
+	breakerSkips := make([]string, 0)
 	for index, cfg := range configs {
-		result, callErr := s.chatWithConfig(cfg, req)
-		if callErr != nil {
-			attemptErrors = append(attemptErrors, fmt.Sprintf("%s => %s", formatChatConfigLabel(cfg), callErr.Error()))
+		label := formatChatConfigLabel(cfg)
+		permit, allowed, reason := defaultEndpointCircuitBreaker.allow("chat", label, policy)
+		if !allowed {
+			breakerSkips = append(breakerSkips, fmt.Sprintf("%s => %s", label, reason))
+			attemptErrors = append(attemptErrors, fmt.Sprintf("%s => skipped: %s", label, reason))
 			continue
 		}
+
+		result, callErr := s.chatWithConfig(cfg, req)
+		if callErr != nil {
+			permit.Failure(callErr, policy)
+			attemptErrors = append(attemptErrors, fmt.Sprintf("%s => %s", label, callErr.Error()))
+			continue
+		}
+		permit.Success()
 		if result.Metadata == nil {
 			result.Metadata = map[string]any{}
 		}
@@ -116,6 +128,11 @@ func (s *LLMService) Chat(req model.ChatCompletionRequest) (model.ChatCompletion
 				result.Metadata["modelFailoverHistory"] = append([]string(nil), attemptErrors...)
 			}
 		}
+		if len(breakerSkips) > 0 {
+			result.Metadata["circuitBreakerUsed"] = true
+			result.Metadata["circuitBreakerSkips"] = append([]string(nil), breakerSkips...)
+		}
+		result.Metadata["circuitBreakerPolicy"] = policy
 		return result, nil
 	}
 
@@ -123,6 +140,18 @@ func (s *LLMService) Chat(req model.ChatCompletionRequest) (model.ChatCompletion
 	upstreamError := strings.Join(attemptErrors, " | ")
 	if strings.TrimSpace(upstreamError) == "" {
 		upstreamError = "all configured chat models failed"
+	}
+	metadata := map[string]any{
+		"degraded":             true,
+		"fallbackStrategy":     "local-message-after-failover",
+		"upstreamError":        upstreamError,
+		"candidateCount":       len(configs),
+		"modelFailoverHistory": attemptErrors,
+		"circuitBreakerPolicy": policy,
+	}
+	if len(breakerSkips) > 0 {
+		metadata["circuitBreakerUsed"] = true
+		metadata["circuitBreakerSkips"] = breakerSkips
 	}
 	return model.ChatCompletionResponse{
 		ID:      "chatcmpl-fallback",
@@ -136,13 +165,7 @@ func (s *LLMService) Chat(req model.ChatCompletionRequest) (model.ChatCompletion
 				Content: fallbackContent,
 			},
 		}},
-		Metadata: map[string]any{
-			"degraded":             true,
-			"fallbackStrategy":     "local-message-after-failover",
-			"upstreamError":        upstreamError,
-			"candidateCount":       len(configs),
-			"modelFailoverHistory": attemptErrors,
-		},
+		Metadata: metadata,
 	}, nil
 }
 
@@ -527,6 +550,7 @@ func normalizeChatConfigCandidates(req model.ChatCompletionRequest) ([]model.Cha
 			APIKey:              apiKey,
 			Temperature:         primary.Temperature,
 			ContextMessageLimit: primary.ContextMessageLimit,
+			CircuitBreaker:      primary.CircuitBreaker,
 		})
 		if candidateErr != nil {
 			continue
@@ -559,6 +583,7 @@ func normalizeSingleChatConfig(cfg model.ChatModelConfig) (model.ChatModelConfig
 		}
 	}
 	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
+	cfg.CircuitBreaker = normalizeFailoverPolicy(cfg.CircuitBreaker)
 	if cfg.Temperature <= 0 {
 		cfg.Temperature = 0.7
 	}
