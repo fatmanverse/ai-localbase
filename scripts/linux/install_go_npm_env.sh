@@ -4,6 +4,8 @@ if [ -z "${BASH_VERSION:-}" ]; then
 fi
 set -euo pipefail
 
+export PATH="/usr/local/go/bin:/usr/local/bin:/usr/local/sbin:${PATH}"
+
 GO_VERSION="${GO_VERSION:-1.25.0}"
 NODE_VERSION="${NODE_VERSION:-20.19.5}"
 LEGACY_NODE_VERSION="${LEGACY_NODE_VERSION:-16.20.2}"
@@ -131,6 +133,22 @@ install_node() {
   hash -r || true
 }
 
+write_profile_path() {
+  local profile_file="/etc/profile.d/ai-localbase-path.sh"
+  cat <<'EOF' | ${SUDO} tee "${profile_file}" >/dev/null
+export PATH="/usr/local/go/bin:/usr/local/bin:/usr/local/sbin:$PATH"
+EOF
+}
+
+verify_runtime_links() {
+  echo "==> 运行时链接"
+  command -v go || true
+  command -v node || true
+  command -v npm || true
+  ls -l /usr/local/bin/go /usr/local/bin/node /usr/local/bin/npm 2>/dev/null || true
+  readlink -f /usr/local/bin/node 2>/dev/null || true
+}
+
 install_docker() {
   if [[ "${INSTALL_DOCKER}" != "1" ]]; then
     return
@@ -152,12 +170,19 @@ install_docker() {
 install_base_packages
 install_go
 install_node
+write_profile_path
 install_docker
+verify_runtime_links
 
 echo "==> 环境版本"
-go version
-node --version
-npm --version
+/usr/local/bin/go version
+/usr/local/bin/node --version
+/usr/local/bin/npm --version
 if command -v docker >/dev/null 2>&1; then
   docker --version || true
+fi
+
+if command -v node >/dev/null 2>&1 && [[ "$(command -v node)" != "/usr/local/bin/node" ]]; then
+  echo "警告：当前 PATH 优先使用的 node 是 $(command -v node)，不是 /usr/local/bin/node" >&2
+  echo "请执行：export PATH=/usr/local/go/bin:/usr/local/bin:/usr/local/sbin:$PATH" >&2
 fi
