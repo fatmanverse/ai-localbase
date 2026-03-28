@@ -197,6 +197,10 @@ type AnalyticsListOptions struct {
 	IssueType       string `json:"issueType,omitempty"`
 }
 
+type AnalyticsStatusUpdateRequest struct {
+	Status string `json:"status"`
+}
+
 type WeeklyFeedbackMetric struct {
 	WeekStart    string `json:"weekStart"`
 	LikeCount    int    `json:"likeCount"`

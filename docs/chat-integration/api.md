@@ -385,6 +385,51 @@ GET /api/service-desk/analytics/feedback?limit=50&knowledgeBaseId=kb-1&feedbackT
 - `feedbackReason`
 - `issueType`
 
+### 7.5 更新 FAQ 候选状态
+
+```http
+PATCH /api/service-desk/analytics/faq-candidates/:id
+Content-Type: application/json
+```
+
+```json
+{
+  "status": "approved"
+}
+```
+
+### 7.6 更新知识缺口状态
+
+```http
+PATCH /api/service-desk/analytics/knowledge-gaps/:id
+Content-Type: application/json
+```
+
+```json
+{
+  "status": "resolved"
+}
+```
+
+### 7.7 更新低质量回答状态
+
+```http
+PATCH /api/service-desk/analytics/low-quality-answers/:id
+Content-Type: application/json
+```
+
+```json
+{
+  "status": "resolved"
+}
+```
+
+状态建议：
+
+- FAQ：`candidate / approved / ignored`
+- 知识缺口：`pending / resolved / ignored`
+- 低质量回答：`open / resolved / ignored`
+
 ---
 
 ## 8. 重建索引

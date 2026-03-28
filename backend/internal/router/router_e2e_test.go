@@ -733,6 +733,20 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 		t.Fatalf("expected status 201, got %d, body=%s", feedbackResp.Code, feedbackResp.Body.String())
 	}
 
+	likePayload := map[string]any{
+		"conversationId": conversation.ID,
+		"feedbackType":   "like",
+		"feedbackReason": "回答准确",
+		"questionText":   "请帮我说明 Redis 的核心特点和处理建议",
+		"answerText":     messageResult.AssistantMessage.Content,
+	}
+	for i := 0; i < 2; i++ {
+		likeResp := performJSONRequest(t, engine, http.MethodPost, fmt.Sprintf("/api/service-desk/messages/%s/feedback", messageResult.AssistantMessage.ID), likePayload)
+		if likeResp.Code != http.StatusCreated {
+			t.Fatalf("expected like feedback status 201, got %d, body=%s", likeResp.Code, likeResp.Body.String())
+		}
+	}
+
 	analyticsResp := performRequest(t, engine, http.MethodGet, "/api/service-desk/analytics/summary", nil, "")
 	if analyticsResp.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d, body=%s", analyticsResp.Code, analyticsResp.Body.String())
@@ -743,8 +757,11 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	analyticsData, _ := json.Marshal(analyticsResult.Data)
 	var analytics model.ServiceDeskAnalyticsSummary
 	decodeJSONResponse(t, analyticsData, &analytics)
-	if analytics.TotalFeedbacks != 1 || analytics.DislikeCount != 1 {
+	if analytics.TotalFeedbacks != 3 || analytics.DislikeCount != 1 || analytics.LikeCount != 2 {
 		t.Fatalf("expected analytics feedback counters to be updated, got %+v", analytics)
+	}
+	if len(analytics.FAQCandidates) == 0 {
+		t.Fatal("expected faq candidate after like feedback")
 	}
 	if len(analytics.KnowledgeGaps) == 0 {
 		t.Fatal("expected knowledge gap candidate after dislike feedback")
@@ -764,8 +781,30 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 		Items []model.FAQCandidate `json:"items"`
 	}
 	decodeJSONResponse(t, faqListData, &faqList)
+	if len(faqList.Items) == 0 {
+		t.Fatal("expected faq candidates list to return items")
+	}
 
-	gapListResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/knowledge-gaps?limit=10&knowledgeBaseId=%s&feedbackReason=%s", knowledgeBaseID, ""), nil, "")
+	faqUpdateResp := performJSONRequest(t, engine, http.MethodPatch, fmt.Sprintf("/api/service-desk/analytics/faq-candidates/%s", faqList.Items[0].ID), map[string]any{"status": "approved"})
+	if faqUpdateResp.Code != http.StatusOK {
+		t.Fatalf("expected faq update status 200, got %d, body=%s", faqUpdateResp.Code, faqUpdateResp.Body.String())
+	}
+	approvedFAQResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/faq-candidates?limit=10&knowledgeBaseId=%s&status=approved", knowledgeBaseID), nil, "")
+	if approvedFAQResp.Code != http.StatusOK {
+		t.Fatalf("expected approved faq list status 200, got %d, body=%s", approvedFAQResp.Code, approvedFAQResp.Body.String())
+	}
+	var approvedFAQResult model.APIResponse
+	decodeJSONResponse(t, approvedFAQResp.Body.Bytes(), &approvedFAQResult)
+	approvedFAQData, _ := json.Marshal(approvedFAQResult.Data)
+	var approvedFAQList struct {
+		Items []model.FAQCandidate `json:"items"`
+	}
+	decodeJSONResponse(t, approvedFAQData, &approvedFAQList)
+	if len(approvedFAQList.Items) == 0 || approvedFAQList.Items[0].Status != "approved" {
+		t.Fatalf("expected approved faq item after patch, got %+v", approvedFAQList.Items)
+	}
+
+	gapListResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/knowledge-gaps?limit=10&knowledgeBaseId=%s", knowledgeBaseID), nil, "")
 	if gapListResp.Code != http.StatusOK {
 		t.Fatalf("expected knowledge gap list status 200, got %d, body=%s", gapListResp.Code, gapListResp.Body.String())
 	}
@@ -778,6 +817,24 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	decodeJSONResponse(t, gapListData, &gapList)
 	if len(gapList.Items) == 0 {
 		t.Fatal("expected knowledge gap list to return items")
+	}
+	gapUpdateResp := performJSONRequest(t, engine, http.MethodPatch, fmt.Sprintf("/api/service-desk/analytics/knowledge-gaps/%s", gapList.Items[0].ID), map[string]any{"status": "resolved"})
+	if gapUpdateResp.Code != http.StatusOK {
+		t.Fatalf("expected knowledge gap update status 200, got %d, body=%s", gapUpdateResp.Code, gapUpdateResp.Body.String())
+	}
+	resolvedGapResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/knowledge-gaps?limit=10&knowledgeBaseId=%s&status=resolved", knowledgeBaseID), nil, "")
+	if resolvedGapResp.Code != http.StatusOK {
+		t.Fatalf("expected resolved knowledge gap list status 200, got %d, body=%s", resolvedGapResp.Code, resolvedGapResp.Body.String())
+	}
+	var resolvedGapResult model.APIResponse
+	decodeJSONResponse(t, resolvedGapResp.Body.Bytes(), &resolvedGapResult)
+	resolvedGapData, _ := json.Marshal(resolvedGapResult.Data)
+	var resolvedGapList struct {
+		Items []model.KnowledgeGap `json:"items"`
+	}
+	decodeJSONResponse(t, resolvedGapData, &resolvedGapList)
+	if len(resolvedGapList.Items) == 0 || resolvedGapList.Items[0].Status != "resolved" {
+		t.Fatalf("expected resolved knowledge gap item after patch, got %+v", resolvedGapList.Items)
 	}
 
 	lowQualityResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/low-quality-answers?limit=10&knowledgeBaseId=%s&feedbackReason=%s", knowledgeBaseID, "内容不完整"), nil, "")
@@ -793,6 +850,24 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	decodeJSONResponse(t, lowQualityData, &lowQualityList)
 	if len(lowQualityList.Items) == 0 {
 		t.Fatal("expected low quality answers list to return items")
+	}
+	lowQualityUpdateResp := performJSONRequest(t, engine, http.MethodPatch, fmt.Sprintf("/api/service-desk/analytics/low-quality-answers/%s", lowQualityList.Items[0].ID), map[string]any{"status": "resolved"})
+	if lowQualityUpdateResp.Code != http.StatusOK {
+		t.Fatalf("expected low quality update status 200, got %d, body=%s", lowQualityUpdateResp.Code, lowQualityUpdateResp.Body.String())
+	}
+	resolvedLowQualityResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/low-quality-answers?limit=10&knowledgeBaseId=%s&status=resolved", knowledgeBaseID), nil, "")
+	if resolvedLowQualityResp.Code != http.StatusOK {
+		t.Fatalf("expected resolved low quality list status 200, got %d, body=%s", resolvedLowQualityResp.Code, resolvedLowQualityResp.Body.String())
+	}
+	var resolvedLowQualityResult model.APIResponse
+	decodeJSONResponse(t, resolvedLowQualityResp.Body.Bytes(), &resolvedLowQualityResult)
+	resolvedLowQualityData, _ := json.Marshal(resolvedLowQualityResult.Data)
+	var resolvedLowQualityList struct {
+		Items []model.LowQualityAnswer `json:"items"`
+	}
+	decodeJSONResponse(t, resolvedLowQualityData, &resolvedLowQualityList)
+	if len(resolvedLowQualityList.Items) == 0 || resolvedLowQualityList.Items[0].Status != "resolved" {
+		t.Fatalf("expected resolved low quality item after patch, got %+v", resolvedLowQualityList.Items)
 	}
 
 	feedbackListResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/feedback?limit=10&knowledgeBaseId=%s&feedbackType=dislike&feedbackReason=%s", knowledgeBaseID, "内容不完整"), nil, "")

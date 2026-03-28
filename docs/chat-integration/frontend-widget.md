@@ -274,3 +274,23 @@ frontend/src/pages/ServiceDeskEmbedPage.tsx
 - 封装为 iframe widget
 - 封装为 Web Component
 - 绑定 SSO / 工单系统上下文自动注入
+
+
+---
+
+## 最简运营入口
+
+除了聊天接入页外，前端现在还提供一个**最简治理工作台**入口，便于运营或交付同学直接处理 FAQ 候选、知识缺口和低质量回答：
+
+```text
+?mode=ops-console
+/ops
+```
+
+用途：
+
+- 查看 FAQ 候选
+- 查看知识缺口
+- 查看低质量回答
+- 查看差评反馈明细
+- 直接做基础状态流转

@@ -148,6 +148,10 @@ func (h *AppHandler) GetServiceDeskAnalyticsSummary(c *gin.Context) {
 }
 
 func (h *AppHandler) ListServiceDeskFAQCandidates(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
 	opts := analyticsListOptionsFromQuery(c)
 	items, err := h.serviceDeskService.ListFAQCandidates(opts)
 	if err != nil {
@@ -158,6 +162,10 @@ func (h *AppHandler) ListServiceDeskFAQCandidates(c *gin.Context) {
 }
 
 func (h *AppHandler) ListServiceDeskKnowledgeGaps(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
 	opts := analyticsListOptionsFromQuery(c)
 	items, err := h.serviceDeskService.ListKnowledgeGaps(opts)
 	if err != nil {
@@ -168,6 +176,10 @@ func (h *AppHandler) ListServiceDeskKnowledgeGaps(c *gin.Context) {
 }
 
 func (h *AppHandler) ListServiceDeskLowQualityAnswers(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
 	opts := analyticsListOptionsFromQuery(c)
 	items, err := h.serviceDeskService.ListLowQualityAnswers(opts)
 	if err != nil {
@@ -178,6 +190,10 @@ func (h *AppHandler) ListServiceDeskLowQualityAnswers(c *gin.Context) {
 }
 
 func (h *AppHandler) ListServiceDeskFeedback(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
 	opts := analyticsListOptionsFromQuery(c)
 	items, err := h.serviceDeskService.ListRecentFeedback(opts)
 	if err != nil {
@@ -185,6 +201,60 @@ func (h *AppHandler) ListServiceDeskFeedback(c *gin.Context) {
 		return
 	}
 	writeAPISuccess(c, http.StatusOK, gin.H{"items": items, "filters": opts})
+}
+
+func (h *AppHandler) UpdateServiceDeskFAQCandidateStatus(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
+	var req model.AnalyticsStatusUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", "invalid faq candidate status request body")
+		return
+	}
+	item, err := h.serviceDeskService.UpdateFAQCandidateStatus(c.Param("id"), req.Status)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "update_faq_candidate_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, item)
+}
+
+func (h *AppHandler) UpdateServiceDeskKnowledgeGapStatus(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
+	var req model.AnalyticsStatusUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", "invalid knowledge gap status request body")
+		return
+	}
+	item, err := h.serviceDeskService.UpdateKnowledgeGapStatus(c.Param("id"), req.Status)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "update_knowledge_gap_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, item)
+}
+
+func (h *AppHandler) UpdateServiceDeskLowQualityAnswerStatus(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
+	var req model.AnalyticsStatusUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", "invalid low quality answer status request body")
+		return
+	}
+	item, err := h.serviceDeskService.UpdateLowQualityAnswerStatus(c.Param("id"), req.Status)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "update_low_quality_answer_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, item)
 }
 
 func analyticsListOptionsFromQuery(c *gin.Context) model.AnalyticsListOptions {

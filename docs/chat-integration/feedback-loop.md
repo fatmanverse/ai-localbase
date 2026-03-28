@@ -144,6 +144,9 @@ Content-Type: application/json
 - 用 `analytics/knowledge-gaps` 筛选高频知识缺口
 - 用 `analytics/low-quality-answers` 看高频差评回答
 - 用 `analytics/feedback` 查看原始反馈明细与原因分布
+- 用 `PATCH /api/service-desk/analytics/faq-candidates/:id` 把 FAQ 候选转为已采纳或忽略
+- 用 `PATCH /api/service-desk/analytics/knowledge-gaps/:id` 标记知识缺口已解决
+- 用 `PATCH /api/service-desk/analytics/low-quality-answers/:id` 标记差评回答已修复
 - 优先处理高频点踩的问题
 - 把高赞问题沉淀为 FAQ
 - 把高频失败问题转成知识补充任务

@@ -1,0 +1,285 @@
+.ops-console-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f4f7fb 0%, #eef3f9 100%);
+  color: #16324f;
+  padding: 32px;
+}
+
+.ops-console-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+
+.ops-console-hero h1 {
+  margin: 8px 0 12px;
+  font-size: 32px;
+}
+
+.ops-console-hero p {
+  margin: 0;
+  line-height: 1.7;
+  max-width: 760px;
+  color: #49627f;
+}
+
+.ops-console-eyebrow {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(43, 108, 176, 0.1);
+  color: #2b6cb0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ops-console-summary-card {
+  min-width: 220px;
+  padding: 16px;
+  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid #d8e4f2;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ops-console-summary-card code {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f3f7fc;
+  color: #234e7b;
+}
+
+.ops-console-toolbar,
+.ops-console-tabs,
+.ops-console-list {
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid #d8e4f2;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.ops-console-toolbar {
+  display: flex;
+  gap: 16px;
+  align-items: end;
+  flex-wrap: wrap;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.ops-console-toolbar label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.ops-console-toolbar span {
+  font-size: 13px;
+  font-weight: 600;
+  color: #385571;
+}
+
+.ops-console-toolbar select,
+.ops-refresh-button,
+.ops-card-actions button {
+  min-height: 40px;
+  border-radius: 10px;
+  border: 1px solid #c8d8ea;
+  background: #fff;
+  color: #1c3552;
+  padding: 0 12px;
+}
+
+.ops-refresh-button {
+  background: #2b6cb0;
+  color: #fff;
+  font-weight: 700;
+  border-color: #2b6cb0;
+  cursor: pointer;
+}
+
+.ops-console-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.ops-console-tabs button {
+  border: 0;
+  border-right: 1px solid #e1ebf6;
+  background: transparent;
+  padding: 16px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.ops-console-tabs button:last-child {
+  border-right: 0;
+}
+
+.ops-console-tabs button.is-active {
+  background: #edf5ff;
+}
+
+.ops-console-tabs strong {
+  color: #16324f;
+}
+
+.ops-console-tabs span {
+  color: #5f7895;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ops-console-alert {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.ops-console-alert.is-error {
+  background: #fff1f1;
+  color: #b83232;
+  border: 1px solid #feb2b2;
+}
+
+.ops-console-alert.is-success {
+  background: #f0fff4;
+  color: #276749;
+  border: 1px solid #9ae6b4;
+}
+
+.ops-console-list {
+  padding: 20px;
+}
+
+.ops-console-list > header {
+  margin-bottom: 16px;
+}
+
+.ops-console-list > header h2 {
+  margin: 0 0 8px;
+}
+
+.ops-console-list > header p {
+  margin: 0;
+  color: #617a96;
+}
+
+.ops-empty {
+  padding: 28px;
+  text-align: center;
+  color: #6f86a0;
+  background: #f7fafc;
+  border-radius: 14px;
+}
+
+.ops-card {
+  padding: 18px;
+  border: 1px solid #e4edf7;
+  border-radius: 16px;
+  background: #fbfdff;
+  margin-bottom: 14px;
+}
+
+.ops-card:last-child {
+  margin-bottom: 0;
+}
+
+.ops-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+  color: #607994;
+  font-size: 13px;
+}
+
+.ops-card h3 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+
+.ops-card p {
+  margin: 0 0 10px;
+  color: #37516f;
+  line-height: 1.65;
+}
+
+.ops-card-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ops-card-actions button {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.ops-card-actions button:disabled,
+.ops-refresh-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ops-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 78px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ops-status--candidate,
+.ops-status--pending,
+.ops-status--open {
+  background: #ebf8ff;
+  color: #2b6cb0;
+}
+
+.ops-status--approved,
+.ops-status--resolved,
+.ops-status--like {
+  background: #f0fff4;
+  color: #276749;
+}
+
+.ops-status--ignored,
+.ops-status--dislike {
+  background: #fff5f5;
+  color: #c53030;
+}
+
+@media (max-width: 960px) {
+  .ops-console-page {
+    padding: 20px;
+  }
+
+  .ops-console-hero {
+    flex-direction: column;
+  }
+
+  .ops-console-tabs {
+    grid-template-columns: 1fr;
+  }
+}

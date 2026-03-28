@@ -609,6 +609,119 @@ func normalizeAnalyticsListLimit(limit int) int {
 	return normalizeLimit(limit, 20)
 }
 
+func normalizeFAQCandidateStatus(status string) (string, error) {
+	return normalizeAnalyticsStatus(status, []string{"candidate", "approved", "ignored"})
+}
+
+func normalizeKnowledgeGapStatus(status string) (string, error) {
+	return normalizeAnalyticsStatus(status, []string{"pending", "resolved", "ignored"})
+}
+
+func normalizeLowQualityAnswerStatus(status string) (string, error) {
+	return normalizeAnalyticsStatus(status, []string{"open", "resolved", "ignored"})
+}
+
+func normalizeAnalyticsStatus(status string, allowed []string) (string, error) {
+	trimmed := strings.ToLower(strings.TrimSpace(status))
+	if trimmed == "" {
+		return "", fmt.Errorf("status is required")
+	}
+	for _, item := range allowed {
+		if trimmed == item {
+			return trimmed, nil
+		}
+	}
+	return "", fmt.Errorf("invalid status: %s", trimmed)
+}
+
+func (s *SQLiteChatHistoryStore) UpdateFAQCandidateStatus(id, status string) (*model.FAQCandidate, error) {
+	normalized, err := normalizeFAQCandidateStatus(status)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.updateAnalyticsItemStatus("faq_candidates", id, normalized); err != nil {
+		return nil, err
+	}
+	return s.getFAQCandidateByID(id)
+}
+
+func (s *SQLiteChatHistoryStore) UpdateKnowledgeGapStatus(id, status string) (*model.KnowledgeGap, error) {
+	normalized, err := normalizeKnowledgeGapStatus(status)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.updateAnalyticsItemStatus("knowledge_gaps", id, normalized); err != nil {
+		return nil, err
+	}
+	return s.getKnowledgeGapByID(id)
+}
+
+func (s *SQLiteChatHistoryStore) UpdateLowQualityAnswerStatus(id, status string) (*model.LowQualityAnswer, error) {
+	normalized, err := normalizeLowQualityAnswerStatus(status)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.updateAnalyticsItemStatus("low_quality_answers", id, normalized); err != nil {
+		return nil, err
+	}
+	return s.getLowQualityAnswerByID(id)
+}
+
+func (s *SQLiteChatHistoryStore) updateAnalyticsItemStatus(table, id, status string) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("sqlite chat history store is nil")
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("id is required")
+	}
+	result, err := s.db.Exec(`UPDATE `+table+` SET status = ?, updated_at = ? WHERE id = ?`, status, util.NowRFC3339(), id)
+	if err != nil {
+		return fmt.Errorf("update %s status: %w", table, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected %s: %w", table, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("item not found")
+	}
+	return nil
+}
+
+func (s *SQLiteChatHistoryStore) getFAQCandidateByID(id string) (*model.FAQCandidate, error) {
+	var item model.FAQCandidate
+	if err := s.db.QueryRow(`SELECT id, question_normalized, question_text, answer_text, knowledge_base_id, source_message_id, conversation_id, like_count, status, created_at, updated_at FROM faq_candidates WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Scan(&item.ID, &item.QuestionNormalized, &item.QuestionText, &item.AnswerText, &item.KnowledgeBaseID, &item.SourceMessageID, &item.ConversationID, &item.LikeCount, &item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("item not found")
+		}
+		return nil, fmt.Errorf("get faq candidate: %w", err)
+	}
+	return &item, nil
+}
+
+func (s *SQLiteChatHistoryStore) getKnowledgeGapByID(id string) (*model.KnowledgeGap, error) {
+	var item model.KnowledgeGap
+	if err := s.db.QueryRow(`SELECT id, question_normalized, question_text, issue_type, knowledge_base_id, sample_answer, suggested_action, count, status, created_at, updated_at FROM knowledge_gaps WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Scan(&item.ID, &item.QuestionNormalized, &item.QuestionText, &item.IssueType, &item.KnowledgeBaseID, &item.SampleAnswer, &item.SuggestedAction, &item.Count, &item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("item not found")
+		}
+		return nil, fmt.Errorf("get knowledge gap: %w", err)
+	}
+	return &item, nil
+}
+
+func (s *SQLiteChatHistoryStore) getLowQualityAnswerByID(id string) (*model.LowQualityAnswer, error) {
+	var item model.LowQualityAnswer
+	if err := s.db.QueryRow(`SELECT id, source_message_id, conversation_id, question_text, answer_text, knowledge_base_id, primary_reason, dislike_count, status, created_at, updated_at FROM low_quality_answers WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Scan(&item.ID, &item.SourceMessageID, &item.ConversationID, &item.QuestionText, &item.AnswerText, &item.KnowledgeBaseID, &item.PrimaryReason, &item.DislikeCount, &item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("item not found")
+		}
+		return nil, fmt.Errorf("get low quality answer: %w", err)
+	}
+	return &item, nil
+}
+
 func (s *SQLiteChatHistoryStore) feedbackSummaryMap(conversationID string) (map[string]model.ServiceDeskFeedbackSummary, error) {
 	rows, err := s.db.Query(`SELECT message_id,
 		COALESCE(SUM(CASE WHEN feedback_type = 'like' THEN 1 ELSE 0 END), 0) AS like_count,

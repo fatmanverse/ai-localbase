@@ -48,8 +48,11 @@ func NewRouter(appHandler *handler.AppHandler) *gin.Engine {
 			serviceDesk.POST("/messages/:id/feedback", appHandler.SubmitServiceDeskFeedback)
 			serviceDesk.GET("/analytics/summary", appHandler.GetServiceDeskAnalyticsSummary)
 			serviceDesk.GET("/analytics/faq-candidates", appHandler.ListServiceDeskFAQCandidates)
+			serviceDesk.PATCH("/analytics/faq-candidates/:id", appHandler.UpdateServiceDeskFAQCandidateStatus)
 			serviceDesk.GET("/analytics/knowledge-gaps", appHandler.ListServiceDeskKnowledgeGaps)
+			serviceDesk.PATCH("/analytics/knowledge-gaps/:id", appHandler.UpdateServiceDeskKnowledgeGapStatus)
 			serviceDesk.GET("/analytics/low-quality-answers", appHandler.ListServiceDeskLowQualityAnswers)
+			serviceDesk.PATCH("/analytics/low-quality-answers/:id", appHandler.UpdateServiceDeskLowQualityAnswerStatus)
 			serviceDesk.GET("/analytics/feedback", appHandler.ListServiceDeskFeedback)
 		}
 	}
@@ -67,7 +70,7 @@ func corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)

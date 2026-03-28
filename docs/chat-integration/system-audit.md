@@ -89,6 +89,16 @@
 - 重排阶段会对图片型 chunk 做轻量加权，降低“正文压住截图知识”的情况
 - 图片问法下会适度放宽单文档命中限制，避免正文 chunk 把图片 chunk 全部挤掉
 
+### 4. 运营治理：补齐状态流转接口与最简工作台
+
+已完成：
+
+- 新增 FAQ / 知识缺口 / 低质量回答状态更新接口
+- 支持 `candidate / approved / ignored`、`pending / resolved / ignored`、`open / resolved / ignored` 等状态流转
+- 前端新增 `?mode=ops-console` / `/ops` 最简治理页
+- 可直接查看 FAQ 候选、知识缺口、低质量回答和差评反馈
+- 可直接在页面上完成基础状态流转
+
 ---
 
 ## 当前保留为后续待完善项

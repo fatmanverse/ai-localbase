@@ -250,6 +250,29 @@ curl -X POST http://localhost:8080/api/knowledge-bases/<kbId>/reindex
 curl -X POST http://localhost:8080/api/knowledge-bases/<kbId>/documents/<documentId>/reindex
 ```
 
+治理状态流转：
+
+```bash
+curl -X PATCH http://localhost:8080/api/service-desk/analytics/faq-candidates/<id> \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"approved"}'
+
+curl -X PATCH http://localhost:8080/api/service-desk/analytics/knowledge-gaps/<id> \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"resolved"}'
+
+curl -X PATCH http://localhost:8080/api/service-desk/analytics/low-quality-answers/<id> \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"resolved"}'
+```
+
+前端最简治理页：
+
+```text
+http://localhost:5173/?mode=ops-console
+http://localhost:5173/ops
+```
+
 ---
 
 ## Linux 打包 / 镜像
