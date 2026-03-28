@@ -545,12 +545,16 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
 interface ChatAreaProps {
   sidebarOpen: boolean
   activeConversation: Conversation
-  selectedKnowledgeBase: KnowledgeBase | null
-  selectedDocument: DocumentItem | null
+  conversationKnowledgeBase: KnowledgeBase | null
+  conversationDocument: DocumentItem | null
+  knowledgeBases: KnowledgeBase[]
   config: AppConfig
+  welcomeMessage: string
   isLoading: boolean
+  isSwitchingKnowledgeBase?: boolean
   onSendMessage: (content: string) => Promise<void>
   onClearConversation: () => void
+  onChangeConversationKnowledgeBase: (knowledgeBaseId: string) => Promise<void> | void
 }
 
 const suggestedPrompts = [
@@ -568,18 +572,31 @@ const formatTime = (value: string) =>
 const ChatArea: React.FC<ChatAreaProps> = ({
   sidebarOpen,
   activeConversation,
-  selectedKnowledgeBase,
-  selectedDocument,
+  conversationKnowledgeBase,
+  conversationDocument,
+  knowledgeBases,
   config,
+  welcomeMessage,
   isLoading,
+  isSwitchingKnowledgeBase = false,
   onSendMessage,
   onClearConversation,
+  onChangeConversationKnowledgeBase,
 }) => {
   const [inputValue, setInputValue] = useState('')
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
-  const canSend = inputValue.trim().length > 0 && !isLoading
+  const hasBoundKnowledgeBase = Boolean(conversationKnowledgeBase)
+  const currentKnowledgeBaseSelectValue =
+    conversationKnowledgeBase?.id ?? activeConversation.knowledgeBaseId ?? ''
+  const conversationKnowledgeBaseLabel = conversationKnowledgeBase
+    ? `知识库：${conversationKnowledgeBase.name}`
+    : activeConversation.knowledgeBaseId
+      ? '知识库已删除或不可用'
+      : '未绑定知识库'
+  const canAsk = hasBoundKnowledgeBase && !isLoading && !isSwitchingKnowledgeBase
+  const canSend = inputValue.trim().length > 0 && canAsk
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -596,11 +613,13 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     }
   }, [activeConversation.messages])
 
-  const scopeText = selectedDocument
-    ? `文档问答：${selectedDocument.name}`
-    : selectedKnowledgeBase
-      ? `知识库问答：${selectedKnowledgeBase.name}`
-      : '未选择知识库'
+  const scopeText = conversationDocument
+    ? `文档问答：${conversationDocument.name}`
+    : conversationKnowledgeBase
+      ? `知识库问答：${conversationKnowledgeBase.name}`
+      : activeConversation.knowledgeBaseId
+        ? '会话绑定的知识库已失效'
+        : '当前会话未绑定知识库'
 
   const toolbarItems = [
     {
@@ -622,7 +641,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
 
   const handleSubmit = async () => {
     const content = inputValue.trim()
-    if (!content || isLoading) {
+    if (!content || !canAsk) {
       return
     }
 
@@ -657,6 +676,13 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           <span className="chat-topbar-sep">·</span>
           <span className="chat-topbar-hint">{activeConversation.title}</span>
           <span className="chat-topbar-sep">·</span>
+          <span
+            className={`chat-topbar-kb-tag ${conversationKnowledgeBase ? '' : 'is-missing'}`.trim()}
+            title={conversationKnowledgeBaseLabel}
+          >
+            {conversationKnowledgeBaseLabel}
+          </span>
+          <span className="chat-topbar-sep">·</span>
           <span className="chat-topbar-hint">{formatTime(activeConversation.updatedAt)}</span>
         </div>
 
@@ -670,10 +696,33 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         </div>
 
         <div className="chat-topbar-right">
+          <label className="chat-topbar-scope">
+            <span className="chat-topbar-scope-label">知识库</span>
+            <select
+              className="chat-scope-select"
+              value={currentKnowledgeBaseSelectValue}
+              disabled={knowledgeBases.length === 0 || isSwitchingKnowledgeBase}
+              onChange={(event) => {
+                void onChangeConversationKnowledgeBase(event.target.value)
+              }}
+            >
+              {!currentKnowledgeBaseSelectValue ? <option value="">请选择知识库</option> : null}
+              {!conversationKnowledgeBase && activeConversation.knowledgeBaseId ? (
+                <option value={activeConversation.knowledgeBaseId}>当前绑定知识库已失效</option>
+              ) : null}
+              {knowledgeBases.map((knowledgeBase) => (
+                <option key={knowledgeBase.id} value={knowledgeBase.id}>
+                  {knowledgeBase.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <button
             type="button"
             className="chat-clear-btn"
             onClick={onClearConversation}
+            disabled={isSwitchingKnowledgeBase}
           >
             清空对话
           </button>
@@ -684,7 +733,8 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         {activeConversation.messages.length === 0 ? (
           <div className="welcome-message">
             <h2>欢迎使用 AI LocalBase</h2>
-            <p>先选择知识库，或者指定知识库中的单个文档后再进行问答</p>
+            <p>{welcomeMessage}</p>
+            {conversationDocument ? <p>当前文档范围：{conversationDocument.name}</p> : null}
           </div>
         ) : (
           activeConversation.messages.map((message) => {
@@ -814,7 +864,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             key={prompt}
             type="button"
             className="prompt-chip"
-            disabled={isLoading}
+            disabled={!canAsk}
             onClick={() => {
               void onSendMessage(prompt)
             }}
@@ -830,8 +880,15 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             value={inputValue}
             onChange={(event) => setInputValue(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="输入您的问题，Enter 发送，Shift + Enter 换行"
+            placeholder={
+              isSwitchingKnowledgeBase
+                ? '正在切换知识库，请稍候...'
+                : hasBoundKnowledgeBase
+                  ? '输入您的问题，Enter 发送，Shift + Enter 换行'
+                  : '请先为当前会话绑定知识库后再提问'
+            }
             rows={3}
+            disabled={!hasBoundKnowledgeBase || isSwitchingKnowledgeBase}
           />
           <button
             type="button"
@@ -841,7 +898,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             disabled={!canSend}
             className="send-btn"
           >
-            {isLoading ? '发送中...' : '发送'}
+            {isSwitchingKnowledgeBase ? '切换中...' : isLoading ? '发送中...' : '发送'}
           </button>
         </div>
       </div>

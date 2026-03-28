@@ -135,11 +135,30 @@ openai-compatible | https://api.example.com/v1 | gpt-4o-mini | sk-***
 
 ---
 
+## iframe / 外部系统接入
+
+### 推荐接入地址
+```text
+http://服务器IP:4173/embed/kb-it-support
+```
+
+### 无 SPA 路由回退时的兼容地址
+```text
+http://服务器IP:4173/?embed=1&kb=kb-it-support
+```
+
+### 详细部署与交付文档
+- `docs/chat-integration/embed-final.md`
+- `docs/chat-integration/embed-deployment.md`
+- `docs/chat-integration/embed-handoff-template.md`
+
+---
+
 ## 工单机器人 Demo
 
 ### 打开前端演示页
 ```text
-http://localhost:5173/?mode=service-desk-demo
+http://服务器IP:4173/?mode=service-desk-demo
 ```
 
 ### 查看对外聊天接口文档

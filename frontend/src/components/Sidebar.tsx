@@ -94,6 +94,13 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [isComposingTitle, setIsComposingTitle] = useState(false)
 
   const sortedKnowledgeBases = useMemo(() => knowledgeBases, [knowledgeBases])
+  const knowledgeBaseNameById = useMemo(
+    () =>
+      Object.fromEntries(
+        sortedKnowledgeBases.map((knowledgeBase) => [knowledgeBase.id, knowledgeBase.name]),
+      ),
+    [sortedKnowledgeBases],
+  )
 
   const toggleKnowledgeBaseCollapse = (knowledgeBaseId: string) => {
     setCollapsedKnowledgeBases((prev) => ({
@@ -125,6 +132,9 @@ const Sidebar: React.FC<SidebarProps> = ({
               {conversations.map((conversation) => {
                 const isMenuOpen = menuConversationId === conversation.id
                 const isEditing = editingConversationId === conversation.id
+                const conversationKnowledgeBaseName = conversation.knowledgeBaseId
+                  ? knowledgeBaseNameById[conversation.knowledgeBaseId] ?? '知识库已删除'
+                  : '未绑定知识库'
 
                 return (
                   <div
@@ -190,7 +200,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                           }}
                         />
                         <span className="conversation-meta">
-                          {conversation.messages.length} 条消息 · {formatDateTime(conversation.updatedAt)}
+                          {conversationKnowledgeBaseName} · {conversation.messages.length} 条消息 · {formatDateTime(conversation.updatedAt)}
                         </span>
                       </div>
                     ) : (
@@ -205,7 +215,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                           onSelectConversation(conversation.id)
                         }}
                       >
-                        <span className="conversation-title">{conversation.title}</span>
+                        <span className="conversation-title-row-inline">
+                          <span className="conversation-title">{conversation.title}</span>
+                          <span className="conversation-kb-chip">{conversationKnowledgeBaseName}</span>
+                        </span>
                         <span className="conversation-meta">
                           {conversation.messages.length} 条消息 · {formatDateTime(conversation.updatedAt)}
                         </span>

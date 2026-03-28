@@ -20,7 +20,8 @@ export default function ServiceDeskDemoPage() {
         <div className="service-desk-demo-card">
           <h3>接入方式</h3>
           <code>import {'{ ServiceDeskWidget }'} from './src/widget'</code>
-          <p>访问当前 Demo：<code>?mode=service-desk-demo</code></p>
+          <p>组件源码接入：<code>?mode=service-desk-demo</code></p>
+          <p>前端地址嵌入：<code>/embed/kb-1</code></p>
         </div>
       </section>
 

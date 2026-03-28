@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { AppConfig, ChatConfig, CircuitBreakerConfig, EmbeddingConfig, ModelEndpointConfig, recommendedConfig } from '../../App'
+import { AppConfig, ChatConfig, CircuitBreakerConfig, DEFAULT_WELCOME_MESSAGE_TEMPLATE, EmbeddingConfig, ModelEndpointConfig, recommendedConfig } from '../../App'
 
 interface SettingsPanelProps {
   config: AppConfig
@@ -32,6 +32,10 @@ const createRecommendedConfig = (): AppConfig => ({
     ...recommendedConfig.embedding,
     candidates: cloneCandidates(recommendedConfig.embedding.candidates),
     circuitBreaker: { ...recommendedConfig.embedding.circuitBreaker },
+  },
+  ui: {
+    welcomeMessageTemplate:
+      recommendedConfig.ui?.welcomeMessageTemplate || DEFAULT_WELCOME_MESSAGE_TEMPLATE,
   },
 })
 
@@ -195,6 +199,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       embedding: {
         ...prev.embedding,
         [key]: value,
+      },
+    }))
+  }
+
+  const handleWelcomeMessageTemplateChange = (value: string) => {
+    setDraftConfig((prev) => ({
+      ...prev,
+      ui: {
+        ...prev.ui,
+        welcomeMessageTemplate: value,
       },
     }))
   }
@@ -534,6 +548,36 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
             <p className="settings-hint">
               切换 Embedding 模型后，旧文档向量不会自动重建。为了保证检索准确率，请重新上传文档或重建知识库索引。
+            </p>
+          </section>
+
+          <section className="settings-panel-block ai-config-panel single-column">
+            <div className="section-title-row knowledge-panel-header">
+              <h3>界面文案</h3>
+            </div>
+
+            <div className="ai-config-fields">
+              <label className="settings-field settings-field-full">
+                <span>欢迎提示语模板</span>
+                <textarea
+                  rows={4}
+                  value={draftConfig.ui?.welcomeMessageTemplate ?? ''}
+                  onChange={(event) => handleWelcomeMessageTemplateChange(event.target.value)}
+                  placeholder={DEFAULT_WELCOME_MESSAGE_TEMPLATE}
+                />
+                <small>
+                  支持变量
+                  <code>{'{knowledgeBaseHint}'}</code>
+                  和
+                  <code>{'{knowledgeBaseName}'}</code>。
+                  例如：
+                  <code>你好，我是 AI LocalBase 助手。{'{knowledgeBaseHint}'}</code>
+                </small>
+              </label>
+            </div>
+
+            <p className="settings-hint">
+              该文案会用于普通聊天页的新建会话欢迎消息。若模板留空，会自动回退到默认提示语。
             </p>
           </section>
 

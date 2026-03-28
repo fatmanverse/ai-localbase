@@ -24,6 +24,7 @@ const (
 	recommendedContextMessageLimit   = 12
 	recommendedEmbeddingProvider     = "ollama"
 	recommendedEmbeddingModel        = "nomic-embed-text"
+	defaultWelcomeMessageTemplate    = "你好，我是 AI LocalBase 助手。{knowledgeBaseHint}"
 	legacyDefaultChatModel           = "qwen3.5:0.8b"
 	legacyDefaultChatTemperature     = 0.7
 	legacyDefaultContextMessageLimit = 12
@@ -496,6 +497,14 @@ func normalizeConfiguredEndpointCandidates(primary model.ModelEndpointConfig, ca
 	return items
 }
 
+func normalizeWelcomeMessageTemplate(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return defaultWelcomeMessageTemplate
+	}
+	return trimmed
+}
+
 func recommendedAppConfig(serverConfig model.ServerConfig) model.AppConfig {
 	chatPrimary := normalizeConfiguredEndpoint(model.ModelEndpointConfig{
 		Provider: recommendedChatProvider,
@@ -523,6 +532,9 @@ func recommendedAppConfig(serverConfig model.ServerConfig) model.AppConfig {
 			APIKey:         embeddingPrimary.APIKey,
 			Candidates:     nil,
 			CircuitBreaker: normalizeFailoverPolicy(model.FailoverPolicy{}),
+		},
+		UI: model.UIConfig{
+			WelcomeMessageTemplate: normalizeWelcomeMessageTemplate(""),
 		},
 	}
 }
@@ -614,6 +626,9 @@ func normalizeAppConfig(cfg model.AppConfig, serverConfig model.ServerConfig) mo
 			APIKey:         embeddingPrimary.APIKey,
 			Candidates:     embeddingCandidates,
 			CircuitBreaker: normalizeFailoverPolicy(cfg.Embedding.CircuitBreaker),
+		},
+		UI: model.UIConfig{
+			WelcomeMessageTemplate: normalizeWelcomeMessageTemplate(cfg.UI.WelcomeMessageTemplate),
 		},
 	}
 }
@@ -713,6 +728,9 @@ func (s *AppService) UpdateConfig(req model.ConfigUpdateRequest) (model.AppConfi
 			APIKey:         strings.TrimSpace(req.Embedding.APIKey),
 			Candidates:     req.Embedding.Candidates,
 			CircuitBreaker: normalizeFailoverPolicy(req.Embedding.CircuitBreaker),
+		},
+		UI: model.UIConfig{
+			WelcomeMessageTemplate: strings.TrimSpace(req.UI.WelcomeMessageTemplate),
 		},
 	}, s.serverConfig)
 

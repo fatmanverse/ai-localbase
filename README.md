@@ -174,9 +174,39 @@ ollama | http://10.0.0.8:11434 | qwen2.5:14b
 
 ---
 
+## iframe 嵌入入口
+
+推荐使用：
+
+```text
+http://localhost:4173/embed/kb-it-support
+```
+
+如果部署环境暂未配置 SPA 路由回退，可改用：
+
+```text
+http://localhost:4173/?embed=1&kb=kb-it-support
+```
+
+详细说明见：
+
+- `docs/chat-integration/embed-final.md`
+- `docs/chat-integration/embed-deployment.md`
+- `docs/chat-integration/embed-handoff-template.md`
+
+---
+
 ## 常用入口
 
 ### 服务台机器人 Demo
+
+Docker 部署后：
+
+```text
+http://localhost:4173/?mode=service-desk-demo
+```
+
+前端本地开发模式：
 
 ```text
 http://localhost:5173/?mode=service-desk-demo

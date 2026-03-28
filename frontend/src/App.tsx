@@ -20,6 +20,8 @@ export interface ChatMessage {
 export interface Conversation {
   id: string
   title: string
+  knowledgeBaseId: string
+  documentId: string
   messages: ChatMessage[]
   createdAt: string
   updatedAt: string
@@ -92,9 +94,14 @@ export interface EmbeddingConfig {
   circuitBreaker: CircuitBreakerConfig
 }
 
+export interface UIConfig {
+  welcomeMessageTemplate: string
+}
+
 export interface AppConfig {
   chat: ChatConfig
   embedding: EmbeddingConfig
+  ui: UIConfig
 }
 
 interface ChatCompletionResponse {
@@ -146,6 +153,8 @@ interface StreamEventPayload {
 
 const API_BASE_PATH = ''
 
+export const DEFAULT_WELCOME_MESSAGE_TEMPLATE = '你好，我是 AI LocalBase 助手。{knowledgeBaseHint}'
+
 export const recommendedConfig: AppConfig = {
   chat: {
     provider: 'ollama',
@@ -173,6 +182,9 @@ export const recommendedConfig: AppConfig = {
       halfOpenMaxRequests: 1,
     },
   },
+  ui: {
+    welcomeMessageTemplate: DEFAULT_WELCOME_MESSAGE_TEMPLATE,
+  },
 }
 
 const cloneAppConfig = (config: AppConfig): AppConfig => ({
@@ -185,6 +197,9 @@ const cloneAppConfig = (config: AppConfig): AppConfig => ({
     ...config.embedding,
     candidates: (config.embedding.candidates ?? []).map((item) => ({ ...item })),
     circuitBreaker: { ...(config.embedding.circuitBreaker ?? recommendedConfig.embedding.circuitBreaker) },
+  },
+  ui: {
+    welcomeMessageTemplate: config.ui?.welcomeMessageTemplate?.trim() || DEFAULT_WELCOME_MESSAGE_TEMPLATE,
   },
 })
 
@@ -215,6 +230,7 @@ interface KnowledgeBaseListResponse {
 interface ConfigResponse {
   chat: ChatConfig
   embedding: EmbeddingConfig
+  ui: UIConfig
 }
 
 interface BackendConversationListItem {
@@ -298,6 +314,8 @@ const isDegradedFallbackContent = (content: string): boolean => {
 const normalizeConversation = (conversation: BackendConversation): Conversation => ({
   id: conversation.id,
   title: conversation.title,
+  knowledgeBaseId: conversation.knowledgeBaseId ?? '',
+  documentId: conversation.documentId ?? '',
   createdAt: conversation.createdAt,
   updatedAt: conversation.updatedAt,
   messages: (conversation.messages ?? []).map((message) => ({
@@ -309,25 +327,49 @@ const normalizeConversation = (conversation: BackendConversation): Conversation 
   })),
 })
 
-const createWelcomeConversation = (): Conversation => {
+const resolveKnowledgeBaseHint = (knowledgeBaseName?: string | null) =>
+  knowledgeBaseName?.trim()
+    ? `当前会话已固定绑定知识库「${knowledgeBaseName.trim()}」，你可以直接开始提问。`
+    : '请先新建会话并选择知识库后再提问。'
+
+const buildWelcomeMessage = (welcomeMessageTemplate?: string, knowledgeBaseName?: string | null) => {
+  const normalizedTemplate = welcomeMessageTemplate?.trim() || DEFAULT_WELCOME_MESSAGE_TEMPLATE
+  const trimmedKnowledgeBaseName = knowledgeBaseName?.trim() ?? ''
+
+  return normalizedTemplate
+    .replace(/\{knowledgeBaseName\}/g, trimmedKnowledgeBaseName)
+    .replace(/\{knowledgeBaseHint\}/g, resolveKnowledgeBaseHint(knowledgeBaseName))
+}
+
+const createWelcomeConversation = (options?: {
+  knowledgeBaseId?: string
+  documentId?: string
+  knowledgeBaseName?: string | null
+  welcomeMessageTemplate?: string
+}): Conversation => {
   const now = new Date().toISOString()
 
   return {
     id: createId(),
     title: '新的对话',
+    knowledgeBaseId: options?.knowledgeBaseId ?? '',
+    documentId: options?.documentId ?? '',
     createdAt: now,
     updatedAt: now,
     messages: [
       {
         id: createId(),
         role: 'assistant',
-        content:
-          '你好，我是 AI LocalBase 助手。你可以先选择知识库，或者进一步选中某个文档后再提问。',
+        content: buildWelcomeMessage(options?.welcomeMessageTemplate, options?.knowledgeBaseName),
         timestamp: now,
       },
     ],
   }
 }
+
+const isConversationLocalOnly = (conversation: Conversation) =>
+  conversation.messages.length > 0 &&
+  !conversation.messages.some((message) => message.role === 'user')
 
 const extractErrorMessage = async (response: Response) => {
   try {
@@ -475,12 +517,15 @@ function App() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
   const [streamingConversationId, setStreamingConversationId] = useState<string | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>(() => {
-    const initialConversation = createWelcomeConversation()
+    const initialConversation = createWelcomeConversation({ welcomeMessageTemplate: DEFAULT_WELCOME_MESSAGE_TEMPLATE })
     return [initialConversation]
   })
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState<string | null>(null)
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null)
+  const [isCreateConversationModalOpen, setIsCreateConversationModalOpen] = useState(false)
+  const [pendingConversationKnowledgeBaseId, setPendingConversationKnowledgeBaseId] = useState<string>('')
+  const [isSwitchingConversationKnowledgeBase, setIsSwitchingConversationKnowledgeBase] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isKnowledgePanelOpen, setIsKnowledgePanelOpen] = useState(false)
   const [config, setConfig] = useState<AppConfig>(() => cloneAppConfig(recommendedConfig))
@@ -497,6 +542,34 @@ function App() {
 
   const loadConversationDetail = async (conversationId: string): Promise<Conversation> => {
     const response = await fetch(`${API_BASE_PATH}/api/conversations/${conversationId}`)
+    if (!response.ok) {
+      throw new Error(await extractErrorMessage(response))
+    }
+
+    return normalizeConversation((await response.json()) as BackendConversation)
+  }
+
+  const saveConversationSnapshot = async (conversation: Conversation) => {
+    const response = await fetch(`${API_BASE_PATH}/api/conversations/${conversation.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        id: conversation.id,
+        title: conversation.title,
+        knowledgeBaseId: conversation.knowledgeBaseId,
+        documentId: conversation.documentId,
+        messages: conversation.messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          createdAt: message.timestamp,
+          metadata: message.metadata,
+        })),
+      }),
+    })
+
     if (!response.ok) {
       throw new Error(await extractErrorMessage(response))
     }
@@ -521,17 +594,29 @@ function App() {
     )
   }, [knowledgeBases, selectedKnowledgeBaseId])
 
-  const selectedDocument = useMemo(() => {
-    if (!selectedKnowledgeBase || !selectedDocumentId) {
+  const activeConversationKnowledgeBase = useMemo(() => {
+    if (!activeConversation?.knowledgeBaseId) {
       return null
     }
 
     return (
-      selectedKnowledgeBase.documents.find(
-        (document) => document.id === selectedDocumentId,
+      knowledgeBases.find(
+        (knowledgeBase) => knowledgeBase.id === activeConversation.knowledgeBaseId,
       ) ?? null
     )
-  }, [selectedDocumentId, selectedKnowledgeBase])
+  }, [activeConversation?.knowledgeBaseId, knowledgeBases])
+
+  const activeConversationDocument = useMemo(() => {
+    if (!activeConversationKnowledgeBase || !activeConversation?.documentId) {
+      return null
+    }
+
+    return (
+      activeConversationKnowledgeBase.documents.find(
+        (document) => document.id === activeConversation.documentId,
+      ) ?? null
+    )
+  }, [activeConversation?.documentId, activeConversationKnowledgeBase])
 
   useEffect(() => {
     uploadTasksByKnowledgeBaseRef.current = uploadTasksByKnowledgeBase
@@ -598,12 +683,27 @@ function App() {
           const restConversations = conversationItems.slice(1).map((conversation) => ({
             id: conversation.id,
             title: conversation.title,
+            knowledgeBaseId: conversation.knowledgeBaseId ?? '',
+            documentId: conversation.documentId ?? '',
             createdAt: conversation.createdAt,
             updatedAt: conversation.updatedAt,
             messages: [],
           }))
           setConversations([firstConversation, ...restConversations])
           setActiveConversationId(firstConversation.id)
+          setSelectedKnowledgeBaseId((firstConversation.knowledgeBaseId || nextKnowledgeBases[0]?.id) ?? null)
+          setSelectedDocumentId(firstConversation.documentId || null)
+        } else {
+          const fallbackKnowledgeBase = nextKnowledgeBases[0] ?? null
+          const initialConversation = createWelcomeConversation({
+            knowledgeBaseId: fallbackKnowledgeBase?.id ?? '',
+            knowledgeBaseName: fallbackKnowledgeBase?.name ?? null,
+            welcomeMessageTemplate: cloneAppConfig(configData).ui.welcomeMessageTemplate,
+          })
+          setConversations([initialConversation])
+          setActiveConversationId(initialConversation.id)
+          setSelectedKnowledgeBaseId(fallbackKnowledgeBase?.id ?? null)
+          setSelectedDocumentId(null)
         }
       } catch (error) {
         const message =
@@ -634,16 +734,124 @@ function App() {
   }, [])
 
   const handleCreateConversation = () => {
-    const conversation = createWelcomeConversation()
+    if (knowledgeBases.length === 0) {
+      window.alert('当前没有可用知识库，请先创建知识库。')
+      return
+    }
+
+    setPendingConversationKnowledgeBaseId(
+      selectedKnowledgeBaseId ?? activeConversation?.knowledgeBaseId ?? knowledgeBases[0]?.id ?? '',
+    )
+    setIsCreateConversationModalOpen(true)
+  }
+
+  const handleConfirmCreateConversation = () => {
+    const targetKnowledgeBase =
+      knowledgeBases.find((knowledgeBase) => knowledgeBase.id === pendingConversationKnowledgeBaseId) ??
+      knowledgeBases[0]
+
+    if (!targetKnowledgeBase) {
+      window.alert('当前没有可用知识库，请先创建知识库。')
+      return
+    }
+
+    const conversation = createWelcomeConversation({
+      knowledgeBaseId: targetKnowledgeBase.id,
+      knowledgeBaseName: targetKnowledgeBase.name,
+      welcomeMessageTemplate: config.ui.welcomeMessageTemplate,
+    })
 
     setConversations((prev) => [conversation, ...prev])
     setActiveConversationId(conversation.id)
+    setSelectedKnowledgeBaseId(targetKnowledgeBase.id)
+    setSelectedDocumentId(null)
+    setIsCreateConversationModalOpen(false)
+  }
+
+  const handleChangeConversationKnowledgeBase = async (knowledgeBaseId: string) => {
+    if (!activeConversation) {
+      return
+    }
+
+    const targetKnowledgeBase = knowledgeBases.find(
+      (knowledgeBase) => knowledgeBase.id === knowledgeBaseId,
+    )
+
+    if (!targetKnowledgeBase) {
+      window.alert('目标知识库不存在或已被删除，请刷新后重试。')
+      return
+    }
+
+    if (activeConversation.knowledgeBaseId === targetKnowledgeBase.id) {
+      setSelectedKnowledgeBaseId(targetKnowledgeBase.id)
+      setSelectedDocumentId(null)
+      return
+    }
+
+    const nextTimestamp = new Date().toISOString()
+    const nextMessages =
+      isConversationLocalOnly(activeConversation) &&
+      activeConversation.messages.length === 1 &&
+      activeConversation.messages[0]?.role === 'assistant'
+        ? [
+            {
+              ...activeConversation.messages[0],
+              content: buildWelcomeMessage(config.ui.welcomeMessageTemplate, targetKnowledgeBase.name),
+              timestamp: nextTimestamp,
+            },
+          ]
+        : activeConversation.messages
+
+    const nextConversation: Conversation = {
+      ...activeConversation,
+      knowledgeBaseId: targetKnowledgeBase.id,
+      documentId: '',
+      messages: nextMessages,
+      updatedAt: nextTimestamp,
+    }
+
+    const previousConversation = activeConversation
+
+    setIsSwitchingConversationKnowledgeBase(true)
+    setConversations((prev) =>
+      prev.map((conversation) =>
+        conversation.id === activeConversation.id ? nextConversation : conversation,
+      ),
+    )
+    setSelectedKnowledgeBaseId(targetKnowledgeBase.id)
+    setSelectedDocumentId(null)
+
+    try {
+      const savedConversation = await saveConversationSnapshot(nextConversation)
+      setConversations((prev) =>
+        prev.map((conversation) =>
+          conversation.id === savedConversation.id ? savedConversation : conversation,
+        ),
+      )
+      setSelectedKnowledgeBaseId(savedConversation.knowledgeBaseId || null)
+      setSelectedDocumentId(savedConversation.documentId || null)
+    } catch (error) {
+      setConversations((prev) =>
+        prev.map((conversation) =>
+          conversation.id === previousConversation.id ? previousConversation : conversation,
+        ),
+      )
+      setSelectedKnowledgeBaseId(previousConversation.knowledgeBaseId || null)
+      setSelectedDocumentId(previousConversation.documentId || null)
+      const message =
+        error instanceof Error ? error.message : '切换会话知识库失败，请稍后重试。'
+      window.alert(`切换会话知识库失败：${message}`)
+    } finally {
+      setIsSwitchingConversationKnowledgeBase(false)
+    }
   }
 
   const handleSelectConversation = async (conversationId: string) => {
     const existingConversation = conversations.find((conversation) => conversation.id === conversationId)
     if (existingConversation && existingConversation.messages.length > 0) {
       setActiveConversationId(conversationId)
+      setSelectedKnowledgeBaseId(existingConversation.knowledgeBaseId || null)
+      setSelectedDocumentId(existingConversation.documentId || null)
       return
     }
 
@@ -655,6 +863,8 @@ function App() {
         ),
       )
       setActiveConversationId(conversationId)
+      setSelectedKnowledgeBaseId(loadedConversation.knowledgeBaseId || null)
+      setSelectedDocumentId(loadedConversation.documentId || null)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : '加载会话失败，请稍后重试。'
@@ -673,7 +883,7 @@ function App() {
       return
     }
 
-    const isLocalOnly = targetConversation.messages.length > 0 && !targetConversation.messages.some((message) => message.role === 'user')
+    const isLocalOnly = isConversationLocalOnly(targetConversation)
 
     if (isLocalOnly) {
       setConversations((prev) =>
@@ -704,8 +914,8 @@ function App() {
         body: JSON.stringify({
           id: fullConversation.id,
           title: nextTitle,
-          knowledgeBaseId: '',
-          documentId: '',
+          knowledgeBaseId: fullConversation.knowledgeBaseId,
+          documentId: fullConversation.documentId,
           messages: fullConversation.messages.map((message) => ({
             id: message.id,
             role: message.role,
@@ -743,7 +953,7 @@ function App() {
       return
     }
 
-    const isLocalOnly = targetConversation.messages.length > 0 && !targetConversation.messages.some((message) => message.role === 'user')
+    const isLocalOnly = isConversationLocalOnly(targetConversation)
 
     try {
       if (!isLocalOnly) {
@@ -762,7 +972,15 @@ function App() {
       const fallbackConversation =
         remainingConversations[0] ??
         (() => {
-          const conversation = createWelcomeConversation()
+          const fallbackKnowledgeBase =
+            knowledgeBases.find((knowledgeBase) => knowledgeBase.id === selectedKnowledgeBaseId) ??
+            knowledgeBases[0] ??
+            null
+          const conversation = createWelcomeConversation({
+            knowledgeBaseId: fallbackKnowledgeBase?.id ?? '',
+            knowledgeBaseName: fallbackKnowledgeBase?.name ?? null,
+            welcomeMessageTemplate: config.ui.welcomeMessageTemplate,
+          })
           return conversation
         })()
 
@@ -772,6 +990,8 @@ function App() {
 
       if (activeConversationId === conversationId) {
         setActiveConversationId(fallbackConversation.id)
+        setSelectedKnowledgeBaseId(fallbackConversation.knowledgeBaseId || null)
+        setSelectedDocumentId(fallbackConversation.documentId || null)
       }
     } catch (error) {
       const message =
@@ -788,7 +1008,9 @@ function App() {
     const resetMessage: ChatMessage = {
       id: createId(),
       role: 'assistant',
-      content: '当前会话已清空。你可以继续发起新的提问。',
+      content: activeConversationKnowledgeBase
+        ? `当前会话已清空，已保留知识库「${activeConversationKnowledgeBase.name}」。你可以继续发起新的提问。`
+        : '当前会话已清空。你可以继续发起新的提问。',
       timestamp: new Date().toISOString(),
     }
 
@@ -1349,7 +1571,23 @@ function App() {
   }
 
   const handleSendMessage = async (content: string) => {
-    if (!activeConversation || streamingConversationId) {
+    if (!activeConversation || streamingConversationId || isSwitchingConversationKnowledgeBase) {
+      return
+    }
+
+    const conversationKnowledgeBaseId = activeConversation.knowledgeBaseId || selectedKnowledgeBaseId || ''
+    const conversationDocumentId = activeConversation.documentId || ''
+
+    if (!conversationKnowledgeBaseId) {
+      window.alert('当前会话尚未绑定知识库，请先选择知识库后再提问。')
+      return
+    }
+
+    const knowledgeBaseExists = knowledgeBases.some(
+      (knowledgeBase) => knowledgeBase.id === conversationKnowledgeBaseId,
+    )
+    if (!knowledgeBaseExists) {
+      window.alert('当前会话绑定的知识库已不可用，请先切换到可用知识库后再提问。')
       return
     }
 
@@ -1374,8 +1612,8 @@ function App() {
     const requestBody: ChatRequestBody = {
       conversationId,
       model: config.chat.model,
-      knowledgeBaseId: selectedKnowledgeBaseId ?? '',
-      documentId: selectedDocumentId ?? '',
+      knowledgeBaseId: conversationKnowledgeBaseId,
+      documentId: conversationDocumentId,
       config: config.chat,
       embedding: config.embedding,
       messages: nextMessages.map((message) => ({
@@ -1591,15 +1829,53 @@ function App() {
         throw new Error(await extractErrorMessage(response))
       }
 
-      const savedConfig = (await response.json()) as ConfigResponse
+      const savedConfig = cloneAppConfig((await response.json()) as ConfigResponse)
+      const chatChanged = JSON.stringify(config.chat) !== JSON.stringify(savedConfig.chat)
       const embeddingChanged =
         JSON.stringify(config.embedding) !== JSON.stringify(savedConfig.embedding)
+      const welcomeTemplateChanged =
+        config.ui.welcomeMessageTemplate !== savedConfig.ui.welcomeMessageTemplate
 
-      setConfig(cloneAppConfig(savedConfig))
-      setConfigSaveSuccess('配置已保存，新的聊天模型与向量模型已生效。')
+      setConfig(savedConfig)
+
+      if (welcomeTemplateChanged) {
+        setConversations((prev) =>
+          prev.map((conversation) => {
+            if (
+              !isConversationLocalOnly(conversation) ||
+              conversation.messages.length !== 1 ||
+              conversation.messages[0]?.role !== 'assistant'
+            ) {
+              return conversation
+            }
+
+            const knowledgeBaseName =
+              knowledgeBases.find((knowledgeBase) => knowledgeBase.id === conversation.knowledgeBaseId)?.name ?? null
+            const nextTimestamp = new Date().toISOString()
+
+            return {
+              ...conversation,
+              messages: [
+                {
+                  ...conversation.messages[0],
+                  content: buildWelcomeMessage(savedConfig.ui.welcomeMessageTemplate, knowledgeBaseName),
+                  timestamp: nextTimestamp,
+                },
+              ],
+              updatedAt: nextTimestamp,
+            }
+          }),
+        )
+      }
 
       if (embeddingChanged) {
         setConfigSaveSuccess('配置已保存。Embedding 模型已变更，请重新上传文档或重建知识库索引。')
+      } else if (chatChanged) {
+        setConfigSaveSuccess('配置已保存，新的聊天模型配置已生效。')
+      } else if (welcomeTemplateChanged) {
+        setConfigSaveSuccess('配置已保存，新的欢迎提示语已生效。')
+      } else {
+        setConfigSaveSuccess('配置已保存。')
       }
     } catch (error) {
       setConfigSaveError(
@@ -1671,13 +1947,87 @@ function App() {
       <ChatArea
         sidebarOpen={sidebarOpen}
         activeConversation={activeConversation}
-        selectedKnowledgeBase={selectedKnowledgeBase}
-        selectedDocument={selectedDocument}
+        conversationKnowledgeBase={activeConversationKnowledgeBase}
+        conversationDocument={activeConversationDocument}
+        knowledgeBases={knowledgeBases}
         config={config}
+        welcomeMessage={buildWelcomeMessage(config.ui.welcomeMessageTemplate, activeConversationKnowledgeBase?.name)}
         isLoading={streamingConversationId === activeConversation?.id}
+        isSwitchingKnowledgeBase={isSwitchingConversationKnowledgeBase}
         onSendMessage={handleSendMessage}
         onClearConversation={handleClearConversation}
+        onChangeConversationKnowledgeBase={handleChangeConversationKnowledgeBase}
       />
+
+      {isCreateConversationModalOpen && (
+        <div
+          className="settings-modal-backdrop conversation-scope-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="conversation-scope-modal-title"
+        >
+          <div className="settings-modal conversation-scope-modal">
+            <div className="settings-modal-header">
+              <div>
+                <h3 id="conversation-scope-modal-title">新建会话并绑定知识库</h3>
+                <p>每个普通聊天会话固定绑定一个知识库，后续问答默认使用该知识库。</p>
+              </div>
+              <button
+                type="button"
+                className="settings-close-btn"
+                onClick={() => setIsCreateConversationModalOpen(false)}
+              >
+                取消
+              </button>
+            </div>
+
+            <div className="settings-modal-scroll">
+              <div className="conversation-scope-list">
+                {knowledgeBases.map((knowledgeBase) => {
+                  const isActive = knowledgeBase.id === pendingConversationKnowledgeBaseId
+
+                  return (
+                    <button
+                      key={knowledgeBase.id}
+                      type="button"
+                      className={`conversation-scope-card ${isActive ? 'active' : ''}`}
+                      onClick={() => setPendingConversationKnowledgeBaseId(knowledgeBase.id)}
+                    >
+                      <div className="conversation-scope-card-title-row">
+                        <span className="conversation-scope-card-title">{knowledgeBase.name}</span>
+                        <span className="conversation-scope-card-meta">
+                          {knowledgeBase.documents.length} 个文档
+                        </span>
+                      </div>
+                      <div className="conversation-scope-card-desc">
+                        {knowledgeBase.description || '未填写知识库描述'}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="conversation-scope-actions">
+              <button
+                type="button"
+                className="kb-cancel-btn"
+                onClick={() => setIsCreateConversationModalOpen(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="kb-confirm-btn"
+                onClick={handleConfirmCreateConversation}
+                disabled={!pendingConversationKnowledgeBaseId && knowledgeBases.length === 0}
+              >
+                创建会话
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

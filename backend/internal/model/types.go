@@ -66,9 +66,14 @@ type EmbeddingConfig struct {
 	CircuitBreaker FailoverPolicy        `json:"circuitBreaker"`
 }
 
+type UIConfig struct {
+	WelcomeMessageTemplate string `json:"welcomeMessageTemplate"`
+}
+
 type AppConfig struct {
 	Chat      ChatConfig      `json:"chat"`
 	Embedding EmbeddingConfig `json:"embedding"`
+	UI        UIConfig        `json:"ui"`
 }
 
 type KnowledgeBase struct {
@@ -156,6 +161,7 @@ type ChatCompletionResponse struct {
 type ConfigUpdateRequest struct {
 	Chat      ChatConfig      `json:"chat"`
 	Embedding EmbeddingConfig `json:"embedding"`
+	UI        UIConfig        `json:"ui"`
 }
 
 type Conversation struct {

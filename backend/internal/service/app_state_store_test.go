@@ -148,6 +148,9 @@ func TestNewAppServiceUsesRecommendedDefaultConfig(t *testing.T) {
 	if cfg.Embedding.Model != recommendedEmbeddingModel {
 		t.Fatalf("expected recommended embedding model %s, got %s", recommendedEmbeddingModel, cfg.Embedding.Model)
 	}
+	if cfg.UI.WelcomeMessageTemplate != defaultWelcomeMessageTemplate {
+		t.Fatalf("expected default welcome message template %q, got %q", defaultWelcomeMessageTemplate, cfg.UI.WelcomeMessageTemplate)
+	}
 }
 
 func TestNewAppServiceMigratesLegacyDefaultConfig(t *testing.T) {
