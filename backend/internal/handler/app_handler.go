@@ -43,7 +43,7 @@ func NewAppHandler(serverConfig model.ServerConfig, appService *service.AppServi
 func (h *AppHandler) Root(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"name":    "AI LocalBase Backend",
-		"version": "v0.4.9",
+		"version": "v0.5.0",
 		"status":  "running",
 	})
 }
@@ -187,6 +187,20 @@ func (h *AppHandler) ListDocuments(c *gin.Context) {
 		"knowledgeBaseId": c.Param("id"),
 		"items":           items,
 	})
+}
+
+func (h *AppHandler) UpdateDocumentFAQCollection(c *gin.Context) {
+	var req model.DocumentFAQCollectionUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeError(c, http.StatusBadRequest, "invalid document faq collection request body")
+		return
+	}
+	document, err := h.appService.UpdateDocumentFAQCollection(c.Param("id"), c.Param("documentId"), req)
+	if err != nil {
+		writeError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, document)
 }
 
 func (h *AppHandler) UploadToKnowledgeBase(c *gin.Context) {

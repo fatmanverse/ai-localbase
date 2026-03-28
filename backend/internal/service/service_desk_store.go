@@ -70,6 +70,19 @@ func (s *SQLiteChatHistoryStore) initServiceDeskTables() error {
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_message_feedback_message_id ON message_feedback(message_id, created_at DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_message_feedback_type ON message_feedback(feedback_type, created_at DESC);`,
+		`CREATE TABLE IF NOT EXISTS faq_publish_history (
+			id TEXT PRIMARY KEY,
+			faq_candidate_id TEXT NOT NULL,
+			knowledge_base_id TEXT NOT NULL DEFAULT '',
+			document_id TEXT NOT NULL DEFAULT '',
+			document_name TEXT NOT NULL DEFAULT '',
+			publish_mode TEXT NOT NULL DEFAULT '',
+			published_by TEXT NOT NULL DEFAULT '',
+			published_at TEXT NOT NULL,
+			question_text TEXT NOT NULL DEFAULT '',
+			answer_text TEXT NOT NULL DEFAULT ''
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_faq_publish_history_candidate ON faq_publish_history(faq_candidate_id, published_at DESC);`,
 		`CREATE TABLE IF NOT EXISTS faq_candidates (
 			id TEXT PRIMARY KEY,
 			question_normalized TEXT NOT NULL UNIQUE,
@@ -873,7 +886,7 @@ func (s *SQLiteChatHistoryStore) PublishFAQCandidate(id string, question string,
 	return s.getFAQCandidateByID(id)
 }
 
-func (s *SQLiteChatHistoryStore) RecordFAQCandidateKnowledgeBasePublish(id, knowledgeBaseID, documentID, documentName, publishMode, publishedBy string) (*model.FAQCandidate, error) {
+func (s *SQLiteChatHistoryStore) RecordFAQCandidateKnowledgeBasePublish(id, knowledgeBaseID, documentID, documentName, publishMode, publishedBy, questionText, answerText string) (*model.FAQCandidate, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("sqlite chat history store is nil")
 	}
@@ -890,7 +903,14 @@ func (s *SQLiteChatHistoryStore) RecordFAQCandidateKnowledgeBasePublish(id, know
 	if updatedBy == "" {
 		updatedBy = "ops-console"
 	}
-	result, err := s.db.Exec(`UPDATE faq_candidates SET last_published_knowledge_base_id = ?, last_published_document_id = ?, last_published_document_name = ?, last_publish_mode = ?, last_published_to_knowledge_at = ?, knowledge_base_publish_count = knowledge_base_publish_count + 1, updated_by = ?, updated_at = ? WHERE id = ?`, strings.TrimSpace(knowledgeBaseID), strings.TrimSpace(documentID), strings.TrimSpace(documentName), mode, now, updatedBy, now, id)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("begin faq publish history tx: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	result, err := tx.Exec(`UPDATE faq_candidates SET last_published_knowledge_base_id = ?, last_published_document_id = ?, last_published_document_name = ?, last_publish_mode = ?, last_published_to_knowledge_at = ?, knowledge_base_publish_count = knowledge_base_publish_count + 1, updated_by = ?, updated_at = ? WHERE id = ?`, strings.TrimSpace(knowledgeBaseID), strings.TrimSpace(documentID), strings.TrimSpace(documentName), mode, now, updatedBy, now, id)
 	if err != nil {
 		return nil, fmt.Errorf("record faq candidate knowledge base publish: %w", err)
 	}
@@ -901,7 +921,40 @@ func (s *SQLiteChatHistoryStore) RecordFAQCandidateKnowledgeBasePublish(id, know
 	if affected == 0 {
 		return nil, fmt.Errorf("item not found")
 	}
+	if _, err := tx.Exec(`INSERT INTO faq_publish_history (id, faq_candidate_id, knowledge_base_id, document_id, document_name, publish_mode, published_by, published_at, question_text, answer_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, util.NextID("faqpub"), id, strings.TrimSpace(knowledgeBaseID), strings.TrimSpace(documentID), strings.TrimSpace(documentName), mode, updatedBy, now, strings.TrimSpace(questionText), strings.TrimSpace(answerText)); err != nil {
+		return nil, fmt.Errorf("insert faq publish history: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit faq publish history tx: %w", err)
+	}
 	return s.getFAQCandidateByID(id)
+}
+
+func (s *SQLiteChatHistoryStore) ListFAQPublishHistoryByCandidate(id string, limit int) ([]model.FAQPublishHistoryItem, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("sqlite chat history store is nil")
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, fmt.Errorf("id is required")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.Query(`SELECT id, faq_candidate_id, knowledge_base_id, document_id, document_name, publish_mode, published_by, published_at, question_text, answer_text FROM faq_publish_history WHERE faq_candidate_id = ? ORDER BY published_at DESC, id DESC LIMIT ?`, id, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list faq publish history: %w", err)
+	}
+	defer rows.Close()
+	items := make([]model.FAQPublishHistoryItem, 0)
+	for rows.Next() {
+		var item model.FAQPublishHistoryItem
+		if err := rows.Scan(&item.ID, &item.FAQCandidateID, &item.KnowledgeBaseID, &item.DocumentID, &item.DocumentName, &item.PublishMode, &item.PublishedBy, &item.PublishedAt, &item.QuestionText, &item.AnswerText); err != nil {
+			return nil, fmt.Errorf("scan faq publish history: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (s *SQLiteChatHistoryStore) UpdateKnowledgeGapStatus(id string, req model.AnalyticsStatusUpdateRequest) (*model.KnowledgeGap, error) {

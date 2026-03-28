@@ -265,7 +265,7 @@ curl -X POST http://localhost:8080/api/service-desk/analytics/faq-candidates/<id
 ```bash
 curl -X POST http://localhost:8080/api/service-desk/analytics/faq-candidates/<id>/publish-to-kb \
   -H 'Content-Type: application/json' \
-  -d '{"question":"Redis 的核心特点是什么？","answer":"Redis 适合高性能缓存、结构化数据读写和快速恢复场景。","publishedBy":"ops-faq-publisher","note":"已整理为 FAQ 草稿并同步知识库","knowledgeBaseId":"<kbId>","documentName":"FAQ-Redis-核心特点.md","publishMode":"create_new"}'
+  -d '{"question":"Redis 的核心特点是什么？","answer":"Redis 适合高性能缓存、结构化数据读写和快速恢复场景。","publishedBy":"ops-faq-publisher","note":"已整理为 FAQ 草稿并同步知识库","knowledgeBaseId":"<kbId>","documentName":"FAQ-Redis-核心特点.md","publishMode":"create_new","markAsDefaultCollection":true}'
 ```
 
 把 FAQ 追加到已有 FAQ 合集文档：
@@ -284,6 +284,20 @@ curl -X POST http://localhost:8080/api/service-desk/analytics/faq-candidates/<id
 
 - 系统会优先推荐最近一次发布过的 FAQ 文档；如果没有历史记录，会优先推荐名字看起来像 FAQ 合集 / 常见问题的文档
 - FAQ 候选会记录最近一次发布到哪个知识库、哪个文档、用了什么模式，以及累计发布次数
+
+查看 FAQ 发布历史：
+
+```bash
+curl -s "http://localhost:8080/api/service-desk/analytics/faq-candidates/<id>/publish-history?limit=10" | jq .
+```
+
+把某份知识库文档设为默认 FAQ 合集：
+
+```bash
+curl -X PATCH http://localhost:8080/api/knowledge-bases/<kbId>/documents/<docId>/faq-collection \
+  -H 'Content-Type: application/json' \
+  -d '{"isFaqCollection":true,"isDefaultFaqCollection":true}'
+```
 
 重建索引：
 

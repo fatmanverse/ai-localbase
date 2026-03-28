@@ -37,6 +37,7 @@ func NewRouter(appHandler *handler.AppHandler) *gin.Engine {
 		api.POST("/knowledge-bases/:id/reindex", appHandler.ReindexKnowledgeBase)
 		api.POST("/knowledge-bases/:id/documents/:documentId/reindex", appHandler.ReindexDocument)
 		api.DELETE("/knowledge-bases/:id/documents/:documentId", appHandler.DeleteDocument)
+		api.PATCH("/knowledge-bases/:id/documents/:documentId/faq-collection", appHandler.UpdateDocumentFAQCollection)
 
 		serviceDesk := api.Group("/service-desk")
 		{
@@ -51,6 +52,7 @@ func NewRouter(appHandler *handler.AppHandler) *gin.Engine {
 			serviceDesk.GET("/analytics/export", appHandler.ExportServiceDeskAnalytics)
 			serviceDesk.GET("/analytics/faq-candidates", appHandler.ListServiceDeskFAQCandidates)
 			serviceDesk.PATCH("/analytics/faq-candidates/:id", appHandler.UpdateServiceDeskFAQCandidateStatus)
+			serviceDesk.GET("/analytics/faq-candidates/:id/publish-history", appHandler.ListServiceDeskFAQPublishHistory)
 			serviceDesk.PATCH("/analytics/faq-candidates/batch", appHandler.BatchUpdateServiceDeskFAQCandidates)
 			serviceDesk.POST("/analytics/faq-candidates/:id/publish", appHandler.PublishServiceDeskFAQCandidate)
 			serviceDesk.POST("/analytics/faq-candidates/:id/publish-to-kb", appHandler.PublishServiceDeskFAQCandidateToKnowledgeBase)

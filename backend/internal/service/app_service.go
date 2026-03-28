@@ -874,6 +874,70 @@ func (s *AppService) GetKnowledgeBaseDocuments(id string) ([]model.Document, err
 	return kb.Documents, nil
 }
 
+func (s *AppService) UpdateDocumentFAQCollection(knowledgeBaseID, documentID string, req model.DocumentFAQCollectionUpdateRequest) (model.Document, error) {
+	if s == nil {
+		return model.Document{}, fmt.Errorf("app service is nil")
+	}
+	knowledgeBaseID, err := s.ResolveKnowledgeBaseID(knowledgeBaseID)
+	if err != nil {
+		return model.Document{}, err
+	}
+	documentID = strings.TrimSpace(documentID)
+	if documentID == "" {
+		return model.Document{}, fmt.Errorf("document id is required")
+	}
+
+	s.state.Mu.Lock()
+	knowledgeBase, ok := s.state.KnowledgeBases[knowledgeBaseID]
+	if !ok {
+		s.state.Mu.Unlock()
+		return model.Document{}, fmt.Errorf("knowledge base not found")
+	}
+	updatedDocuments := append([]model.Document(nil), knowledgeBase.Documents...)
+	targetIndex := -1
+	for index, document := range updatedDocuments {
+		if document.ID == documentID {
+			targetIndex = index
+			break
+		}
+	}
+	if targetIndex < 0 {
+		s.state.Mu.Unlock()
+		return model.Document{}, fmt.Errorf("document not found")
+	}
+
+	targetDocument := updatedDocuments[targetIndex]
+	if req.IsFAQCollection != nil {
+		targetDocument.IsFAQCollection = *req.IsFAQCollection
+		if !*req.IsFAQCollection {
+			targetDocument.IsDefaultFAQCollection = false
+		}
+	}
+	if req.IsDefaultFAQCollection != nil {
+		if *req.IsDefaultFAQCollection {
+			targetDocument.IsFAQCollection = true
+			targetDocument.IsDefaultFAQCollection = true
+			for index := range updatedDocuments {
+				if index == targetIndex {
+					continue
+				}
+				updatedDocuments[index].IsDefaultFAQCollection = false
+			}
+		} else {
+			targetDocument.IsDefaultFAQCollection = false
+		}
+	}
+	updatedDocuments[targetIndex] = targetDocument
+	knowledgeBase.Documents = updatedDocuments
+	s.state.KnowledgeBases[knowledgeBaseID] = knowledgeBase
+	s.state.Mu.Unlock()
+
+	if err := s.saveState(); err != nil {
+		return model.Document{}, err
+	}
+	return targetDocument, nil
+}
+
 func (s *AppService) ResolveKnowledgeBaseID(candidate string) (string, error) {
 	s.state.Mu.RLock()
 	defer s.state.Mu.RUnlock()

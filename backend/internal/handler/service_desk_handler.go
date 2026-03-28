@@ -161,6 +161,23 @@ func (h *AppHandler) ListServiceDeskFAQCandidates(c *gin.Context) {
 	writeAPISuccess(c, http.StatusOK, gin.H{"items": items, "filters": opts})
 }
 
+func (h *AppHandler) ListServiceDeskFAQPublishHistory(c *gin.Context) {
+	if h.serviceDeskService == nil {
+		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")
+		return
+	}
+	limit := analyticsListOptionsFromQuery(c).Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	items, err := h.serviceDeskService.ListFAQPublishHistory(c.Param("id"), limit)
+	if err != nil {
+		writeAPIError(c, http.StatusBadRequest, "faq_publish_history_failed", err.Error())
+		return
+	}
+	writeAPISuccess(c, http.StatusOK, gin.H{"items": items, "limit": limit})
+}
+
 func (h *AppHandler) ListServiceDeskKnowledgeGaps(c *gin.Context) {
 	if h.serviceDeskService == nil {
 		writeAPIError(c, http.StatusServiceUnavailable, "service_desk_unavailable", "service desk service is not configured")

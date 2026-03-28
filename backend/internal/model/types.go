@@ -91,23 +91,30 @@ type KnowledgeBaseInput struct {
 }
 
 type Document struct {
-	ID              string               `json:"id"`
-	KnowledgeBaseID string               `json:"knowledgeBaseId"`
-	Name            string               `json:"name"`
-	Size            int64                `json:"size"`
-	SizeLabel       string               `json:"sizeLabel"`
-	UploadedAt      string               `json:"uploadedAt"`
-	Status          string               `json:"status"`
-	Path            string               `json:"path"`
-	ContentPreview  string               `json:"contentPreview"`
-	ImageCount      int                  `json:"imageCount,omitempty"`
-	Images          []DocumentImageAsset `json:"images,omitempty"`
+	ID                     string               `json:"id"`
+	KnowledgeBaseID        string               `json:"knowledgeBaseId"`
+	Name                   string               `json:"name"`
+	Size                   int64                `json:"size"`
+	SizeLabel              string               `json:"sizeLabel"`
+	UploadedAt             string               `json:"uploadedAt"`
+	Status                 string               `json:"status"`
+	Path                   string               `json:"path"`
+	ContentPreview         string               `json:"contentPreview"`
+	IsFAQCollection        bool                 `json:"isFaqCollection,omitempty"`
+	IsDefaultFAQCollection bool                 `json:"isDefaultFaqCollection,omitempty"`
+	ImageCount             int                  `json:"imageCount,omitempty"`
+	Images                 []DocumentImageAsset `json:"images,omitempty"`
 }
 
 type UploadResponse struct {
 	Message       string   `json:"message"`
 	KnowledgeBase string   `json:"knowledgeBaseId"`
 	Uploaded      Document `json:"uploaded"`
+}
+
+type DocumentFAQCollectionUpdateRequest struct {
+	IsFAQCollection        *bool `json:"isFaqCollection,omitempty"`
+	IsDefaultFAQCollection *bool `json:"isDefaultFaqCollection,omitempty"`
 }
 
 type ChatMessage struct {

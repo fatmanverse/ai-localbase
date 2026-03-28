@@ -19,6 +19,7 @@ interface FAQPublishDraft {
   documentName: string
   publishMode: string
   targetDocumentId: string
+  markAsDefaultCollection: boolean
 }
 
 interface FAQCandidate {
@@ -118,12 +119,27 @@ interface PublishedKnowledgeBaseDocument {
   name: string
   status: string
   contentPreview: string
+  isFaqCollection?: boolean
+  isDefaultFaqCollection?: boolean
 }
 
 interface PublishFAQToKnowledgeBaseResponse {
   candidate: FAQCandidate
   export: AnalyticsExportResponse
   document: PublishedKnowledgeBaseDocument
+}
+
+interface FAQPublishHistoryItem {
+  id: string
+  faqCandidateId: string
+  knowledgeBaseId: string
+  documentId: string
+  documentName: string
+  publishMode: string
+  publishedBy?: string
+  publishedAt: string
+  questionText?: string
+  answerText?: string
 }
 
 interface APIResponse<T> {
@@ -240,6 +256,8 @@ function pickRecommendedFAQDocument(item: FAQCandidate, knowledgeBaseId: string,
     .map((document, index) => {
       let score = 0
       if (preferredDocumentName && normalizeDocumentText(document.name) === preferredDocumentName) score += 80
+      if (document.isDefaultFaqCollection) score += 100
+      if (document.isFaqCollection) score += 30
       if (isFAQDocumentCandidate(document)) score += 20
       if (/合集|汇总|总览|大全/.test(document.name)) score += 10
       return { document, index, score }
@@ -257,6 +275,12 @@ function formatPublishModeLabel(mode?: string) {
   if (mode === 'replace_document') return '覆盖目标文档'
   if (mode === 'create_new') return '新建 FAQ 文档'
   return '未记录'
+}
+
+function formatDocumentOptionLabel(document: PublishedKnowledgeBaseDocument) {
+  if (document.isDefaultFaqCollection) return `${document.name}（默认 FAQ 合集）`
+  if (document.isFaqCollection) return `${document.name}（FAQ 文档）`
+  return document.name
 }
 
 function buildDraftMap<T extends { id: string; owner?: string; note?: string }>(items: T[]): Record<string, GovernanceDraft> {
@@ -283,6 +307,7 @@ function buildPublishDraftMap(items: FAQCandidate[]): Record<string, FAQPublishD
       documentName: buildDefaultFAQDocumentName(question),
       publishMode: reusedDocumentId ? 'append_to_document' : 'create_new',
       targetDocumentId: reusedDocumentId,
+      markAsDefaultCollection: false,
     }
     return accumulator
   }, {})
@@ -324,6 +349,9 @@ export default function OperationsConsolePage() {
   const [lowQualityDrafts, setLowQualityDrafts] = useState<Record<string, GovernanceDraft>>({})
   const [publishDrafts, setPublishDrafts] = useState<Record<string, FAQPublishDraft>>({})
   const [knowledgeBaseDocuments, setKnowledgeBaseDocuments] = useState<Record<string, PublishedKnowledgeBaseDocument[]>>({})
+  const [publishHistoryMap, setPublishHistoryMap] = useState<Record<string, FAQPublishHistoryItem[]>>({})
+  const [historyLoadingId, setHistoryLoadingId] = useState('')
+  const [expandedHistoryIds, setExpandedHistoryIds] = useState<string[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [updatingId, setUpdatingId] = useState('')
   const [batchStatus, setBatchStatus] = useState('')
@@ -488,16 +516,26 @@ export default function OperationsConsolePage() {
     return lowQualityDrafts[id] ?? { owner: '', note: '' }
   }, [faqDrafts, gapDrafts, lowQualityDrafts])
 
-  const updatePublishDraft = useCallback((id: string, field: keyof FAQPublishDraft, value: string) => {
+  const updatePublishDraft = useCallback((id: string, field: keyof FAQPublishDraft, value: string | boolean) => {
     setPublishDrafts((current) => ({
       ...current,
-      [id]: { ...(current[id] ?? { question: '', answer: '', publishedBy: '', note: '', knowledgeBaseId: '', documentName: '', publishMode: 'create_new', targetDocumentId: '' }), [field]: value },
+      [id]: { ...(current[id] ?? { question: '', answer: '', publishedBy: '', note: '', knowledgeBaseId: '', documentName: '', publishMode: 'create_new', targetDocumentId: '', markAsDefaultCollection: false }), [field]: value },
     }))
   }, [])
 
   const getPublishDraft = useCallback((id: string): FAQPublishDraft => (
-    publishDrafts[id] ?? { question: '', answer: '', publishedBy: '', note: '', knowledgeBaseId: '', documentName: '', publishMode: 'create_new', targetDocumentId: '' }
+    publishDrafts[id] ?? { question: '', answer: '', publishedBy: '', note: '', knowledgeBaseId: '', documentName: '', publishMode: 'create_new', targetDocumentId: '', markAsDefaultCollection: false }
   ), [publishDrafts])
+
+  const loadFAQPublishHistory = useCallback(async (faqCandidateId: string, force = false): Promise<FAQPublishHistoryItem[]> => {
+    const trimmed = faqCandidateId.trim()
+    if (!trimmed) return []
+    if (!force && publishHistoryMap[trimmed]) return publishHistoryMap[trimmed]
+    const result = await requestJSON<{ items?: FAQPublishHistoryItem[] }>(`${API_BASE_PATH}/api/service-desk/analytics/faq-candidates/${trimmed}/publish-history?limit=10`)
+    const items = result.items ?? []
+    setPublishHistoryMap((current) => ({ ...current, [trimmed]: items }))
+    return items
+  }, [publishHistoryMap])
 
   const recommendFAQDocument = useCallback(async (item: FAQCandidate, knowledgeBaseId: string, publishMode: string) => {
     const trimmedKnowledgeBaseId = knowledgeBaseId.trim()
@@ -508,6 +546,90 @@ export default function OperationsConsolePage() {
       updatePublishDraft(item.id, 'targetDocumentId', recommendedDocumentId)
     }
   }, [loadKnowledgeBaseDocuments, updatePublishDraft])
+
+  const submitPublishToKnowledgeBase = useCallback(async (item: FAQCandidate, draft: FAQPublishDraft) => {
+    const result = await requestJSON<PublishFAQToKnowledgeBaseResponse>(`${API_BASE_PATH}/api/service-desk/analytics/faq-candidates/${item.id}/publish-to-kb`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: draft.question,
+        answer: draft.answer,
+        publishedBy: draft.publishedBy,
+        note: draft.note,
+        knowledgeBaseId: draft.knowledgeBaseId,
+        documentName: draft.publishMode === 'create_new' ? draft.documentName : '',
+        publishMode: draft.publishMode,
+        targetDocumentId: draft.targetDocumentId,
+        markAsDefaultCollection: draft.markAsDefaultCollection,
+      }),
+    })
+    setActionMessage(draft.publishMode === 'create_new' ? `FAQ 已写入知识库文档：${result.document.name}` : `FAQ 已合并到知识库文档：${result.document.name}`)
+    await loadKnowledgeBaseDocuments(draft.knowledgeBaseId, true)
+    await loadGovernanceData()
+    await loadFAQPublishHistory(item.id, true)
+  }, [loadFAQPublishHistory, loadGovernanceData, loadKnowledgeBaseDocuments])
+
+  const togglePublishHistory = useCallback(async (item: FAQCandidate) => {
+    const exists = expandedHistoryIds.includes(item.id)
+    if (exists) {
+      setExpandedHistoryIds((current) => current.filter((id) => id !== item.id))
+      return
+    }
+    setExpandedHistoryIds((current) => [...current, item.id])
+    setHistoryLoadingId(item.id)
+    setError('')
+    try {
+      await loadFAQPublishHistory(item.id)
+    } catch (historyError) {
+      setError(getErrorMessage(historyError, 'FAQ 发布历史加载失败'))
+    } finally {
+      setHistoryLoadingId('')
+    }
+  }, [expandedHistoryIds, loadFAQPublishHistory])
+
+  const markDocumentAsDefaultFAQCollection = useCallback(async (knowledgeBaseId: string, documentId: string) => {
+    if (!knowledgeBaseId.trim() || !documentId.trim()) return
+    setError('')
+    setActionMessage('')
+    try {
+      await requestJSON<PublishedKnowledgeBaseDocument>(`${API_BASE_PATH}/api/knowledge-bases/${knowledgeBaseId}/documents/${documentId}/faq-collection`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isFaqCollection: true, isDefaultFaqCollection: true }),
+      })
+      setActionMessage('已设为默认 FAQ 合集文档')
+      await loadKnowledgeBaseDocuments(knowledgeBaseId, true)
+      await loadGovernanceData()
+    } catch (updateError) {
+      setError(getErrorMessage(updateError, '默认 FAQ 合集设置失败'))
+    }
+  }, [loadGovernanceData, loadKnowledgeBaseDocuments])
+
+  const quickRepublishToLastDocument = useCallback(async (item: FAQCandidate) => {
+    const baseDraft = getPublishDraft(item.id)
+    const knowledgeBaseId = item.lastPublishedKnowledgeBaseId || baseDraft.knowledgeBaseId
+    const targetDocumentId = item.lastPublishedDocumentId || baseDraft.targetDocumentId
+    if (!knowledgeBaseId || !targetDocumentId) return
+    const draft: FAQPublishDraft = {
+      ...baseDraft,
+      knowledgeBaseId,
+      publishMode: 'append_to_document',
+      targetDocumentId,
+      documentName: '',
+      markAsDefaultCollection: false,
+    }
+    setPublishingToKnowledgeBaseId(item.id)
+    setError('')
+    setActionMessage('')
+    try {
+      await submitPublishToKnowledgeBase(item, draft)
+      setPublishDrafts((current) => ({ ...current, [item.id]: draft }))
+    } catch (publishError) {
+      setError(getErrorMessage(publishError, '继续发布到上次文档失败'))
+    } finally {
+      setPublishingToKnowledgeBaseId('')
+    }
+  }, [getPublishDraft, submitPublishToKnowledgeBase])
 
   const updateItemStatus = useCallback(async (tab: EditableGovernanceTab, id: string, status: string) => {
     setUpdatingId(id)
@@ -580,29 +702,13 @@ export default function OperationsConsolePage() {
     setError('')
     setActionMessage('')
     try {
-      const result = await requestJSON<PublishFAQToKnowledgeBaseResponse>(`${API_BASE_PATH}/api/service-desk/analytics/faq-candidates/${item.id}/publish-to-kb`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: draft.question,
-          answer: draft.answer,
-          publishedBy: draft.publishedBy,
-          note: draft.note,
-          knowledgeBaseId: draft.knowledgeBaseId,
-          documentName: draft.publishMode === 'create_new' ? draft.documentName : '',
-          publishMode: draft.publishMode,
-          targetDocumentId: draft.targetDocumentId,
-        }),
-      })
-      setActionMessage(draft.publishMode === 'create_new' ? `FAQ 已写入知识库文档：${result.document.name}` : `FAQ 已合并到知识库文档：${result.document.name}`)
-      await loadKnowledgeBaseDocuments(draft.knowledgeBaseId, true)
-      await loadGovernanceData()
+      await submitPublishToKnowledgeBase(item, draft)
     } catch (publishError) {
       setError(getErrorMessage(publishError, 'FAQ 发布到知识库失败'))
     } finally {
       setPublishingToKnowledgeBaseId('')
     }
-  }, [getPublishDraft, loadGovernanceData, loadKnowledgeBaseDocuments])
+  }, [getPublishDraft, submitPublishToKnowledgeBase])
 
   const toggleSelected = useCallback((id: string) => {
     setSelectedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))
@@ -936,7 +1042,7 @@ export default function OperationsConsolePage() {
                     <select value={publishDraft.targetDocumentId} onChange={(event) => updatePublishDraft(item.id, 'targetDocumentId', event.target.value)}>
                       <option value="">请选择目标文档</option>
                       {(knowledgeBaseDocuments[publishDraft.knowledgeBaseId] ?? []).map((document) => (
-                        <option key={document.id} value={document.id}>{document.name}</option>
+                        <option key={document.id} value={document.id}>{formatDocumentOptionLabel(document)}</option>
                       ))}
                     </select>
                     {publishDraft.targetDocumentId && (knowledgeBaseDocuments[publishDraft.knowledgeBaseId] ?? []).some((document) => document.id === publishDraft.targetDocumentId) ? (
@@ -950,6 +1056,13 @@ export default function OperationsConsolePage() {
                     <input value={publishDraft.documentName} onChange={(event) => updatePublishDraft(item.id, 'documentName', event.target.value)} placeholder="例如 FAQ-Redis核心特点.md" />
                   </label>
                 ) : null}
+                <label>
+                  <span>FAQ 合集设置</span>
+                  <select value={publishDraft.markAsDefaultCollection ? 'default' : 'normal'} onChange={(event) => updatePublishDraft(item.id, 'markAsDefaultCollection', event.target.value === 'default')}>
+                    <option value="normal">保持普通文档</option>
+                    <option value="default">设为默认 FAQ 合集</option>
+                  </select>
+                </label>
                 <label className="is-answer">
                   <span>FAQ 标准回答</span>
                   <textarea value={publishDraft.answer} onChange={(event) => updatePublishDraft(item.id, 'answer', event.target.value)} rows={4} placeholder="整理后的最终 FAQ 回答内容" />
@@ -979,7 +1092,42 @@ export default function OperationsConsolePage() {
                 >
                   {publishingToKnowledgeBaseId === item.id ? '发布中...' : '发布到知识库'}
                 </button>
+                <button
+                  type="button"
+                  disabled={publishingId === item.id || publishingToKnowledgeBaseId === item.id || !item.lastPublishedDocumentId}
+                  onClick={() => void quickRepublishToLastDocument(item)}
+                >
+                  继续发布到上次文档
+                </button>
+                <button
+                  type="button"
+                  disabled={!publishDraft.knowledgeBaseId || !publishDraft.targetDocumentId}
+                  onClick={() => void markDocumentAsDefaultFAQCollection(publishDraft.knowledgeBaseId, publishDraft.targetDocumentId)}
+                >
+                  设为默认 FAQ 合集
+                </button>
+                <button type="button" onClick={() => void togglePublishHistory(item)}>
+                  {expandedHistoryIds.includes(item.id) ? '收起发布历史' : '查看发布历史'}
+                </button>
               </div>
+              {expandedHistoryIds.includes(item.id) ? (
+                <div className="ops-history-list">
+                  {historyLoadingId === item.id ? <div className="ops-empty">正在加载 FAQ 发布历史...</div> : null}
+                  {historyLoadingId !== item.id && (publishHistoryMap[item.id] ?? []).length === 0 ? <div className="ops-empty">当前还没有 FAQ 发布历史。</div> : null}
+                  {historyLoadingId !== item.id && (publishHistoryMap[item.id] ?? []).length > 0 ? (
+                    <ul>
+                      {(publishHistoryMap[item.id] ?? []).map((history) => (
+                        <li key={history.id}>
+                          <strong>{history.documentName || '未命名文档'}</strong>
+                          <span>{formatPublishModeLabel(history.publishMode)}</span>
+                          <span>{resolveKnowledgeBaseName(history.knowledgeBaseId)}</span>
+                          <span>{formatDate(history.publishedAt)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
             </article>
           )
         })}

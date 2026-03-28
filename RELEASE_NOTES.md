@@ -1,5 +1,26 @@
 # RELEASE NOTES
 
+## v0.5.0 增量更新
+
+### FAQ 发布历史与默认合集增强
+
+- 新增 FAQ 发布历史表与接口：`GET /api/service-desk/analytics/faq-candidates/:id/publish-history`
+- FAQ 发布到知识库时，会同步写入历史记录，保留知识库、文档、模式、时间与整理人信息
+- 新增文档接口：`PATCH /api/knowledge-bases/:id/documents/:documentId/faq-collection`，可把指定文档设为默认 FAQ 合集
+- FAQ 发布请求新增 `markAsDefaultCollection` 参数，可在发布时顺手把目标文档设为默认 FAQ 合集
+- 前端治理台支持查看 FAQ 发布历史、一键继续发布到上次文档，以及手动设置默认 FAQ 合集
+
+### 静态验证
+
+```bash
+cd backend && PATH=/usr/local/go/bin:$PATH go test ./...
+cd frontend && npm run build
+```
+
+结果：**通过**。
+
+---
+
 ## v0.4.9 增量更新
 
 ### FAQ 发布推荐与记录增强

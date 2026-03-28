@@ -843,12 +843,13 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	}
 
 	faqPublishToKBResp := performJSONRequest(t, engine, http.MethodPost, fmt.Sprintf("/api/service-desk/analytics/faq-candidates/%s/publish-to-kb", faqList.Items[0].ID), map[string]any{
-		"question":        "Redis 的核心特点是什么？",
-		"answer":          "Redis 适合高性能缓存、结构化数据读写和快速恢复场景。",
-		"publishedBy":     "ops-faq-publisher",
-		"note":            "已整理为 FAQ 草稿并同步知识库",
-		"knowledgeBaseId": knowledgeBaseID,
-		"documentName":    "FAQ-基础合集.md",
+		"question":                "Redis 的核心特点是什么？",
+		"answer":                  "Redis 适合高性能缓存、结构化数据读写和快速恢复场景。",
+		"publishedBy":             "ops-faq-publisher",
+		"note":                    "已整理为 FAQ 草稿并同步知识库",
+		"knowledgeBaseId":         knowledgeBaseID,
+		"documentName":            "FAQ-基础合集.md",
+		"markAsDefaultCollection": true,
 	})
 	if faqPublishToKBResp.Code != http.StatusOK {
 		t.Fatalf("expected faq publish-to-kb status 200, got %d, body=%s", faqPublishToKBResp.Code, faqPublishToKBResp.Body.String())
@@ -863,6 +864,9 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	}
 	if publishToKBPayload.Candidate.LastPublishedDocumentID != publishToKBPayload.Document.ID || publishToKBPayload.Candidate.LastPublishedDocumentName != publishToKBPayload.Document.Name || publishToKBPayload.Candidate.LastPublishMode != "create_new" || publishToKBPayload.Candidate.KnowledgeBasePublishCount != 1 {
 		t.Fatalf("expected publish-to-kb to record faq publish metadata, got %+v", publishToKBPayload.Candidate)
+	}
+	if !publishToKBPayload.Document.IsFAQCollection || !publishToKBPayload.Document.IsDefaultFAQCollection {
+		t.Fatalf("expected publish-to-kb to mark faq collection flags, got %+v", publishToKBPayload.Document)
 	}
 
 	documentsResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/knowledge-bases/%s/documents", knowledgeBaseID), nil, "")
@@ -879,6 +883,9 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	}
 	if documentsResult.Items[0].ID != publishToKBPayload.Document.ID {
 		t.Fatalf("expected generated document to appear in knowledge base list, got %+v", documentsResult.Items)
+	}
+	if !documentsResult.Items[0].IsFAQCollection || !documentsResult.Items[0].IsDefaultFAQCollection {
+		t.Fatalf("expected generated document to be marked as default faq collection, got %+v", documentsResult.Items[0])
 	}
 
 	faqAppendResp := performJSONRequest(t, engine, http.MethodPost, fmt.Sprintf("/api/service-desk/analytics/faq-candidates/%s/publish-to-kb", faqList.Items[0].ID), map[string]any{
@@ -915,6 +922,29 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 	decodeJSONResponse(t, updatedDocumentsResp.Body.Bytes(), &updatedDocumentsResult)
 	if len(updatedDocumentsResult.Items) != len(documentsResult.Items) || updatedDocumentsResult.Items[0].ID != publishToKBPayload.Document.ID {
 		t.Fatalf("expected append mode to avoid creating duplicate faq documents, got %+v", updatedDocumentsResult.Items)
+	}
+	historyResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/faq-candidates/%s/publish-history?limit=10", faqList.Items[0].ID), nil, "")
+	if historyResp.Code != http.StatusOK {
+		t.Fatalf("expected faq publish history status 200, got %d, body=%s", historyResp.Code, historyResp.Body.String())
+	}
+	var historyResult model.APIResponse
+	decodeJSONResponse(t, historyResp.Body.Bytes(), &historyResult)
+	historyData, _ := json.Marshal(historyResult.Data)
+	var historyPayload struct {
+		Items []model.FAQPublishHistoryItem `json:"items"`
+		Limit int                           `json:"limit"`
+	}
+	decodeJSONResponse(t, historyData, &historyPayload)
+	if len(historyPayload.Items) != 2 || historyPayload.Items[0].PublishMode != "append_to_document" || historyPayload.Items[1].PublishMode != "create_new" {
+		t.Fatalf("expected faq publish history to contain create + append records, got %+v", historyPayload.Items)
+	}
+
+	faqCollectionPatchResp := performJSONRequest(t, engine, http.MethodPatch, fmt.Sprintf("/api/knowledge-bases/%s/documents/%s/faq-collection", knowledgeBaseID, publishToKBPayload.Document.ID), map[string]any{
+		"isFaqCollection":        true,
+		"isDefaultFaqCollection": true,
+	})
+	if faqCollectionPatchResp.Code != http.StatusOK {
+		t.Fatalf("expected faq collection patch status 200, got %d, body=%s", faqCollectionPatchResp.Code, faqCollectionPatchResp.Body.String())
 	}
 
 	weeklyReportResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/weekly-report?knowledgeBaseId=%s", knowledgeBaseID), nil, "")

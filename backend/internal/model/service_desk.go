@@ -247,14 +247,15 @@ type PublishFAQCandidateRequest struct {
 }
 
 type PublishFAQToKnowledgeBaseRequest struct {
-	Question         string `json:"question,omitempty"`
-	Answer           string `json:"answer,omitempty"`
-	PublishedBy      string `json:"publishedBy,omitempty"`
-	Note             string `json:"note,omitempty"`
-	KnowledgeBaseID  string `json:"knowledgeBaseId,omitempty"`
-	DocumentName     string `json:"documentName,omitempty"`
-	PublishMode      string `json:"publishMode,omitempty"`
-	TargetDocumentID string `json:"targetDocumentId,omitempty"`
+	Question                string `json:"question,omitempty"`
+	Answer                  string `json:"answer,omitempty"`
+	PublishedBy             string `json:"publishedBy,omitempty"`
+	Note                    string `json:"note,omitempty"`
+	KnowledgeBaseID         string `json:"knowledgeBaseId,omitempty"`
+	DocumentName            string `json:"documentName,omitempty"`
+	PublishMode             string `json:"publishMode,omitempty"`
+	TargetDocumentID        string `json:"targetDocumentId,omitempty"`
+	MarkAsDefaultCollection bool   `json:"markAsDefaultCollection,omitempty"`
 }
 
 type AnalyticsExportOptions struct {
@@ -280,6 +281,19 @@ type PublishFAQToKnowledgeBaseResponse struct {
 	Candidate FAQCandidate            `json:"candidate"`
 	Export    AnalyticsExportResponse `json:"export"`
 	Document  Document                `json:"document"`
+}
+
+type FAQPublishHistoryItem struct {
+	ID              string `json:"id"`
+	FAQCandidateID  string `json:"faqCandidateId"`
+	KnowledgeBaseID string `json:"knowledgeBaseId"`
+	DocumentID      string `json:"documentId"`
+	DocumentName    string `json:"documentName"`
+	PublishMode     string `json:"publishMode"`
+	PublishedBy     string `json:"publishedBy,omitempty"`
+	PublishedAt     string `json:"publishedAt"`
+	QuestionText    string `json:"questionText,omitempty"`
+	AnswerText      string `json:"answerText,omitempty"`
 }
 
 type GovernanceWeeklyReport struct {

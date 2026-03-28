@@ -453,7 +453,8 @@ Content-Type: application/json
   "note": "已整理为 FAQ 草稿并同步知识库",
   "knowledgeBaseId": "kb-1",
   "documentName": "FAQ-Redis-核心特点.md",
-  "publishMode": "create_new"
+  "publishMode": "create_new",
+  "markAsDefaultCollection": true
 }
 ```
 
@@ -461,6 +462,8 @@ Content-Type: application/json
 
 - `publishMode`：`create_new` / `append_to_document` / `replace_document`
 - `targetDocumentId`：当 `publishMode` 为 `append_to_document` 或 `replace_document` 时必填
+
+- `markAsDefaultCollection`：可选；如果为 `true`，发布成功后会把目标文档标记为当前知识库的默认 FAQ 合集
 
 如果希望把 FAQ 合并到已有 FAQ 合集文档，可使用：
 
@@ -526,6 +529,59 @@ FAQ 候选返回体新增最近一次知识库发布记录字段：
 - `knowledgeBasePublishCount`
 
 这些字段可用于前端默认回填上次 FAQ 合集文档，或给运营同学展示最近一次发布去向。
+
+### 7.5.2 获取 FAQ 发布历史
+
+```http
+GET /api/service-desk/analytics/faq-candidates/:id/publish-history?limit=10
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "faqpub-1",
+        "faqCandidateId": "faq-1",
+        "knowledgeBaseId": "kb-1",
+        "documentId": "doc-18",
+        "documentName": "FAQ-基础合集.md",
+        "publishMode": "append_to_document",
+        "publishedBy": "ops-faq-publisher",
+        "publishedAt": "2025-03-29T12:00:00Z"
+      }
+    ],
+    "limit": 10
+  }
+}
+```
+
+用途：
+- 回看某条 FAQ 历史上发布到哪些知识库文档
+- 支撑治理台“一键继续发布到上次文档”
+- 辅助运营确认 FAQ 合集是否被重复拆散
+
+### 7.5.3 设置默认 FAQ 合集文档
+
+```http
+PATCH /api/knowledge-bases/:id/documents/:documentId/faq-collection
+Content-Type: application/json
+```
+
+```json
+{
+  "isFaqCollection": true,
+  "isDefaultFaqCollection": true
+}
+```
+
+说明：
+- 一个知识库可以有多份 FAQ 文档，但默认 FAQ 合集同一时刻只保留一份
+- 当某个文档被设为默认 FAQ 合集时，同知识库下其他文档会自动取消默认标记
+- FAQ 发布推荐会优先命中默认 FAQ 合集文档
 
 ### 7.6 获取治理周报
 

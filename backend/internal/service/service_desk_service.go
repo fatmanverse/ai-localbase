@@ -161,6 +161,13 @@ func (s *ServiceDeskService) ListFAQCandidates(opts model.AnalyticsListOptions) 
 	return s.store.ListFAQCandidatesByOptions(opts)
 }
 
+func (s *ServiceDeskService) ListFAQPublishHistory(id string, limit int) ([]model.FAQPublishHistoryItem, error) {
+	if s == nil || s.store == nil {
+		return nil, fmt.Errorf("service desk store is not configured")
+	}
+	return s.store.ListFAQPublishHistoryByCandidate(id, limit)
+}
+
 func (s *ServiceDeskService) ListKnowledgeGaps(opts model.AnalyticsListOptions) ([]model.KnowledgeGap, error) {
 	if s == nil || s.store == nil {
 		return nil, fmt.Errorf("service desk store is not configured")
@@ -226,8 +233,17 @@ func (s *ServiceDeskService) PublishFAQCandidateToKnowledgeBase(id string, req m
 	if err != nil {
 		return nil, err
 	}
+	if req.MarkAsDefaultCollection {
+		updatedDocument, updateErr := s.appService.UpdateDocumentFAQCollection(targetKnowledgeBaseID, document.ID, model.DocumentFAQCollectionUpdateRequest{
+			IsFAQCollection:        boolPtr(true),
+			IsDefaultFAQCollection: boolPtr(true),
+		})
+		if updateErr == nil {
+			document = updatedDocument
+		}
+	}
 	candidate.KnowledgeBaseID = targetKnowledgeBaseID
-	updatedCandidate, recordErr := s.store.RecordFAQCandidateKnowledgeBasePublish(candidate.ID, targetKnowledgeBaseID, document.ID, document.Name, publishMode, candidate.PublishedBy)
+	updatedCandidate, recordErr := s.store.RecordFAQCandidateKnowledgeBasePublish(candidate.ID, targetKnowledgeBaseID, document.ID, document.Name, publishMode, candidate.PublishedBy, candidate.PublishedQuestion, candidate.PublishedAnswer)
 	if recordErr == nil && updatedCandidate != nil {
 		candidate = updatedCandidate
 	}
@@ -601,6 +617,10 @@ func buildFAQKnowledgeBaseDocumentName(explicitName, question, fallbackQuestion 
 		name += ".md"
 	}
 	return name
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 func truncateRunes(value string, limit int) string {

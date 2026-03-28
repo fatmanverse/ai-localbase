@@ -97,11 +97,22 @@ func TestInitServiceDeskTablesMigratesGovernanceColumns(t *testing.T) {
 			}
 		}
 		if table == "faq_candidates" {
-			for _, column := range []string{"published_question", "published_answer", "published_by", "published_at", "publish_note"} {
+			for _, column := range []string{"published_question", "published_answer", "published_by", "published_at", "publish_note", "last_published_knowledge_base_id", "last_published_document_id", "last_published_document_name", "last_publish_mode", "last_published_to_knowledge_at", "knowledge_base_publish_count"} {
 				if _, ok := columns[column]; !ok {
 					t.Fatalf("expected %s.%s to exist after migration", table, column)
 				}
 			}
 		}
 	}
+
+	columns, err := store.sqliteTableColumns("faq_publish_history")
+	if err != nil {
+		t.Fatalf("table columns faq_publish_history: %v", err)
+	}
+	for _, column := range []string{"faq_candidate_id", "knowledge_base_id", "document_id", "document_name", "publish_mode", "published_by", "published_at", "question_text", "answer_text"} {
+		if _, ok := columns[column]; !ok {
+			t.Fatalf("expected faq_publish_history.%s to exist after migration", column)
+		}
+	}
+
 }
