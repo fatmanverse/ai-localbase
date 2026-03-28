@@ -9,6 +9,7 @@ services:
       - ./qdrant_storage:/qdrant/storage
 
   backend:
+    image: ai-localbase-backend:local
     build:
       context: ./backend
       dockerfile: ../docker/backend.Dockerfile
@@ -41,6 +42,7 @@ services:
       - ./backend/data:/app/data
 
   frontend:
+    image: ai-localbase-frontend:local
     build:
       context: .
       dockerfile: ./docker/frontend.Dockerfile

@@ -122,6 +122,8 @@ TAG=$(git rev-parse --short HEAD) \
 bash scripts/linux/build_and_push.sh
 ```
 
+执行后会自动把 `docker-compose.yml` 里的 `backend` / `frontend` 镜像地址回写成刚刚 push 的地址。
+
 ### 查看当前配置
 ```bash
 curl -s http://localhost:8080/api/config | jq .
