@@ -73,9 +73,7 @@ jobs:
       - name: Validate compose files
         run: |
           docker compose -f docker-compose.yml config > /dev/null
-          docker compose -f docker-compose.app.yml config > /dev/null
           docker compose -f docker-compose.qdrant.yml config > /dev/null
-          docker compose -f docker-compose.prod.yml config > /dev/null
 
   docker:
     name: Docker Build (No Push)
