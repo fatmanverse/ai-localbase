@@ -47,16 +47,33 @@ docker compose up --build -d
 
 ## 3. Docker 容器访问不到 Ollama
 
-使用：
+优先在 `.env` 中使用：
 
 ```bash
+HOST_GATEWAY_IP=172.17.0.1
 OLLAMA_BASE_URL=http://host.docker.internal:11434
 ```
 
-然后：
+如果不确定 `HOST_GATEWAY_IP`，可先查看宿主机 `docker0` 网桥 IP：
+
+```bash
+ip addr show docker0 | awk '/inet / {print $2}' | cut -d/ -f1
+```
+
+然后重新启动：
 
 ```bash
 docker compose up --build -d
+```
+
+### 如果出现 `invalid IP address in add-host: "host-gateway"`
+
+这说明当前 Docker 版本较旧，不支持 `host-gateway` 占位符。
+本仓库已支持通过 `HOST_GATEWAY_IP` 显式指定宿主机网关 IP。
+通常默认桥接网络下可直接使用：
+
+```bash
+HOST_GATEWAY_IP=172.17.0.1
 ```
 
 ---

@@ -67,6 +67,35 @@ export https_proxy=http://127.0.0.1:7890
 export no_proxy=localhost,127.0.0.1,host.docker.internal,qdrant,backend,frontend
 ```
 
+### 如果出现 `invalid IP address in add-host: "host-gateway"`
+
+说明你的 Docker 版本较旧，不支持 `host-gateway` 占位符。
+
+先查看宿主机 `docker0` 网桥 IP：
+
+```bash
+ip addr show docker0 | awk '/inet / {print $2}' | cut -d/ -f1
+```
+
+通常会得到：
+
+```text
+172.17.0.1
+```
+
+然后写入 `.env`：
+
+```bash
+HOST_GATEWAY_IP=172.17.0.1
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+```
+
+再重新启动：
+
+```bash
+docker compose up --build -d
+```
+
 ---
 
 ## 本地开发

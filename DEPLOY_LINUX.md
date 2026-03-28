@@ -38,6 +38,28 @@ docker compose up --build -d
 docker compose down
 ```
 
+### 如果出现 `invalid IP address in add-host: "host-gateway"`
+说明 Docker 版本较旧，不支持 `host-gateway`。
+
+先获取宿主机 `docker0` IP：
+
+```bash
+ip addr show docker0 | awk '/inet / {print $2}' | cut -d/ -f1
+```
+
+然后写入 `.env`：
+
+```bash
+HOST_GATEWAY_IP=172.17.0.1
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+```
+
+再执行：
+
+```bash
+docker compose up --build -d
+```
+
 ---
 
 ## 方式二：先安装环境，再本地打包

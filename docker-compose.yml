@@ -24,7 +24,7 @@ services:
     depends_on:
       - qdrant
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:${HOST_GATEWAY_IP:-172.17.0.1}"
     environment:
       PORT: "8080"
       UPLOAD_DIR: "data/uploads"
