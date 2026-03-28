@@ -391,6 +391,10 @@ const formatUploadFileSize = (size: number) => {
 }
 
 const extractXHRErrorMessage = (xhr: XMLHttpRequest) => {
+  if (xhr.status === 413) {
+    return '上传文件过大，请调大前置 Nginx / 网关的 client_max_body_size 限制（项目内置前端 Nginx 默认已放宽到 5g），然后重试。'
+  }
+
   try {
     const payload = JSON.parse(xhr.responseText) as ApiErrorResponse
     return payload.error || `请求失败：${xhr.status}`

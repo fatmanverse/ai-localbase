@@ -49,6 +49,8 @@ docker compose up --build -d
 docker compose down
 ```
 
+如果上传文件时报 `413`，说明前置 Nginx / 网关限制过小。当前仓库默认前端 Nginx 已放宽到 **5GB**，更新后请重新构建前端镜像；如果你前面还有自建 Nginx / Ingress，也要同步配置 `client_max_body_size 5g;`。
+
 如果服务器需要代理再构建：
 
 ```bash

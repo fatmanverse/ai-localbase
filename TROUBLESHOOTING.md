@@ -94,8 +94,50 @@ docker compose up --build -d
 ```
 
 ---
+## 5. 文件上传失败，提示 `413`
 
-## 5. Linux 打包或镜像构建失败
+### 原因
+**`413 Request Entity Too Large` 表示上传请求在前置 Nginx / 网关层就被拦截了，请求还没进入 Go 后端解析阶段。**
+
+这也是前端出现“文件上传失败，未进入服务端解析阶段”的典型原因。
+
+### 本仓库默认修复
+仓库内置前端 Nginx 已默认放宽为：
+
+```nginx
+client_max_body_size 5g;
+```
+
+位置：
+
+```text
+docker/nginx.conf
+```
+
+### 处理方式
+如果你使用本仓库自带 Docker 前端镜像：
+
+```bash
+docker compose build frontend --no-cache
+docker compose up -d frontend
+```
+
+如果你前面还有宿主机 Nginx / Ingress / 网关，也要同步放宽，例如：
+
+```nginx
+server {
+    client_max_body_size 5g;
+}
+```
+
+### 检查点
+1. 浏览器上传时报 `413`
+2. 后端没有出现对应上传日志
+3. 前置代理默认限制通常过小（常见为 `1m`）
+
+---
+
+## 6. Linux 打包或镜像构建失败
 
 ```bash
 INSTALL_DOCKER=1 bash scripts/linux/install_go_npm_env.sh
@@ -107,7 +149,7 @@ bash scripts/linux/build_images.sh
 
 ---
 
-## 6. CentOS 7 / EL7 上 Node 启动失败
+## 7. CentOS 7 / EL7 上 Node 启动失败
 
 ### 常见报错
 - `GLIBC_2.27 not found`
@@ -142,7 +184,7 @@ npm --version
 
 ---
 
-## 7. Docker 构建时无法下载 Go / npm 依赖
+## 8. Docker 构建时无法下载 Go / npm 依赖
 
 ### 处理
 先给宿主机导出代理变量，再重新构建：
