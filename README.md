@@ -571,7 +571,17 @@ TAG=$(git rev-parse --short HEAD) \
 bash scripts/linux/build_and_push.sh
 ```
 
-执行后会自动把 `docker-compose.yml` 中的 `backend` / `frontend` 镜像地址回写成刚刚 push 的地址。
+一键发布（构建推送 backend/frontend、可选同步 qdrant、可选打 git tag）：
+
+```bash
+bash scripts/linux/release.sh v1.0.1 registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
+```
+
+如果希望额外推送 `latest`：
+
+```bash
+PUSH_LATEST=1 bash scripts/linux/release.sh v1.0.1 registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
+```
 
 更完整的部署说明见：[`DEPLOY_LINUX.md`](./DEPLOY_LINUX.md)
 

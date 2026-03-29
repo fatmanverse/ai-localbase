@@ -181,6 +181,30 @@ REF=main AUTO_STASH=1 bash upgrade.sh
 - 拉取目标代码版本
 - 自动重建并启动新版本容器
 
+### 6.0 一键发布镜像（推荐）
+
+在打包机上直接执行：
+
+```bash
+bash scripts/linux/release.sh v1.0.1 registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
+```
+
+默认会完成：
+
+- backend / frontend 镜像构建与推送
+- qdrant 私有镜像同步
+- 镜像 manifest 校验
+- git tag 创建与推送
+- 输出服务器升级命令
+
+如需同时推 `latest`：
+
+```bash
+PUSH_LATEST=1 bash scripts/linux/release.sh v1.0.1 registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
+```
+
+---
+
 ### 6.1 通过镜像升级
 
 如果你已经把镜像推到仓库，可以不拉代码，直接按镜像升级：

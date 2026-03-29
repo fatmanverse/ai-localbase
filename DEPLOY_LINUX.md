@@ -89,11 +89,28 @@ SAVE_TAR=1 bash scripts/linux/build_images.sh
 REGISTRY_PREFIX=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase TAG=$(git rev-parse --short HEAD) bash scripts/linux/build_and_push.sh
 ```
 
-执行后会自动把 `docker-compose.yml` 中的 `backend` / `frontend` 镜像地址更新为刚刚 push 的镜像。
-
 如需顺手推 `latest`：
 ```bash
 REGISTRY_PREFIX=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase TAG=$(git rev-parse --short HEAD) PUSH_LATEST=1 bash scripts/linux/build_and_push.sh
+```
+
+### 一键发布（推荐）
+```bash
+bash scripts/linux/release.sh v1.0.1 registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
+```
+
+默认会：
+
+- 构建并推送 backend / frontend 镜像
+- 同步 `qdrant/qdrant:v1.13.4` 到 `${REGISTRY_PREFIX}/qdrant:v1.13.4`
+- 校验镜像 manifest
+- 创建并推送同名 git tag
+- 打印服务器升级命令
+
+如需额外推 `latest`：
+
+```bash
+PUSH_LATEST=1 bash scripts/linux/release.sh v1.0.1 registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
 ```
 
 ---
