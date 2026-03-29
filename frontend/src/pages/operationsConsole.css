@@ -424,6 +424,17 @@
   cursor: not-allowed;
 }
 
+.ops-inline-warning {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #fbd38d;
+  background: #fffaf0;
+  color: #8b5e1a;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
 .ops-status {
   display: inline-flex;
   align-items: center;

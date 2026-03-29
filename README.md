@@ -291,6 +291,15 @@ curl -X POST http://localhost:8080/api/service-desk/analytics/faq-candidates/<id
 curl -s "http://localhost:8080/api/service-desk/analytics/faq-candidates/<id>/publish-history?limit=10" | jq .
 ```
 
+导出 FAQ 发布历史（Markdown）：
+
+```bash
+curl -s "http://localhost:8080/api/service-desk/analytics/faq-candidates/<id>/publish-history/export?limit=50&format=markdown" | jq -r '.data.content'
+```
+
+- 知识库文档列表现在会直接标出 `默认 FAQ 合集` / `FAQ 文档`
+- 如果同一条 FAQ 已经分散发布到多份文档，治理台会给出提示，并支持一键导出发布历史留档
+
 把某份知识库文档设为默认 FAQ 合集：
 
 ```bash

@@ -283,6 +283,27 @@ function formatDocumentOptionLabel(document: PublishedKnowledgeBaseDocument) {
   return document.name
 }
 
+function collectPublishHistoryDocumentNames(items: FAQPublishHistoryItem[]) {
+  const documents = new Map<string, string>()
+  items.forEach((item) => {
+    const key = item.documentId?.trim() || item.documentName?.trim()
+    if (!key) return
+    documents.set(key, item.documentName?.trim() || item.documentId?.trim() || '未命名文档')
+  })
+  return Array.from(documents.values())
+}
+
+function buildPublishHistoryHint(item: FAQCandidate, historyItems: FAQPublishHistoryItem[]) {
+  const documentNames = collectPublishHistoryDocumentNames(historyItems)
+  if (documentNames.length > 1) {
+    return `这条 FAQ 目前已经分散到 ${documentNames.length} 份文档：${documentNames.join('、')}。建议收敛到统一 FAQ 合集，后续维护会更轻松。`
+  }
+  if (historyItems.length === 0 && (item.knowledgeBasePublishCount ?? 0) > 1) {
+    return `这条 FAQ 已经发布 ${(item.knowledgeBasePublishCount ?? 0)} 次，建议先看一下发布历史，确认有没有分散到多个 FAQ 文档。`
+  }
+  return ''
+}
+
 function buildDraftMap<T extends { id: string; owner?: string; note?: string }>(items: T[]): Record<string, GovernanceDraft> {
   return items.reduce<Record<string, GovernanceDraft>>((accumulator, item) => {
     accumulator[item.id] = {
@@ -351,6 +372,7 @@ export default function OperationsConsolePage() {
   const [knowledgeBaseDocuments, setKnowledgeBaseDocuments] = useState<Record<string, PublishedKnowledgeBaseDocument[]>>({})
   const [publishHistoryMap, setPublishHistoryMap] = useState<Record<string, FAQPublishHistoryItem[]>>({})
   const [historyLoadingId, setHistoryLoadingId] = useState('')
+  const [historyExportingId, setHistoryExportingId] = useState('')
   const [expandedHistoryIds, setExpandedHistoryIds] = useState<string[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [updatingId, setUpdatingId] = useState('')
@@ -586,6 +608,24 @@ export default function OperationsConsolePage() {
       setHistoryLoadingId('')
     }
   }, [expandedHistoryIds, loadFAQPublishHistory])
+
+  const exportFAQPublishHistory = useCallback(async (item: FAQCandidate, format: 'markdown' | 'json' = 'markdown') => {
+    setHistoryExportingId(item.id)
+    setError('')
+    setActionMessage('')
+    try {
+      const params = new URLSearchParams()
+      params.set('limit', '50')
+      params.set('format', format)
+      const result = await requestJSON<AnalyticsExportResponse>(`${API_BASE_PATH}/api/service-desk/analytics/faq-candidates/${item.id}/publish-history/export?${params.toString()}`)
+      downloadTextFile(result.fileName, result.content, result.mimeType)
+      setActionMessage(format === 'json' ? 'FAQ 发布历史已导出为 JSON' : 'FAQ 发布历史已导出为 Markdown')
+    } catch (exportError) {
+      setError(getErrorMessage(exportError, 'FAQ 发布历史导出失败'))
+    } finally {
+      setHistoryExportingId('')
+    }
+  }, [])
 
   const markDocumentAsDefaultFAQCollection = useCallback(async (knowledgeBaseId: string, documentId: string) => {
     if (!knowledgeBaseId.trim() || !documentId.trim()) return
@@ -953,6 +993,8 @@ export default function OperationsConsolePage() {
         {activeTab === 'faq' && faqCandidates.map((item) => {
           const draft = getDraft('faq', item.id)
           const publishDraft = getPublishDraft(item.id)
+          const historyItems = publishHistoryMap[item.id] ?? []
+          const publishHistoryHint = buildPublishHistoryHint(item, historyItems)
           return (
             <article key={item.id} className="ops-card">
               <div className="ops-card-head">
@@ -1106,17 +1148,21 @@ export default function OperationsConsolePage() {
                 >
                   设为默认 FAQ 合集
                 </button>
+                <button type="button" disabled={historyExportingId === item.id} onClick={() => void exportFAQPublishHistory(item)}>
+                  {historyExportingId === item.id ? '导出中...' : '导出发布历史'}
+                </button>
                 <button type="button" onClick={() => void togglePublishHistory(item)}>
                   {expandedHistoryIds.includes(item.id) ? '收起发布历史' : '查看发布历史'}
                 </button>
               </div>
+              {publishHistoryHint ? <div className="ops-inline-warning">{publishHistoryHint}</div> : null}
               {expandedHistoryIds.includes(item.id) ? (
                 <div className="ops-history-list">
                   {historyLoadingId === item.id ? <div className="ops-empty">正在加载 FAQ 发布历史...</div> : null}
                   {historyLoadingId !== item.id && (publishHistoryMap[item.id] ?? []).length === 0 ? <div className="ops-empty">当前还没有 FAQ 发布历史。</div> : null}
-                  {historyLoadingId !== item.id && (publishHistoryMap[item.id] ?? []).length > 0 ? (
+                  {historyLoadingId !== item.id && historyItems.length > 0 ? (
                     <ul>
-                      {(publishHistoryMap[item.id] ?? []).map((history) => (
+                      {historyItems.map((history) => (
                         <li key={history.id}>
                           <strong>{history.documentName || '未命名文档'}</strong>
                           <span>{formatPublishModeLabel(history.publishMode)}</span>

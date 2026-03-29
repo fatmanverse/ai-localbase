@@ -93,6 +93,12 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
     return { text: '就绪', color: '#2563eb', bg: '#dbeafe' }
   }
 
+  const formatScopeDocumentLabel = (document: KnowledgeBase['documents'][number]) => {
+    if (document.isDefaultFaqCollection) return `${document.name} · 默认FAQ`
+    if (document.isFaqCollection) return `${document.name} · FAQ`
+    return document.name
+  }
+
   const isActiveUploadStatus = (status: UploadTask['status']) =>
     status === 'queued' || status === 'uploading' || status === 'processing'
 
@@ -406,7 +412,7 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                               className={`kb-scope-btn${selectedDocumentId === doc.id ? ' kb-scope-btn--active' : ''}`}
                               onClick={() => onSelectDocument(kb.id, doc.id)}
                             >
-                              {doc.name}
+                              {formatScopeDocumentLabel(doc)}
                             </button>
                           ))}
                         </div>
@@ -442,6 +448,12 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                                         {badge.text}
                                       </span>
                                     </div>
+                                    {doc.isDefaultFaqCollection || doc.isFaqCollection ? (
+                                      <div className="kb-doc-tags">
+                                        {doc.isDefaultFaqCollection ? <span className="kb-doc-tag kb-doc-tag--default">默认 FAQ 合集</span> : null}
+                                        {!doc.isDefaultFaqCollection && doc.isFaqCollection ? <span className="kb-doc-tag kb-doc-tag--faq">FAQ 文档</span> : null}
+                                      </div>
+                                    ) : null}
                                     {doc.contentPreview && (
                                       <p className="kb-doc-preview">{doc.contentPreview}</p>
                                     )}

@@ -939,6 +939,19 @@ func TestServiceDeskConversationFeedbackAndAnalytics(t *testing.T) {
 		t.Fatalf("expected faq publish history to contain create + append records, got %+v", historyPayload.Items)
 	}
 
+	historyExportResp := performRequest(t, engine, http.MethodGet, fmt.Sprintf("/api/service-desk/analytics/faq-candidates/%s/publish-history/export?limit=10&format=markdown", faqList.Items[0].ID), nil, "")
+	if historyExportResp.Code != http.StatusOK {
+		t.Fatalf("expected faq publish history export status 200, got %d, body=%s", historyExportResp.Code, historyExportResp.Body.String())
+	}
+	var historyExportResult model.APIResponse
+	decodeJSONResponse(t, historyExportResp.Body.Bytes(), &historyExportResult)
+	historyExportData, _ := json.Marshal(historyExportResult.Data)
+	var historyExport model.AnalyticsExportResponse
+	decodeJSONResponse(t, historyExportData, &historyExport)
+	if historyExport.Format != "markdown" || !strings.Contains(historyExport.Content, "FAQ 发布历史") || !strings.Contains(historyExport.Content, publishToKBPayload.Document.Name) {
+		t.Fatalf("expected faq publish history export content, got %+v", historyExport)
+	}
+
 	faqCollectionPatchResp := performJSONRequest(t, engine, http.MethodPatch, fmt.Sprintf("/api/knowledge-bases/%s/documents/%s/faq-collection", knowledgeBaseID, publishToKBPayload.Document.ID), map[string]any{
 		"isFaqCollection":        true,
 		"isDefaultFaqCollection": true,

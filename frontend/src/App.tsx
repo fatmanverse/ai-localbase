@@ -60,6 +60,8 @@ export interface DocumentItem {
   uploadedAt: string
   status: 'indexed' | 'ready' | 'processing'
   contentPreview?: string
+  isFaqCollection?: boolean
+  isDefaultFaqCollection?: boolean
 }
 
 export interface KnowledgeBase {
@@ -317,6 +319,8 @@ interface BackendDocumentItem {
   uploadedAt: string
   status: 'indexed' | 'ready' | 'processing'
   contentPreview?: string
+  isFaqCollection?: boolean
+  isDefaultFaqCollection?: boolean
 }
 
 interface BackendKnowledgeBase {
@@ -396,6 +400,8 @@ const normalizeDocument = (document: BackendDocumentItem): DocumentItem => ({
   uploadedAt: document.uploadedAt,
   status: document.status,
   contentPreview: document.contentPreview,
+  isFaqCollection: document.isFaqCollection,
+  isDefaultFaqCollection: document.isDefaultFaqCollection,
 })
 
 const normalizeKnowledgeBase = (knowledgeBase: BackendKnowledgeBase): KnowledgeBase => ({

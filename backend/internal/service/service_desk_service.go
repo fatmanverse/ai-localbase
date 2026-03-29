@@ -168,6 +168,29 @@ func (s *ServiceDeskService) ListFAQPublishHistory(id string, limit int) ([]mode
 	return s.store.ListFAQPublishHistoryByCandidate(id, limit)
 }
 
+func (s *ServiceDeskService) ExportFAQPublishHistory(id string, limit int, format string) (model.AnalyticsExportResponse, error) {
+	if s == nil || s.store == nil {
+		return model.AnalyticsExportResponse{}, fmt.Errorf("service desk store is not configured")
+	}
+	items, err := s.store.ListFAQPublishHistoryByCandidate(id, limit)
+	if err != nil {
+		return model.AnalyticsExportResponse{}, err
+	}
+	candidate, err := s.store.getFAQCandidateByID(id)
+	if err != nil {
+		return model.AnalyticsExportResponse{}, err
+	}
+	baseName := buildExportFileBase("faq-publish-history", candidate.KnowledgeBaseID, firstNonEmpty(strings.TrimSpace(candidate.PublishedQuestion), strings.TrimSpace(candidate.QuestionText), candidate.ID))
+	if normalizeExportFormat(format) == "json" {
+		content, err := marshalExportContent(items)
+		if err != nil {
+			return model.AnalyticsExportResponse{}, err
+		}
+		return model.AnalyticsExportResponse{Scope: "faq-publish-history", Format: "json", FileName: baseName + ".json", MimeType: "application/json", Content: content}, nil
+	}
+	return model.AnalyticsExportResponse{Scope: "faq-publish-history", Format: "markdown", FileName: baseName + ".md", MimeType: "text/markdown; charset=utf-8", Content: renderFAQPublishHistoryMarkdown(items, *candidate, s.knowledgeBaseNameByID(candidate.KnowledgeBaseID))}, nil
+}
+
 func (s *ServiceDeskService) ListKnowledgeGaps(opts model.AnalyticsListOptions) ([]model.KnowledgeGap, error) {
 	if s == nil || s.store == nil {
 		return nil, fmt.Errorf("service desk store is not configured")
@@ -725,6 +748,45 @@ func renderLowQualityAnswersMarkdown(items []model.LowQualityAnswer, knowledgeBa
 		}
 		builder.WriteString("\n")
 		builder.WriteString(item.AnswerText + "\n\n")
+	}
+	return builder.String()
+}
+
+func renderFAQPublishHistoryMarkdown(items []model.FAQPublishHistoryItem, candidate model.FAQCandidate, knowledgeBaseName string) string {
+	builder := strings.Builder{}
+	builder.WriteString("# FAQ 发布历史\n\n")
+	builder.WriteString(fmt.Sprintf("- FAQ：%s\n", firstNonEmpty(strings.TrimSpace(candidate.PublishedQuestion), strings.TrimSpace(candidate.QuestionText), candidate.ID)))
+	builder.WriteString(fmt.Sprintf("- 知识库：%s\n", firstNonEmpty(strings.TrimSpace(knowledgeBaseName), strings.TrimSpace(candidate.KnowledgeBaseID), "未绑定知识库")))
+	builder.WriteString(fmt.Sprintf("- 累计发布次数：%d\n\n", candidate.KnowledgeBasePublishCount))
+	if len(items) == 0 {
+		builder.WriteString("当前还没有发布历史。\n")
+		return builder.String()
+	}
+	documentSet := make(map[string]string)
+	for _, item := range items {
+		key := firstNonEmpty(strings.TrimSpace(item.DocumentID), strings.TrimSpace(item.DocumentName))
+		if key == "" {
+			continue
+		}
+		documentSet[key] = firstNonEmpty(strings.TrimSpace(item.DocumentName), strings.TrimSpace(item.DocumentID), "未命名文档")
+	}
+	if len(documentSet) > 1 {
+		documentNames := make([]string, 0, len(documentSet))
+		for _, name := range documentSet {
+			documentNames = append(documentNames, name)
+		}
+		builder.WriteString(fmt.Sprintf("> 注意：这条 FAQ 当前已分散到 %d 份文档（%s），建议确认是否要收敛到统一 FAQ 合集。\n\n", len(documentNames), strings.Join(documentNames, "、")))
+	}
+	for index, item := range items {
+		builder.WriteString(fmt.Sprintf("## %d. %s\n\n", index+1, firstNonEmpty(strings.TrimSpace(item.DocumentName), "未命名文档")))
+		builder.WriteString(fmt.Sprintf("- 文档 ID：%s\n", firstNonEmpty(strings.TrimSpace(item.DocumentID), "未记录")))
+		builder.WriteString(fmt.Sprintf("- 发布方式：%s\n", item.PublishMode))
+		builder.WriteString(fmt.Sprintf("- 知识库 ID：%s\n", firstNonEmpty(strings.TrimSpace(item.KnowledgeBaseID), "未绑定知识库")))
+		builder.WriteString(fmt.Sprintf("- 发布时间：%s\n", item.PublishedAt))
+		if strings.TrimSpace(item.PublishedBy) != "" {
+			builder.WriteString(fmt.Sprintf("- 发布人：%s\n", item.PublishedBy))
+		}
+		builder.WriteString("\n")
 	}
 	return builder.String()
 }

@@ -1,5 +1,25 @@
 # RELEASE NOTES
 
+## v0.5.1 增量更新
+
+### FAQ 治理台继续收敛
+
+- 新增 FAQ 发布历史导出接口：`GET /api/service-desk/analytics/faq-candidates/:id/publish-history/export`，支持 Markdown / JSON
+- 知识库文档列表直接显示 `默认 FAQ 合集` / `FAQ 文档` 标记，减少误选
+- 治理台 FAQ 卡片新增“导出发布历史”按钮
+- 当同一条 FAQ 曾发布到多份文档时，治理台会给出冲突提示，提醒运营收敛到统一 FAQ 合集
+
+### 静态验证
+
+```bash
+cd backend && PATH=/usr/local/go/bin:$PATH go test ./...
+cd frontend && npm run build
+```
+
+结果：**通过**。
+
+---
+
 ## v0.5.0 增量更新
 
 ### FAQ 发布历史与默认合集增强

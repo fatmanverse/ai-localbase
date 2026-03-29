@@ -564,6 +564,33 @@ GET /api/service-desk/analytics/faq-candidates/:id/publish-history?limit=10
 - 支撑治理台“一键继续发布到上次文档”
 - 辅助运营确认 FAQ 合集是否被重复拆散
 
+### 7.5.2.1 导出 FAQ 发布历史
+
+```http
+GET /api/service-desk/analytics/faq-candidates/:id/publish-history/export?limit=50&format=markdown
+```
+
+说明：
+
+- `format` 支持 `markdown`、`json`
+- Markdown 会自动附带 FAQ 标题、知识库、累计发布次数
+- 如果同一 FAQ 已分散到多份文档，导出的 Markdown 会给出收敛提示
+
+响应示例：
+
+```json
+{
+  "success": true,
+  "data": {
+    "scope": "faq-publish-history",
+    "format": "markdown",
+    "fileName": "faq-publish-history-kb-1-redis.md",
+    "mimeType": "text/markdown; charset=utf-8",
+    "content": "# FAQ 发布历史\n\n..."
+  }
+}
+```
+
 ### 7.5.3 设置默认 FAQ 合集文档
 
 ```http

@@ -53,6 +53,7 @@ func NewRouter(appHandler *handler.AppHandler) *gin.Engine {
 			serviceDesk.GET("/analytics/faq-candidates", appHandler.ListServiceDeskFAQCandidates)
 			serviceDesk.PATCH("/analytics/faq-candidates/:id", appHandler.UpdateServiceDeskFAQCandidateStatus)
 			serviceDesk.GET("/analytics/faq-candidates/:id/publish-history", appHandler.ListServiceDeskFAQPublishHistory)
+			serviceDesk.GET("/analytics/faq-candidates/:id/publish-history/export", appHandler.ExportServiceDeskFAQPublishHistory)
 			serviceDesk.PATCH("/analytics/faq-candidates/batch", appHandler.BatchUpdateServiceDeskFAQCandidates)
 			serviceDesk.POST("/analytics/faq-candidates/:id/publish", appHandler.PublishServiceDeskFAQCandidate)
 			serviceDesk.POST("/analytics/faq-candidates/:id/publish-to-kb", appHandler.PublishServiceDeskFAQCandidateToKnowledgeBase)
