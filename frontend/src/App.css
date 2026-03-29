@@ -2732,35 +2732,9 @@
   }
 }
 
-.message-sources {
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
 
-.message-sources-label,
-.message-related-images-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #6b7280;
-}
 
-.message-source-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
 
-.message-source-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: #eef2ff;
-  color: #4338ca;
-  font-size: 12px;
-}
 
 .message-related-images {
   margin-top: 12px;

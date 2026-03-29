@@ -190,6 +190,15 @@ const emptySummary: AnalyticsSummary = {
   thisWeekDislikeCount: 0,
 }
 
+function resolveInitialGovernanceTab(): GovernanceTab {
+  const params = new URLSearchParams(window.location.search)
+  const tab = params.get('tab')?.trim().toLowerCase() ?? ''
+  if (tab === 'faq' || tab === 'gaps' || tab === 'low-quality' || tab === 'feedback') {
+    return tab
+  }
+  return 'faq'
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message.trim()) {
     return error.message
@@ -357,7 +366,7 @@ export default function OperationsConsolePage() {
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [ownerFilter, setOwnerFilter] = useState('')
-  const [activeTab, setActiveTab] = useState<GovernanceTab>('faq')
+  const [activeTab, setActiveTab] = useState<GovernanceTab>(() => resolveInitialGovernanceTab())
   const [loading, setLoading] = useState(false)
   const [batchUpdating, setBatchUpdating] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -391,6 +400,13 @@ export default function OperationsConsolePage() {
     () => governanceTabs.find((item) => item.key === activeTab) ?? governanceTabs[0],
     [activeTab],
   )
+
+  useEffect(() => {
+    const nextURL = new URL(window.location.href)
+    nextURL.searchParams.set('mode', 'ops')
+    nextURL.searchParams.set('tab', activeTab)
+    window.history.replaceState({}, '', nextURL.toString())
+  }, [activeTab])
 
   const editableActiveTab: EditableGovernanceTab | null = activeTab === 'feedback' ? null : activeTab
   const activeStatusOptions = editableActiveTab ? statusOptions[editableActiveTab] : []

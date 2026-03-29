@@ -828,7 +828,6 @@ const MessageBubble = memo(function MessageBubble({
   onSubmitDislikeFeedback,
 }: MessageBubbleProps) {
   const degradedMetadata = message.role === 'assistant' && message.metadata?.degraded ? message.metadata : null
-  const sourceDocuments = message.role === 'assistant' ? message.metadata?.sources ?? [] : []
   const relatedImages = message.role === 'assistant' ? message.metadata?.relatedImages ?? [] : []
   const feedbackSummary = message.role === 'assistant' ? message.metadata?.feedbackSummary : undefined
   const hasMessageContent = Boolean(message.content.trim())
@@ -867,19 +866,6 @@ const MessageBubble = memo(function MessageBubble({
           message.content
         )}
       </div>
-
-      {message.role === 'assistant' && sourceDocuments.length > 0 ? (
-        <div className="message-sources">
-          <span className="message-sources-label">知识来源</span>
-          <div className="message-source-list">
-            {sourceDocuments.map((source) => (
-              <span key={`${source.knowledgeBaseId ?? ''}-${source.documentId ?? ''}-${source.documentName ?? ''}`} className="message-source-chip">
-                {source.documentName || source.documentId || '文档片段'}
-              </span>
-            ))}
-          </div>
-        </div>
-      ) : null}
 
       {message.role === 'assistant' && relatedImages.length > 0 ? (
         <div className="message-related-images">

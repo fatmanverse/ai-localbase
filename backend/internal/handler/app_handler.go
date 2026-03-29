@@ -43,7 +43,7 @@ func NewAppHandler(serverConfig model.ServerConfig, appService *service.AppServi
 func (h *AppHandler) Root(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"name":    "AI LocalBase Backend",
-		"version": "v0.5.7",
+		"version": "v0.5.8",
 		"status":  "running",
 	})
 }
@@ -502,8 +502,8 @@ func (h *AppHandler) prepareChatRequest(req model.ChatCompletionRequest) (model.
 			"- 不要重复用户的问题，直接输出结构化内容",
 			"- 回答长度适中，每个子章节 2 至 4 条要点即可，保持空行分隔，禁止连续写成一行",
 			"- 若上下文包含图片 OCR、图片说明、流程图、截图或表格图信息，必须综合这些图片知识作答，不能只按纯文本理解",
-			"- 不得自行声称系统只支持文本检索、无法展示图片、文档完全没有图片，除非上下文已明确说明当前检索结果未包含可用图片知识",
-			"- 如果当前检索结果没有可用图片信息，应表述为“当前检索结果未包含可直接利用的图片知识”，不要上升为系统能力限制",
+			"- 不得自行声称系统只支持文本检索、无法展示图片、文档完全没有图片，也不要直接复述内部化说法",
+			"- 如果当前图片线索不够，应自然表述为“我先按当前能确认到的信息给你处理”或“现有资料里这部分图示说明还不够完整”",
 			"",
 			"## 上下文",
 			strings.Join(contextParts, "\n\n"),

@@ -37,7 +37,6 @@ export function MessageList({ messages, loading, onLike, onDislike }: MessageLis
     <div className="service-desk-message-list">
       {messages.map((message) => {
         const isAssistant = message.role === 'assistant'
-        const sourceDocuments = message.trace?.sourceDocuments ?? []
         const relatedImages = message.trace?.relatedImages ?? []
         const summary = message.feedbackSummary
         return (
@@ -55,16 +54,6 @@ export function MessageList({ messages, loading, onLike, onDislike }: MessageLis
                 <div className="service-desk-plain-text">{message.content}</div>
               )}
 
-              {isAssistant && sourceDocuments.length > 0 ? (
-                <div className="service-desk-sources">
-                  <span>知识来源：</span>
-                  {sourceDocuments.map((source) => (
-                    <span key={`${source.knowledgeBaseId}-${source.documentId}`} className="service-desk-source-chip">
-                      {source.documentName || source.documentId || '文档片段'}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
 
               {isAssistant && relatedImages.length > 0 ? (
                 <div className="service-desk-related-images">

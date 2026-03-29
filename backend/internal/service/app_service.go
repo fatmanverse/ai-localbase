@@ -1492,7 +1492,7 @@ func buildDocumentContextSummary(document model.Document, knowledgeBaseName stri
 	if document.ImageCount > 0 {
 		summary += fmt.Sprintf("。该文档还包含 %d 张已处理图片，可用于回答截图、流程图、表格图相关问题", document.ImageCount)
 	} else {
-		summary += "。当前已检索到的该文档内容以正文文本为主，未发现可直接利用的图片知识"
+		summary += "。这份资料里目前能直接参考的内容以正文为主，图示部分暂时没有更多明确说明"
 	}
 	return summary
 }
@@ -1623,7 +1623,7 @@ func (s *AppService) BuildChatContext(req model.ChatCompletionRequest) (string, 
 		if totalImages > 0 {
 			summary += fmt.Sprintf("该知识库还包含 %d 张已处理图片，可用于回答截图、流程图、表格图相关问题。", totalImages)
 		} else {
-			summary += "当前已检索到的知识内容以正文文本为主，未发现可直接利用的图片知识。"
+			summary += "当前这批资料里能直接参考的内容以正文为主，图示部分暂时没有更多明确说明。"
 		}
 
 		return summary, sources, nil

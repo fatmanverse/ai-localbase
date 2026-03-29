@@ -35,25 +35,7 @@
 }
 
 .service-desk-context-badges,
-.service-desk-sources,
-.service-desk-feedback-summary,
-.service-desk-quick-prompt-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
 .service-desk-badge,
-.service-desk-source-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: rgba(30, 41, 59, 0.86);
-  color: #e2e8f0;
-  font-size: 13px;
-}
 
 .service-desk-badge.muted {
   color: #94a3b8;

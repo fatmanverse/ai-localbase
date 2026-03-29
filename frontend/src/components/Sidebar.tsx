@@ -274,6 +274,13 @@ const Sidebar: React.FC<SidebarProps> = ({
     setIsComposingTitle(false)
   }, [])
 
+  const handleOpenOpsConsole = useCallback(() => {
+    const nextURL = new URL(window.location.href)
+    nextURL.searchParams.set('mode', 'ops')
+    nextURL.searchParams.set('tab', 'feedback')
+    window.open(nextURL.toString(), '_blank', 'noopener,noreferrer')
+  }, [])
+
   return (
     <>
       <aside className={`sidebar ${isOpen ? 'open' : 'closed'}`}>
@@ -343,6 +350,15 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
               <span className="sidebar-icon-glyph">📘</span>
               <span>知识库</span>
+            </button>
+            <button
+              type="button"
+              className="sidebar-icon-btn"
+              onClick={handleOpenOpsConsole}
+              title="治理台 / 反馈明细"
+            >
+              <span className="sidebar-icon-glyph">📊</span>
+              <span>治理台</span>
             </button>
           </div>
         </div>
