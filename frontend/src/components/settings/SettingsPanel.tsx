@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { AppConfig, ChatConfig, CircuitBreakerConfig, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_WELCOME_MESSAGE_TEMPLATE, EmbeddingConfig, ModelEndpointConfig, recommendedConfig } from '../../App'
 
 interface SettingsPanelProps {
@@ -140,6 +140,29 @@ const parseCandidateLines = (value: string): ModelEndpointConfig[] => {
   return items
 }
 
+const buildEffectiveDraftConfig = (options: {
+  draftConfig: AppConfig
+  chatCandidatesText: string
+  embeddingCandidatesText: string
+  suggestedPromptsText: string
+}): AppConfig => ({
+  ...options.draftConfig,
+  chat: {
+    ...options.draftConfig.chat,
+    candidates: parseCandidateLines(options.chatCandidatesText),
+  },
+  embedding: {
+    ...options.draftConfig.embedding,
+    candidates: parseCandidateLines(options.embeddingCandidatesText),
+  },
+  ui: {
+    ...options.draftConfig.ui,
+    welcomeMessageTemplate:
+      options.draftConfig.ui?.welcomeMessageTemplate?.trim() || DEFAULT_WELCOME_MESSAGE_TEMPLATE,
+    suggestedPrompts: parsePromptLines(options.suggestedPromptsText),
+  },
+})
+
 const SettingsPanel: React.FC<SettingsPanelProps> = ({
   config,
   onClose,
@@ -168,30 +191,45 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setSuggestedPromptsText(formatPromptLines(config.ui?.suggestedPrompts))
   }, [config])
 
+  const deferredDraftConfig = useDeferredValue(draftConfig)
+  const deferredChatCandidatesText = useDeferredValue(chatCandidatesText)
+  const deferredEmbeddingCandidatesText = useDeferredValue(embeddingCandidatesText)
+  const deferredSuggestedPromptsText = useDeferredValue(suggestedPromptsText)
+
   const effectiveDraftConfig = useMemo<AppConfig>(
-    () => ({
-      ...draftConfig,
-      chat: {
-        ...draftConfig.chat,
-        candidates: parseCandidateLines(chatCandidatesText),
-      },
-      embedding: {
-        ...draftConfig.embedding,
-        candidates: parseCandidateLines(embeddingCandidatesText),
-      },
-    }),
-    [chatCandidatesText, draftConfig, embeddingCandidatesText],
+    () =>
+      buildEffectiveDraftConfig({
+        draftConfig,
+        chatCandidatesText,
+        embeddingCandidatesText,
+        suggestedPromptsText,
+      }),
+    [chatCandidatesText, draftConfig, embeddingCandidatesText, suggestedPromptsText],
   )
 
-  const hasChanges = useMemo(
-    () => JSON.stringify(effectiveDraftConfig) !== JSON.stringify(config),
-    [config, effectiveDraftConfig],
+  const comparisonDraftConfig = useMemo<AppConfig>(
+    () =>
+      buildEffectiveDraftConfig({
+        draftConfig: deferredDraftConfig,
+        chatCandidatesText: deferredChatCandidatesText,
+        embeddingCandidatesText: deferredEmbeddingCandidatesText,
+        suggestedPromptsText: deferredSuggestedPromptsText,
+      }),
+    [
+      deferredChatCandidatesText,
+      deferredDraftConfig,
+      deferredEmbeddingCandidatesText,
+      deferredSuggestedPromptsText,
+    ],
   )
 
-  const isUsingRecommendedConfig = useMemo(
-    () => JSON.stringify(effectiveDraftConfig) === JSON.stringify(recommendedDraft),
-    [effectiveDraftConfig, recommendedDraft],
-  )
+  const savedConfigSnapshot = useMemo(() => JSON.stringify(config), [config])
+  const recommendedDraftSnapshot = useMemo(() => JSON.stringify(recommendedDraft), [recommendedDraft])
+  const comparisonDraftSnapshot = useMemo(() => JSON.stringify(comparisonDraftConfig), [comparisonDraftConfig])
+
+  const hasChanges = comparisonDraftSnapshot !== savedConfigSnapshot
+
+  const isUsingRecommendedConfig = comparisonDraftSnapshot === recommendedDraftSnapshot
 
   const handleChatConfigChange = <K extends keyof ChatConfig>(
     key: K,
@@ -283,6 +321,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setDraftConfig(config)
     setChatCandidatesText(formatCandidateLines(config.chat.candidates))
     setEmbeddingCandidatesText(formatCandidateLines(config.embedding.candidates))
+    setSuggestedPromptsText(formatPromptLines(config.ui?.suggestedPrompts))
   }
 
   const handleApplyRecommended = () => {
@@ -290,6 +329,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setDraftConfig(nextConfig)
     setChatCandidatesText(formatCandidateLines(nextConfig.chat.candidates))
     setEmbeddingCandidatesText(formatCandidateLines(nextConfig.embedding.candidates))
+    setSuggestedPromptsText(formatPromptLines(nextConfig.ui?.suggestedPrompts))
   }
 
   return (
