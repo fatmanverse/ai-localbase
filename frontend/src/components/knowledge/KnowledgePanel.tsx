@@ -49,6 +49,7 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
   const [newDescription, setNewDescription] = useState('')
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [dragOverKnowledgeBaseId, setDragOverKnowledgeBaseId] = useState<string | null>(null)
+  const [documentFilter, setDocumentFilter] = useState<'all' | 'faq' | 'default' | 'normal'>('all')
 
   const supportedFileTypes = ['TXT', 'MD', 'PDF', 'DOCX', 'HTML', 'HTM', 'PNG', 'JPG', 'JPEG', 'WEBP', 'GIF']
 
@@ -99,6 +100,13 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
     return document.name
   }
 
+  const matchDocumentFilter = (document: KnowledgeBase['documents'][number]) => {
+    if (documentFilter === 'faq') return Boolean(document.isFaqCollection)
+    if (documentFilter === 'default') return Boolean(document.isDefaultFaqCollection)
+    if (documentFilter === 'normal') return !document.isFaqCollection && !document.isDefaultFaqCollection
+    return true
+  }
+
   const isActiveUploadStatus = (status: UploadTask['status']) =>
     status === 'queued' || status === 'uploading' || status === 'processing'
 
@@ -135,6 +143,15 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
               </div>
             </div>
             <div className="kb-header-actions">
+              <label className="kb-doc-filter">
+                <span>文档筛选</span>
+                <select value={documentFilter} onChange={(event) => setDocumentFilter(event.target.value as 'all' | 'faq' | 'default' | 'normal')}>
+                  <option value="all">全部文档</option>
+                  <option value="faq">FAQ 文档</option>
+                  <option value="default">默认 FAQ 合集</option>
+                  <option value="normal">普通文档</option>
+                </select>
+              </label>
               <button className="kb-create-btn" onClick={handleOpenCreate}>
                 <span>＋</span> 新建知识库
               </button>
@@ -186,6 +203,7 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                       : 0
                   const hasClearableTasks = successUploadCount > 0 || canceledUploadCount > 0
                   const isDragOver = dragOverKnowledgeBaseId === kb.id
+                  const filteredDocuments = kb.documents.filter(matchDocumentFilter)
                   return (
                     <div key={kb.id} className={`kb-card${isSelected ? ' kb-card--active' : ''}`}>
                       {/* 知识库卡片头部 */}
@@ -406,7 +424,7 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                           >
                             全部文档
                           </button>
-                          {kb.documents.map((doc) => (
+                          {filteredDocuments.map((doc) => (
                             <button
                               key={doc.id}
                               className={`kb-scope-btn${selectedDocumentId === doc.id ? ' kb-scope-btn--active' : ''}`}
@@ -421,13 +439,13 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                       {/* 文档列表 */}
                       {!isCollapsed && (
                         <div className="kb-docs">
-                          {kb.documents.length === 0 ? (
+                          {filteredDocuments.length === 0 ? (
                             <div className="kb-docs-empty">
                               <span>📄</span>
-                              <span>暂无文档，点击「上传」添加文件</span>
+                              <span>{documentFilter === 'all' ? '暂无文档，点击「上传」添加文件' : '当前筛选下暂无符合条件的文档'}</span>
                             </div>
                           ) : (
-                            kb.documents.map((doc) => {
+                            filteredDocuments.map((doc) => {
                               const badge = statusLabel(doc.status)
                               return (
                                 <div

@@ -10,6 +10,8 @@ interface GovernanceDraft {
   note: string
 }
 
+type FAQHistoryExportFormat = 'markdown' | 'json'
+
 interface FAQPublishDraft {
   question: string
   answer: string
@@ -283,6 +285,10 @@ function formatDocumentOptionLabel(document: PublishedKnowledgeBaseDocument) {
   return document.name
 }
 
+function findDefaultFAQDocument(documents: PublishedKnowledgeBaseDocument[]) {
+  return documents.find((document) => document.isDefaultFaqCollection)
+}
+
 function collectPublishHistoryDocumentNames(items: FAQPublishHistoryItem[]) {
   const documents = new Map<string, string>()
   items.forEach((item) => {
@@ -373,6 +379,7 @@ export default function OperationsConsolePage() {
   const [publishHistoryMap, setPublishHistoryMap] = useState<Record<string, FAQPublishHistoryItem[]>>({})
   const [historyLoadingId, setHistoryLoadingId] = useState('')
   const [historyExportingId, setHistoryExportingId] = useState('')
+  const [historyExportFormatMap, setHistoryExportFormatMap] = useState<Record<string, FAQHistoryExportFormat>>({})
   const [expandedHistoryIds, setExpandedHistoryIds] = useState<string[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [updatingId, setUpdatingId] = useState('')
@@ -609,7 +616,7 @@ export default function OperationsConsolePage() {
     }
   }, [expandedHistoryIds, loadFAQPublishHistory])
 
-  const exportFAQPublishHistory = useCallback(async (item: FAQCandidate, format: 'markdown' | 'json' = 'markdown') => {
+  const exportFAQPublishHistory = useCallback(async (item: FAQCandidate, format: FAQHistoryExportFormat = 'markdown') => {
     setHistoryExportingId(item.id)
     setError('')
     setActionMessage('')
@@ -626,6 +633,41 @@ export default function OperationsConsolePage() {
       setHistoryExportingId('')
     }
   }, [])
+
+  const publishFAQToDefaultCollection = useCallback(async (item: FAQCandidate) => {
+    const baseDraft = getPublishDraft(item.id)
+    const knowledgeBaseId = (baseDraft.knowledgeBaseId || item.lastPublishedKnowledgeBaseId || item.knowledgeBaseId || '').trim()
+    if (!knowledgeBaseId) {
+      setError('请先为这条 FAQ 选择目标知识库，或者先把它发布过一次到知识库。')
+      return
+    }
+
+    setPublishingToKnowledgeBaseId(item.id)
+    setError('')
+    setActionMessage('')
+    try {
+      const documents = await loadKnowledgeBaseDocuments(knowledgeBaseId)
+      const defaultDocument = findDefaultFAQDocument(documents)
+      if (!defaultDocument) {
+        throw new Error('当前知识库还没有默认 FAQ 合集，请先手动设置一份默认 FAQ 合集文档。')
+      }
+      const draft: FAQPublishDraft = {
+        ...baseDraft,
+        knowledgeBaseId,
+        publishMode: 'append_to_document',
+        targetDocumentId: defaultDocument.id,
+        documentName: '',
+        markAsDefaultCollection: true,
+      }
+      await submitPublishToKnowledgeBase(item, draft)
+      setPublishDrafts((current) => ({ ...current, [item.id]: draft }))
+      setActionMessage(`FAQ 已同步到默认 FAQ 合集：${defaultDocument.name}`)
+    } catch (publishError) {
+      setError(getErrorMessage(publishError, '发布到默认 FAQ 合集失败'))
+    } finally {
+      setPublishingToKnowledgeBaseId('')
+    }
+  }, [getPublishDraft, loadKnowledgeBaseDocuments, submitPublishToKnowledgeBase])
 
   const markDocumentAsDefaultFAQCollection = useCallback(async (knowledgeBaseId: string, documentId: string) => {
     if (!knowledgeBaseId.trim() || !documentId.trim()) return
@@ -995,6 +1037,9 @@ export default function OperationsConsolePage() {
           const publishDraft = getPublishDraft(item.id)
           const historyItems = publishHistoryMap[item.id] ?? []
           const publishHistoryHint = buildPublishHistoryHint(item, historyItems)
+          const historyExportFormat = historyExportFormatMap[item.id] ?? 'markdown'
+          const availableDocuments = knowledgeBaseDocuments[publishDraft.knowledgeBaseId] ?? []
+          const defaultFAQDocument = findDefaultFAQDocument(availableDocuments)
           return (
             <article key={item.id} className="ops-card">
               <div className="ops-card-head">
@@ -1083,11 +1128,11 @@ export default function OperationsConsolePage() {
                     <span>目标文档</span>
                     <select value={publishDraft.targetDocumentId} onChange={(event) => updatePublishDraft(item.id, 'targetDocumentId', event.target.value)}>
                       <option value="">请选择目标文档</option>
-                      {(knowledgeBaseDocuments[publishDraft.knowledgeBaseId] ?? []).map((document) => (
+                      {availableDocuments.map((document) => (
                         <option key={document.id} value={document.id}>{formatDocumentOptionLabel(document)}</option>
                       ))}
                     </select>
-                    {publishDraft.targetDocumentId && (knowledgeBaseDocuments[publishDraft.knowledgeBaseId] ?? []).some((document) => document.id === publishDraft.targetDocumentId) ? (
+                    {publishDraft.targetDocumentId && availableDocuments.some((document) => document.id === publishDraft.targetDocumentId) ? (
                       <small>已自动带出最近使用或最匹配的 FAQ 合集文档，你也可以手动改。</small>
                     ) : null}
                   </label>
@@ -1148,13 +1193,28 @@ export default function OperationsConsolePage() {
                 >
                   设为默认 FAQ 合集
                 </button>
-                <button type="button" disabled={historyExportingId === item.id} onClick={() => void exportFAQPublishHistory(item)}>
-                  {historyExportingId === item.id ? '导出中...' : '导出发布历史'}
+                <button
+                  type="button"
+                  disabled={publishingId === item.id || publishingToKnowledgeBaseId === item.id || !(publishDraft.knowledgeBaseId || item.lastPublishedKnowledgeBaseId || item.knowledgeBaseId)}
+                  onClick={() => void publishFAQToDefaultCollection(item)}
+                >
+                  发布到默认 FAQ 合集
+                </button>
+                <label className="ops-inline-select">
+                  <span>历史导出</span>
+                  <select value={historyExportFormat} onChange={(event) => setHistoryExportFormatMap((current) => ({ ...current, [item.id]: event.target.value as FAQHistoryExportFormat }))}>
+                    <option value="markdown">Markdown</option>
+                    <option value="json">JSON</option>
+                  </select>
+                </label>
+                <button type="button" disabled={historyExportingId === item.id} onClick={() => void exportFAQPublishHistory(item, historyExportFormat)}>
+                  {historyExportingId === item.id ? '导出中...' : `导出发布历史（${historyExportFormat.toUpperCase()}）`}
                 </button>
                 <button type="button" onClick={() => void togglePublishHistory(item)}>
                   {expandedHistoryIds.includes(item.id) ? '收起发布历史' : '查看发布历史'}
                 </button>
               </div>
+              {defaultFAQDocument ? <div className="ops-inline-tip">当前默认 FAQ 合集：{defaultFAQDocument.name}，可直接使用“发布到默认 FAQ 合集”。</div> : null}
               {publishHistoryHint ? <div className="ops-inline-warning">{publishHistoryHint}</div> : null}
               {expandedHistoryIds.includes(item.id) ? (
                 <div className="ops-history-list">

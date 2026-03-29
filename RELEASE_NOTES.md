@@ -1,5 +1,25 @@
 # RELEASE NOTES
 
+## v0.5.2 增量更新
+
+### FAQ 治理台进一步提效
+
+- FAQ 发布历史导出现在支持前端直接选择 `Markdown / JSON`
+- FAQ 候选卡片新增“发布到默认 FAQ 合集”，默认合集存在时可直接追加过去
+- 知识库文档管理弹窗新增文档类型筛选：全部文档 / FAQ 文档 / 默认 FAQ 合集 / 普通文档
+- FAQ 卡片会显示当前知识库默认 FAQ 合集名称，减少人工反复确认
+
+### 静态验证
+
+```bash
+cd backend && PATH=/usr/local/go/bin:$PATH go test ./...
+cd frontend && npm run build
+```
+
+结果：**通过**。
+
+---
+
 ## v0.5.1 增量更新
 
 ### FAQ 治理台继续收敛

@@ -299,6 +299,8 @@ curl -s "http://localhost:8080/api/service-desk/analytics/faq-candidates/<id>/pu
 
 - 知识库文档列表现在会直接标出 `默认 FAQ 合集` / `FAQ 文档`
 - 如果同一条 FAQ 已经分散发布到多份文档，治理台会给出提示，并支持一键导出发布历史留档
+- 治理台现在可以直接选择发布历史导出格式（Markdown / JSON），也可以一键把 FAQ 追加到当前知识库的默认 FAQ 合集
+- 知识库管理弹窗支持按文档类型筛选：全部文档 / FAQ 文档 / 默认 FAQ 合集 / 普通文档
 
 把某份知识库文档设为默认 FAQ 合集：
 

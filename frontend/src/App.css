@@ -426,6 +426,29 @@
   flex-shrink: 0;
 }
 
+.kb-doc-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 168px;
+}
+
+.kb-doc-filter span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.kb-doc-filter select {
+  min-height: 38px;
+  border-radius: 10px;
+  border: 1px solid #dbeafe;
+  background: #fff;
+  color: #1e3a8a;
+  padding: 0 12px;
+  font: inherit;
+}
+
 .kb-create-btn {
   display: inline-flex;
   align-items: center;
@@ -467,6 +490,19 @@
 .kb-close-btn:hover {
   background: #e2e8f0;
   color: #0f172a;
+}
+
+@media (max-width: 900px) {
+  .kb-header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .kb-doc-filter {
+    min-width: 160px;
+    flex: 1 1 220px;
+  }
 }
 
 /* Body */
