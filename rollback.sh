@@ -47,6 +47,7 @@ RESTORE_GIT_HEAD=""
 RESTORE_GIT_BRANCH=""
 RESTORE_TARGET_REF=""
 ACTIVE_IMAGE_OVERRIDE_FILE=""
+COMPOSE_BIN=()
 COMPOSE_CMD=()
 
 log() { echo "==> $*"; }
@@ -65,7 +66,7 @@ run_cmd() {
 }
 
 refresh_compose_cmd() {
-  COMPOSE_CMD=(docker compose)
+  COMPOSE_CMD=("${COMPOSE_BIN[@]}")
   [[ -f "${ENV_FILE}" ]] && COMPOSE_CMD+=(--env-file "${ENV_FILE}")
   COMPOSE_CMD+=(-f "${COMPOSE_FILE}")
   ACTIVE_IMAGE_OVERRIDE_FILE=""
@@ -92,6 +93,16 @@ compose_cmd() {
 
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "未找到命令：$1"; }
 
+init_compose_bin() {
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE_BIN=(docker compose)
+  elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_BIN=(docker-compose)
+  else
+    die "当前环境既不支持 docker compose，也未安装 docker-compose。"
+  fi
+}
+
 cleanup_on_error() {
   local exit_code=$?
   if [[ ${exit_code} -ne 0 ]]; then
@@ -115,6 +126,7 @@ usage() {
   - 回滚前默认会先对当前状态做一次保护备份
   - 默认会恢复备份对应的代码版本、配置文件、上传文档和向量数据
   - 若存在 docker-compose.image.override.yml，会自动一并纳入回滚流程
+  - 脚本会自动兼容 `docker compose` 和老版本 `docker-compose`
 
 常用环境变量：
   BACKUP_DIR=...                指定备份目录
@@ -313,6 +325,7 @@ print_summary() {
   echo "- 回滚来源：${SELECTED_BACKUP_DIR}"
   echo "- 已恢复数据目录：${BACKEND_DATA_DIR} / ${QDRANT_STORAGE_DIR}"
   echo "- 已恢复上传文档、知识库状态、会话历史和向量数据"
+  echo "- 使用 Compose 命令：${COMPOSE_BIN[*]}"
   [[ "${CREATE_SAFETY_BACKUP}" == "1" ]] && echo "- 回滚前保护备份：${SAFETY_BACKUP_ROOT}/${TIMESTAMP}"
   if [[ "${RESTORE_CODE}" == "1" && -n "${RESTORE_GIT_HEAD}" ]]; then
     echo "- 已恢复代码提交：${RESTORE_GIT_HEAD}"
@@ -331,7 +344,7 @@ require_cmd tar
 [[ -d .git ]] || die "当前目录不是 git 仓库根目录：${REPO_ROOT}"
 [[ -f "${COMPOSE_FILE}" ]] || die "未找到 compose 文件：${COMPOSE_FILE}"
 docker info >/dev/null 2>&1 || die "Docker daemon 不可用，请先启动 Docker。"
-docker compose version >/dev/null 2>&1 || die "当前 Docker 不支持 docker compose。"
+init_compose_bin
 
 resolve_backup_selection
 load_backup_metadata

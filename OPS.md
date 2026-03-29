@@ -174,6 +174,7 @@ REF=main AUTO_STASH=1 bash upgrade.sh
 
 ### 升级脚本会做什么
 
+- 自动兼容 `docker compose` 和老版本 `docker-compose`
 - 升级前备份当前 `.env`、`docker-compose.yml`、`backend/data`、`qdrant_storage`
 - 保留已上传文档、历史会话、知识库状态和向量数据
 - 不执行 `docker compose down -v`

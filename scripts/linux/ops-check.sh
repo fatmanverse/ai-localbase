@@ -35,16 +35,26 @@ TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-5}"
 SHOW_COMPOSE_LOGS="${SHOW_COMPOSE_LOGS:-0}"
 CHECK_HTTP="${CHECK_HTTP:-1}"
 ACTIVE_IMAGE_OVERRIDE_FILE=""
+COMPOSE_BIN=()
 COMPOSE_CMD=()
 
 log() { echo "==> $*"; }
 warn() { echo "警告: $*" >&2; }
 die() { echo "错误: $*" >&2; exit 1; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "未找到命令：$1"; }
+init_compose_bin() {
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE_BIN=(docker compose)
+  elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_BIN=(docker-compose)
+  else
+    die "当前环境既不支持 docker compose，也未安装 docker-compose。"
+  fi
+}
 print_section() { echo; echo "### $*"; }
 
 refresh_compose_cmd() {
-  COMPOSE_CMD=(docker compose)
+  COMPOSE_CMD=("${COMPOSE_BIN[@]}")
   [[ -f "${ENV_FILE}" ]] && COMPOSE_CMD+=(--env-file "${ENV_FILE}")
   COMPOSE_CMD+=(-f "${COMPOSE_FILE}")
   ACTIVE_IMAGE_OVERRIDE_FILE=""
@@ -157,6 +167,7 @@ usage() {
   - 只做巡检，不修改数据，不启动或停止服务
   - 适合部署后、升级前、升级后、回滚后快速确认环境状态
   - 若存在 docker-compose.image.override.yml，会自动纳入 compose 巡检上下文
+  - 脚本会自动兼容 `docker compose` 和老版本 `docker-compose`
 EOF
 }
 
@@ -170,7 +181,7 @@ require_cmd python3
 [[ -d .git ]] || die "当前目录不是 git 仓库根目录：${REPO_ROOT}"
 [[ -f "${COMPOSE_FILE}" ]] || die "未找到 compose 文件：${COMPOSE_FILE}"
 docker info >/dev/null 2>&1 || die "Docker daemon 不可用，请先启动 Docker。"
-docker compose version >/dev/null 2>&1 || die "当前 Docker 不支持 docker compose。"
+init_compose_bin
 
 refresh_compose_cmd
 
@@ -178,6 +189,7 @@ print_section "基础信息"
 echo "- 仓库目录：${REPO_ROOT}"
 echo "- Compose 文件：${COMPOSE_FILE}"
 echo "- 环境文件：${ENV_FILE}"
+echo "- 使用 Compose 命令：${COMPOSE_BIN[*]}"
 if [[ -n "${ACTIVE_IMAGE_OVERRIDE_FILE}" ]]; then
   echo "- Compose 覆盖文件：${ACTIVE_IMAGE_OVERRIDE_FILE}"
 else
@@ -188,9 +200,9 @@ echo "- 当前提交：$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
 
 print_section "容器状态"
 if [[ "${SHOW_COMPOSE_LOGS}" == "1" ]]; then
-  compose_cmd ps || warn "docker compose ps 执行失败"
+  compose_cmd ps || warn "Compose 状态检查执行失败"
 else
-  compose_cmd ps --status running || warn "当前没有 running 状态容器，或 docker compose ps --status running 不可用"
+  compose_cmd ps || warn "Compose 状态检查执行失败"
 fi
 
 print_section "端口监听"

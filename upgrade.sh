@@ -42,6 +42,7 @@ TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 STASH_NAME="ai-localbase-upgrade-${TIMESTAMP}"
 STASH_CREATED=0
 ACTIVE_IMAGE_OVERRIDE_FILE=""
+COMPOSE_BIN=()
 COMPOSE_CMD=()
 
 log() {
@@ -75,8 +76,18 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "未找到命令：$1"
 }
 
+init_compose_bin() {
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE_BIN=(docker compose)
+  elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_BIN=(docker-compose)
+  else
+    die "当前环境既不支持 docker compose，也未安装 docker-compose。"
+  fi
+}
+
 refresh_compose_cmd() {
-  COMPOSE_CMD=(docker compose)
+  COMPOSE_CMD=("${COMPOSE_BIN[@]}")
 
   if [[ -f "${ENV_FILE}" ]]; then
     COMPOSE_CMD+=(--env-file "${ENV_FILE}")
@@ -308,7 +319,8 @@ print_summary() {
   echo "- 升级模式：${UPGRADE_MODE}"
   echo "- 已保留后端数据目录：${BACKEND_DATA_DIR}"
   echo "- 已保留向量数据目录：${QDRANT_STORAGE_DIR}"
-  echo "- 已保留上传文档、会话历史、知识库状态（脚本不会执行 docker compose down -v）"
+  echo "- 已保留上传文档、会话历史、知识库状态（脚本不会执行 down -v）"
+  echo "- 使用 Compose 命令：${COMPOSE_BIN[*]}"
 
   if [[ "${UPGRADE_MODE}" == "image" ]]; then
     echo "- backend 镜像：${BACKEND_IMAGE}"
@@ -339,8 +351,9 @@ usage() {
   bash upgrade.sh
 
 默认模式：
-  - 不传 UPGRADE_MODE 时，按“代码升级模式”执行：git pull + docker compose up --build
-  - 传 UPGRADE_MODE=image 时，按“镜像升级模式”执行：pull 指定镜像 + docker compose up --no-build
+  - 不传 UPGRADE_MODE 时，按“代码升级模式”执行：git pull + compose up --build
+  - 传 UPGRADE_MODE=image 时，按“镜像升级模式”执行：pull 指定镜像 + compose up --no-build
+  - 脚本会自动兼容 `docker compose` 和老版本 `docker-compose`
 
 常用环境变量：
   UPGRADE_MODE=git|image        升级模式，默认 git
@@ -382,7 +395,7 @@ require_cmd python3
 [[ -d .git ]] || die "当前目录不是 git 仓库根目录：${REPO_ROOT}"
 [[ -f "${COMPOSE_FILE}" ]] || die "未找到 compose 文件：${COMPOSE_FILE}"
 docker info >/dev/null 2>&1 || die "Docker daemon 不可用，请先启动 Docker。"
-docker compose version >/dev/null 2>&1 || die "当前 Docker 不支持 docker compose。"
+init_compose_bin
 
 refresh_compose_cmd
 
