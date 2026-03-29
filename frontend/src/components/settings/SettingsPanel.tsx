@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import React, { ReactNode, memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import {
   AppConfig,
   ChatConfig,
@@ -215,10 +215,232 @@ const buildEffectiveDraftConfig = (options: {
   },
 })
 
+const providerOptions = [
+  { value: 'ollama', label: 'Ollama' },
+  { value: 'openai-compatible', label: 'OpenAI Compatible' },
+] as const
+
+const defaultChatCandidatesPlaceholder = [
+  'qwen2.5:14b',
+  'openai-compatible | https://api.example.com/v1 | gpt-4o-mini | sk-***',
+].join('\n')
+
+const defaultEmbeddingCandidatesPlaceholder = [
+  'bge-m3',
+  'openai-compatible | https://api.example.com/v1 | text-embedding-3-small | sk-***',
+].join('\n')
+
+interface FieldContainerProps {
+  label: ReactNode
+  fullWidth?: boolean
+  hint?: ReactNode
+  children: ReactNode
+}
+
+interface TextInputFieldProps {
+  label: ReactNode
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  type?: 'text' | 'password'
+  fullWidth?: boolean
+  hint?: ReactNode
+}
+
+interface SelectFieldProps {
+  label: ReactNode
+  value: string
+  onChange: (value: string) => void
+  options: ReadonlyArray<{ value: string; label: string }>
+  fullWidth?: boolean
+  hint?: ReactNode
+}
+
+interface NumberInputFieldProps {
+  label: ReactNode
+  value: number
+  onChange: (value: number) => void
+  min?: number
+  max?: number
+  placeholder?: string
+  fullWidth?: boolean
+  hint?: ReactNode
+}
+
+interface RangeFieldProps {
+  label: ReactNode
+  value: number
+  onChange: (value: number) => void
+  min: number
+  max: number
+  step: number
+  fullWidth?: boolean
+  hint?: ReactNode
+}
+
+interface TextareaFieldProps {
+  label: ReactNode
+  value: string
+  onChange: (value: string) => void
+  rows: number
+  placeholder?: string
+  fullWidth?: boolean
+  hint?: ReactNode
+}
+
 const SectionHeader = memo(function SectionHeader({ title }: { title: string }) {
   return (
     <div className="section-title-row knowledge-panel-header">
       <h3>{title}</h3>
+    </div>
+  )
+})
+
+const FieldContainer = memo(function FieldContainer({ label, fullWidth, hint, children }: FieldContainerProps) {
+  return (
+    <label className={`settings-field ${fullWidth ? 'settings-field-full' : ''}`.trim()}>
+      <span>{label}</span>
+      {children}
+      {hint ? <small>{hint}</small> : null}
+    </label>
+  )
+})
+
+const TextInputField = memo(function TextInputField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = 'text',
+  fullWidth,
+  hint,
+}: TextInputFieldProps) {
+  const handleChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      onChange(event.target.value)
+    },
+    [onChange],
+  )
+
+  return (
+    <FieldContainer label={label} fullWidth={fullWidth} hint={hint}>
+      <input type={type} value={value} onChange={handleChange} placeholder={placeholder} />
+    </FieldContainer>
+  )
+})
+
+const SelectField = memo(function SelectField({ label, value, onChange, options, fullWidth, hint }: SelectFieldProps) {
+  const handleChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      onChange(event.target.value)
+    },
+    [onChange],
+  )
+
+  return (
+    <FieldContainer label={label} fullWidth={fullWidth} hint={hint}>
+      <select value={value} onChange={handleChange}>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </FieldContainer>
+  )
+})
+
+const NumberInputField = memo(function NumberInputField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  placeholder,
+  fullWidth,
+  hint,
+}: NumberInputFieldProps) {
+  const handleChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      onChange(Number(event.target.value))
+    },
+    [onChange],
+  )
+
+  return (
+    <FieldContainer label={label} fullWidth={fullWidth} hint={hint}>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={handleChange}
+        placeholder={placeholder}
+      />
+    </FieldContainer>
+  )
+})
+
+const RangeField = memo(function RangeField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  fullWidth,
+  hint,
+}: RangeFieldProps) {
+  const handleChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      onChange(Number(event.target.value))
+    },
+    [onChange],
+  )
+
+  return (
+    <FieldContainer label={label} fullWidth={fullWidth} hint={hint}>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={handleChange} />
+    </FieldContainer>
+  )
+})
+
+const TextareaField = memo(function TextareaField({
+  label,
+  value,
+  onChange,
+  rows,
+  placeholder,
+  fullWidth,
+  hint,
+}: TextareaFieldProps) {
+  const handleChange = useCallback(
+    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+      onChange(event.target.value)
+    },
+    [onChange],
+  )
+
+  return (
+    <FieldContainer label={label} fullWidth={fullWidth} hint={hint}>
+      <textarea rows={rows} value={value} onChange={handleChange} placeholder={placeholder} />
+    </FieldContainer>
+  )
+})
+
+const EmbeddingRecommendedProfile = memo(function EmbeddingRecommendedProfile() {
+  return (
+    <div className="settings-hint settings-hint-profile">
+      <strong>当前内置推荐配置</strong>
+      <ul className="settings-hint-list">
+        <li>聊天模型：<code>qwen2.5:7b</code>，温度默认 <code>0.2</code></li>
+        <li>向量模型：<code>nomic-embed-text</code>，默认向量维度 <code>768</code></li>
+        <li>RAG 内置策略：类型感知切片，默认窗口 <code>800</code> / Overlap <code>120</code></li>
+        <li>
+          检索策略：默认开启混合检索 / 语义重排 / 查询改写，文档内 TopK <code>5</code>，知识库 TopK <code>6</code>，单文档最多 <code>2</code> 个切片
+        </li>
+        <li>容灾策略：支持多提供方顺序切换，默认熔断阈值 <code>2</code>，冷却 <code>30s</code></li>
+      </ul>
     </div>
   )
 })
@@ -230,142 +452,139 @@ const ChatSettingsSection = memo(function ChatSettingsSection({
   onChatCircuitBreakerChange,
   onChatCandidatesTextChange,
 }: ChatSettingsSectionProps) {
+  const handleProviderChange = useCallback(
+    (value: string) => onChatConfigChange('provider', value as ChatConfig['provider']),
+    [onChatConfigChange],
+  )
+  const handleBaseUrlChange = useCallback((value: string) => onChatConfigChange('baseUrl', value), [onChatConfigChange])
+  const handleModelChange = useCallback((value: string) => onChatConfigChange('model', value), [onChatConfigChange])
+  const handleApiKeyChange = useCallback((value: string) => onChatConfigChange('apiKey', value), [onChatConfigChange])
+  const handleTemperatureChange = useCallback(
+    (value: number) => onChatConfigChange('temperature', value),
+    [onChatConfigChange],
+  )
+  const handleContextMessageLimitChange = useCallback(
+    (value: number) => onChatConfigChange('contextMessageLimit', value),
+    [onChatConfigChange],
+  )
+  const handleFailureThresholdChange = useCallback(
+    (value: number) => onChatCircuitBreakerChange('failureThreshold', value),
+    [onChatCircuitBreakerChange],
+  )
+  const handleCooldownSecondsChange = useCallback(
+    (value: number) => onChatCircuitBreakerChange('cooldownSeconds', value),
+    [onChatCircuitBreakerChange],
+  )
+  const handleHalfOpenMaxRequestsChange = useCallback(
+    (value: number) => onChatCircuitBreakerChange('halfOpenMaxRequests', value),
+    [onChatCircuitBreakerChange],
+  )
+
   return (
     <section className="settings-panel-block ai-config-panel single-column">
       <SectionHeader title="聊天模型" />
 
       <div className="ai-config-fields">
-        <label className="settings-field">
-          <span>Provider</span>
-          <select
-            value={chatConfig.provider}
-            onChange={(event) =>
-              onChatConfigChange('provider', event.target.value as ChatConfig['provider'])
-            }
-          >
-            <option value="ollama">Ollama</option>
-            <option value="openai-compatible">OpenAI Compatible</option>
-          </select>
-        </label>
+        <SelectField
+          label="Provider"
+          value={chatConfig.provider}
+          onChange={handleProviderChange}
+          options={providerOptions}
+        />
 
-        <label className="settings-field">
-          <span>Base URL</span>
-          <input
-            value={chatConfig.baseUrl}
-            onChange={(event) => onChatConfigChange('baseUrl', event.target.value)}
-            placeholder={
-              chatConfig.provider === 'ollama'
-                ? 'http://localhost:11434'
-                : 'https://your-api.example.com/v1'
-            }
-          />
-        </label>
+        <TextInputField
+          label="Base URL"
+          value={chatConfig.baseUrl}
+          onChange={handleBaseUrlChange}
+          placeholder={
+            chatConfig.provider === 'ollama'
+              ? 'http://localhost:11434'
+              : 'https://your-api.example.com/v1'
+          }
+        />
 
-        <label className="settings-field">
-          <span>Model</span>
-          <input
-            value={chatConfig.model}
-            onChange={(event) => onChatConfigChange('model', event.target.value)}
-            placeholder="qwen2.5:7b"
-          />
-        </label>
+        <TextInputField
+          label="Model"
+          value={chatConfig.model}
+          onChange={handleModelChange}
+          placeholder="qwen2.5:7b"
+        />
 
-        <label className="settings-field">
-          <span>API Key</span>
-          <input
-            type="password"
-            value={chatConfig.apiKey}
-            onChange={(event) => onChatConfigChange('apiKey', event.target.value)}
-            placeholder="选填"
-          />
-        </label>
+        <TextInputField
+          label="API Key"
+          type="password"
+          value={chatConfig.apiKey}
+          onChange={handleApiKeyChange}
+          placeholder="选填"
+        />
 
-        <label className="settings-field settings-field-full">
-          <span>温度（回答发散度）：{chatConfig.temperature.toFixed(1)}</span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.1"
-            value={chatConfig.temperature}
-            onChange={(event) => onChatConfigChange('temperature', Number(event.target.value))}
-          />
-          <small>值越低越稳定，越适合知识库问答；默认推荐 <code>0.2</code>。</small>
-        </label>
+        <RangeField
+          label={`温度（回答发散度）：${chatConfig.temperature.toFixed(1)}`}
+          value={chatConfig.temperature}
+          onChange={handleTemperatureChange}
+          min={0}
+          max={1}
+          step={0.1}
+          fullWidth
+          hint={
+            <>
+              值越低越稳定，越适合知识库问答；默认推荐 <code>0.2</code>。
+            </>
+          }
+        />
 
-        <label className="settings-field settings-field-full">
-          <span>上下文消息数量</span>
-          <input
-            type="number"
-            min="1"
-            max="100"
-            value={chatConfig.contextMessageLimit}
-            onChange={(event) =>
-              onChatConfigChange('contextMessageLimit', Number(event.target.value))
-            }
-            placeholder="12"
-          />
-          <small>限制每次发送给模型的最近消息条数，范围 1-100。</small>
-        </label>
+        <NumberInputField
+          label="上下文消息数量"
+          value={chatConfig.contextMessageLimit}
+          onChange={handleContextMessageLimitChange}
+          min={1}
+          max={100}
+          placeholder="12"
+          fullWidth
+          hint="限制每次发送给模型的最近消息条数，范围 1-100。"
+        />
 
-        <label className="settings-field">
-          <span>聊天熔断阈值</span>
-          <input
-            type="number"
-            min="1"
-            max="20"
-            value={chatConfig.circuitBreaker.failureThreshold}
-            onChange={(event) =>
-              onChatCircuitBreakerChange('failureThreshold', Number(event.target.value))
-            }
-          />
-          <small>同一提供方连续失败达到该次数后，暂时熔断。</small>
-        </label>
+        <NumberInputField
+          label="聊天熔断阈值"
+          value={chatConfig.circuitBreaker.failureThreshold}
+          onChange={handleFailureThresholdChange}
+          min={1}
+          max={20}
+          hint="同一提供方连续失败达到该次数后，暂时熔断。"
+        />
 
-        <label className="settings-field">
-          <span>聊天冷却秒数</span>
-          <input
-            type="number"
-            min="1"
-            max="3600"
-            value={chatConfig.circuitBreaker.cooldownSeconds}
-            onChange={(event) =>
-              onChatCircuitBreakerChange('cooldownSeconds', Number(event.target.value))
-            }
-          />
-          <small>熔断后等待多久再放一个探测请求。</small>
-        </label>
+        <NumberInputField
+          label="聊天冷却秒数"
+          value={chatConfig.circuitBreaker.cooldownSeconds}
+          onChange={handleCooldownSecondsChange}
+          min={1}
+          max={3600}
+          hint="熔断后等待多久再放一个探测请求。"
+        />
 
-        <label className="settings-field">
-          <span>聊天半开探测数</span>
-          <input
-            type="number"
-            min="1"
-            max="20"
-            value={chatConfig.circuitBreaker.halfOpenMaxRequests}
-            onChange={(event) =>
-              onChatCircuitBreakerChange('halfOpenMaxRequests', Number(event.target.value))
-            }
-          />
-          <small>冷却结束后允许多少个请求先试探恢复。</small>
-        </label>
+        <NumberInputField
+          label="聊天半开探测数"
+          value={chatConfig.circuitBreaker.halfOpenMaxRequests}
+          onChange={handleHalfOpenMaxRequestsChange}
+          min={1}
+          max={20}
+          hint="冷却结束后允许多少个请求先试探恢复。"
+        />
 
-        <label className="settings-field settings-field-full">
-          <span>聊天备用模型</span>
-          <textarea
-            rows={4}
-            value={chatCandidatesText}
-            onChange={(event) => onChatCandidatesTextChange(event.target.value)}
-            placeholder={[
-              'qwen2.5:14b',
-              'openai-compatible | https://api.example.com/v1 | gpt-4o-mini | sk-***',
-            ].join('\n')}
-          />
-          <small>
-            每行一个备用模型。支持仅写模型名（继承主 Provider / Base URL / API Key），或使用
-            <code>provider | baseUrl | model | apiKey</code> 完整格式。主模型失败后会自动切换到下一项。
-          </small>
-        </label>
+        <TextareaField
+          label="聊天备用模型"
+          rows={4}
+          value={chatCandidatesText}
+          onChange={onChatCandidatesTextChange}
+          placeholder={defaultChatCandidatesPlaceholder}
+          fullWidth
+          hint={
+            <>
+              每行一个备用模型。支持仅写模型名（继承主 Provider / Base URL / API Key），或使用
+              <code>provider | baseUrl | model | apiKey</code> 完整格式。主模型失败后会自动切换到下一项。
+            </>
+          }
+        />
       </div>
     </section>
   )
@@ -378,129 +597,117 @@ const EmbeddingSettingsSection = memo(function EmbeddingSettingsSection({
   onEmbeddingCircuitBreakerChange,
   onEmbeddingCandidatesTextChange,
 }: EmbeddingSettingsSectionProps) {
+  const handleProviderChange = useCallback(
+    (value: string) => onEmbeddingConfigChange('provider', value as EmbeddingConfig['provider']),
+    [onEmbeddingConfigChange],
+  )
+  const handleBaseUrlChange = useCallback(
+    (value: string) => onEmbeddingConfigChange('baseUrl', value),
+    [onEmbeddingConfigChange],
+  )
+  const handleModelChange = useCallback(
+    (value: string) => onEmbeddingConfigChange('model', value),
+    [onEmbeddingConfigChange],
+  )
+  const handleApiKeyChange = useCallback(
+    (value: string) => onEmbeddingConfigChange('apiKey', value),
+    [onEmbeddingConfigChange],
+  )
+  const handleFailureThresholdChange = useCallback(
+    (value: number) => onEmbeddingCircuitBreakerChange('failureThreshold', value),
+    [onEmbeddingCircuitBreakerChange],
+  )
+  const handleCooldownSecondsChange = useCallback(
+    (value: number) => onEmbeddingCircuitBreakerChange('cooldownSeconds', value),
+    [onEmbeddingCircuitBreakerChange],
+  )
+  const handleHalfOpenMaxRequestsChange = useCallback(
+    (value: number) => onEmbeddingCircuitBreakerChange('halfOpenMaxRequests', value),
+    [onEmbeddingCircuitBreakerChange],
+  )
+
   return (
     <section className="settings-panel-block ai-config-panel single-column">
       <SectionHeader title="Embedding 模型" />
 
       <div className="ai-config-fields">
-        <label className="settings-field">
-          <span>Provider</span>
-          <select
-            value={embeddingConfig.provider}
-            onChange={(event) =>
-              onEmbeddingConfigChange(
-                'provider',
-                event.target.value as EmbeddingConfig['provider'],
-              )
-            }
-          >
-            <option value="ollama">Ollama</option>
-            <option value="openai-compatible">OpenAI Compatible</option>
-          </select>
-        </label>
+        <SelectField
+          label="Provider"
+          value={embeddingConfig.provider}
+          onChange={handleProviderChange}
+          options={providerOptions}
+        />
 
-        <label className="settings-field">
-          <span>Base URL</span>
-          <input
-            value={embeddingConfig.baseUrl}
-            onChange={(event) => onEmbeddingConfigChange('baseUrl', event.target.value)}
-            placeholder={
-              embeddingConfig.provider === 'ollama'
-                ? 'http://localhost:11434'
-                : 'https://your-api.example.com/v1'
-            }
-          />
-        </label>
+        <TextInputField
+          label="Base URL"
+          value={embeddingConfig.baseUrl}
+          onChange={handleBaseUrlChange}
+          placeholder={
+            embeddingConfig.provider === 'ollama'
+              ? 'http://localhost:11434'
+              : 'https://your-api.example.com/v1'
+          }
+        />
 
-        <label className="settings-field">
-          <span>Model</span>
-          <input
-            value={embeddingConfig.model}
-            onChange={(event) => onEmbeddingConfigChange('model', event.target.value)}
-            placeholder="nomic-embed-text"
-          />
-        </label>
+        <TextInputField
+          label="Model"
+          value={embeddingConfig.model}
+          onChange={handleModelChange}
+          placeholder="nomic-embed-text"
+        />
 
-        <label className="settings-field">
-          <span>API Key</span>
-          <input
-            type="password"
-            value={embeddingConfig.apiKey}
-            onChange={(event) => onEmbeddingConfigChange('apiKey', event.target.value)}
-            placeholder="选填"
-          />
-        </label>
+        <TextInputField
+          label="API Key"
+          type="password"
+          value={embeddingConfig.apiKey}
+          onChange={handleApiKeyChange}
+          placeholder="选填"
+        />
 
-        <label className="settings-field">
-          <span>向量熔断阈值</span>
-          <input
-            type="number"
-            min="1"
-            max="20"
-            value={embeddingConfig.circuitBreaker.failureThreshold}
-            onChange={(event) =>
-              onEmbeddingCircuitBreakerChange('failureThreshold', Number(event.target.value))
-            }
-          />
-          <small>同一向量提供方连续失败达到该次数后，暂时熔断。</small>
-        </label>
+        <NumberInputField
+          label="向量熔断阈值"
+          value={embeddingConfig.circuitBreaker.failureThreshold}
+          onChange={handleFailureThresholdChange}
+          min={1}
+          max={20}
+          hint="同一向量提供方连续失败达到该次数后，暂时熔断。"
+        />
 
-        <label className="settings-field">
-          <span>向量冷却秒数</span>
-          <input
-            type="number"
-            min="1"
-            max="3600"
-            value={embeddingConfig.circuitBreaker.cooldownSeconds}
-            onChange={(event) =>
-              onEmbeddingCircuitBreakerChange('cooldownSeconds', Number(event.target.value))
-            }
-          />
-          <small>熔断后等待多久再放一个探测请求。</small>
-        </label>
+        <NumberInputField
+          label="向量冷却秒数"
+          value={embeddingConfig.circuitBreaker.cooldownSeconds}
+          onChange={handleCooldownSecondsChange}
+          min={1}
+          max={3600}
+          hint="熔断后等待多久再放一个探测请求。"
+        />
 
-        <label className="settings-field">
-          <span>向量半开探测数</span>
-          <input
-            type="number"
-            min="1"
-            max="20"
-            value={embeddingConfig.circuitBreaker.halfOpenMaxRequests}
-            onChange={(event) =>
-              onEmbeddingCircuitBreakerChange('halfOpenMaxRequests', Number(event.target.value))
-            }
-          />
-          <small>冷却结束后允许多少个请求先试探恢复。</small>
-        </label>
+        <NumberInputField
+          label="向量半开探测数"
+          value={embeddingConfig.circuitBreaker.halfOpenMaxRequests}
+          onChange={handleHalfOpenMaxRequestsChange}
+          min={1}
+          max={20}
+          hint="冷却结束后允许多少个请求先试探恢复。"
+        />
 
-        <label className="settings-field settings-field-full">
-          <span>Embedding 备用模型</span>
-          <textarea
-            rows={4}
-            value={embeddingCandidatesText}
-            onChange={(event) => onEmbeddingCandidatesTextChange(event.target.value)}
-            placeholder={[
-              'bge-m3',
-              'openai-compatible | https://api.example.com/v1 | text-embedding-3-small | sk-***',
-            ].join('\n')}
-          />
-          <small>
-            每行一个备用向量模型。支持仅写模型名，或使用
-            <code>provider | baseUrl | model | apiKey</code> 完整格式。主向量模型失败后会自动切换到下一项。
-          </small>
-        </label>
+        <TextareaField
+          label="Embedding 备用模型"
+          rows={4}
+          value={embeddingCandidatesText}
+          onChange={onEmbeddingCandidatesTextChange}
+          placeholder={defaultEmbeddingCandidatesPlaceholder}
+          fullWidth
+          hint={
+            <>
+              每行一个备用向量模型。支持仅写模型名，或使用
+              <code>provider | baseUrl | model | apiKey</code> 完整格式。主向量模型失败后会自动切换到下一项。
+            </>
+          }
+        />
       </div>
 
-      <div className="settings-hint settings-hint-profile">
-        <strong>当前内置推荐配置</strong>
-        <ul className="settings-hint-list">
-          <li>聊天模型：<code>qwen2.5:7b</code>，温度默认 <code>0.2</code></li>
-          <li>向量模型：<code>nomic-embed-text</code>，默认向量维度 <code>768</code></li>
-          <li>RAG 内置策略：类型感知切片，默认窗口 <code>800</code> / Overlap <code>120</code></li>
-          <li>检索策略：默认开启混合检索 / 语义重排 / 查询改写，文档内 TopK <code>5</code>，知识库 TopK <code>6</code>，单文档最多 <code>2</code> 个切片</li>
-          <li>容灾策略：支持多提供方顺序切换，默认熔断阈值 <code>2</code>，冷却 <code>30s</code></li>
-        </ul>
-      </div>
+      <EmbeddingRecommendedProfile />
 
       <p className="settings-hint">
         切换 Embedding 模型后，旧文档向量不会自动重建。为了保证检索准确率，请重新上传文档或重建知识库索引。
@@ -520,36 +727,34 @@ const UISettingsSection = memo(function UISettingsSection({
       <SectionHeader title="界面文案" />
 
       <div className="ai-config-fields">
-        <label className="settings-field settings-field-full">
-          <span>欢迎提示语模板</span>
-          <textarea
-            rows={4}
-            value={welcomeMessageTemplate}
-            onChange={(event) => onWelcomeMessageTemplateChange(event.target.value)}
-            placeholder={DEFAULT_WELCOME_MESSAGE_TEMPLATE}
-          />
-          <small>
-            支持变量
-            <code>{'{knowledgeBaseHint}'}</code>
-            和
-            <code>{'{knowledgeBaseName}'}</code>。
-            例如：
-            <code>你好，我是 AI LocalBase 助手。{'{knowledgeBaseHint}'}</code>
-          </small>
-        </label>
+        <TextareaField
+          label="欢迎提示语模板"
+          rows={4}
+          value={welcomeMessageTemplate}
+          onChange={onWelcomeMessageTemplateChange}
+          placeholder={DEFAULT_WELCOME_MESSAGE_TEMPLATE}
+          fullWidth
+          hint={
+            <>
+              支持变量 <code>{'{knowledgeBaseHint}'}</code> 和 <code>{'{knowledgeBaseName}'}</code>。例如：
+              <code>你好，我是 AI LocalBase 助手。{'{knowledgeBaseHint}'}</code>
+            </>
+          }
+        />
 
-        <label className="settings-field settings-field-full">
-          <span>默认问题建议</span>
-          <textarea
-            rows={5}
-            value={suggestedPromptsText}
-            onChange={(event) => onSuggestedPromptsChange(event.target.value)}
-            placeholder={DEFAULT_SUGGESTED_PROMPTS.join('\n')}
-          />
-          <small>
-            普通聊天页底部的快捷提问按钮支持自定义。每行一条，最多保留 <code>8</code> 条；留空会自动回退到默认建议。
-          </small>
-        </label>
+        <TextareaField
+          label="默认问题建议"
+          rows={5}
+          value={suggestedPromptsText}
+          onChange={onSuggestedPromptsChange}
+          placeholder={DEFAULT_SUGGESTED_PROMPTS.join('\n')}
+          fullWidth
+          hint={
+            <>
+              普通聊天页底部的快捷提问按钮支持自定义。每行一条，最多保留 <code>8</code> 条；留空会自动回退到默认建议。
+            </>
+          }
+        />
       </div>
 
       <p className="settings-hint">
