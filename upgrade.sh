@@ -14,18 +14,22 @@ source_if_exists() {
   fi
 }
 
-# 尽量继承服务器已有代理 / PATH 等环境
 source_if_exists /etc/profile
 source_if_exists "$HOME/.bash_profile"
 source_if_exists "$HOME/.bashrc"
 
 set -u
 
+UPGRADE_MODE="${UPGRADE_MODE:-git}"
 REMOTE="${REMOTE:-origin}"
 CURRENT_BRANCH="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
 REF="${REF:-${CURRENT_BRANCH:-main}}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 ENV_FILE="${ENV_FILE:-.env}"
+EXTRA_COMPOSE_FILE="${EXTRA_COMPOSE_FILE:-}"
+IMAGE_OVERRIDE_FILE="${IMAGE_OVERRIDE_FILE:-docker-compose.image.override.yml}"
+BACKEND_IMAGE="${BACKEND_IMAGE:-}"
+FRONTEND_IMAGE="${FRONTEND_IMAGE:-}"
 BACKEND_DATA_DIR="${BACKEND_DATA_DIR:-backend/data}"
 QDRANT_STORAGE_DIR="${QDRANT_STORAGE_DIR:-qdrant_storage}"
 BACKUP_ROOT="${BACKUP_ROOT:-backups/upgrade}"
@@ -37,11 +41,8 @@ DRY_RUN="${DRY_RUN:-0}"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 STASH_NAME="ai-localbase-upgrade-${TIMESTAMP}"
 STASH_CREATED=0
-COMPOSE_CMD=(docker compose -f "${COMPOSE_FILE}")
-
-if [[ -f "${ENV_FILE}" ]]; then
-  COMPOSE_CMD+=(--env-file "${ENV_FILE}")
-fi
+ACTIVE_IMAGE_OVERRIDE_FILE=""
+COMPOSE_CMD=()
 
 log() {
   echo "==> $*"
@@ -62,7 +63,8 @@ run_cmd() {
     for arg in "$@"; do
       printf ' %q' "$arg"
     done
-    printf '\n'
+    printf '
+'
     return 0
   fi
 
@@ -71,6 +73,25 @@ run_cmd() {
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "未找到命令：$1"
+}
+
+refresh_compose_cmd() {
+  COMPOSE_CMD=(docker compose)
+
+  if [[ -f "${ENV_FILE}" ]]; then
+    COMPOSE_CMD+=(--env-file "${ENV_FILE}")
+  fi
+
+  COMPOSE_CMD+=(-f "${COMPOSE_FILE}")
+  ACTIVE_IMAGE_OVERRIDE_FILE=""
+
+  if [[ -n "${EXTRA_COMPOSE_FILE}" ]]; then
+    COMPOSE_CMD+=(-f "${EXTRA_COMPOSE_FILE}")
+    ACTIVE_IMAGE_OVERRIDE_FILE="${EXTRA_COMPOSE_FILE}"
+  elif [[ -f "${IMAGE_OVERRIDE_FILE}" ]]; then
+    COMPOSE_CMD+=(-f "${IMAGE_OVERRIDE_FILE}")
+    ACTIVE_IMAGE_OVERRIDE_FILE="${IMAGE_OVERRIDE_FILE}"
+  fi
 }
 
 compose_cmd() {
@@ -82,7 +103,8 @@ compose_cmd() {
     for arg in "$@"; do
       printf ' %q' "$arg"
     done
-    printf '\n'
+    printf '
+'
     return 0
   fi
 
@@ -140,6 +162,10 @@ create_backup() {
   [[ -f ".env.example" ]] && paths+=(".env.example")
   [[ -f "${COMPOSE_FILE}" ]] && paths+=("${COMPOSE_FILE}")
   [[ -f "docker-compose.override.yml" ]] && paths+=("docker-compose.override.yml")
+  [[ -f "${IMAGE_OVERRIDE_FILE}" ]] && paths+=("${IMAGE_OVERRIDE_FILE}")
+  if [[ -n "${EXTRA_COMPOSE_FILE}" && -f "${EXTRA_COMPOSE_FILE}" && "${EXTRA_COMPOSE_FILE}" != "${COMPOSE_FILE}" ]]; then
+    paths+=("${EXTRA_COMPOSE_FILE}")
+  fi
   [[ -d "${BACKEND_DATA_DIR}" ]] && paths+=("${BACKEND_DATA_DIR}")
   [[ -d "${QDRANT_STORAGE_DIR}" ]] && paths+=("${QDRANT_STORAGE_DIR}")
 
@@ -149,6 +175,11 @@ create_backup() {
     echo "git_branch=${CURRENT_BRANCH:-detached}"
     echo "git_head=$(git rev-parse HEAD 2>/dev/null || true)"
     echo "target_ref=${REF}"
+    echo "upgrade_mode=${UPGRADE_MODE}"
+    echo "backend_image=${BACKEND_IMAGE}"
+    echo "frontend_image=${FRONTEND_IMAGE}"
+    echo "image_override_file=${IMAGE_OVERRIDE_FILE}"
+    echo "active_override_file=${ACTIVE_IMAGE_OVERRIDE_FILE}"
     echo "backend_data_dir=${BACKEND_DATA_DIR}"
     echo "qdrant_storage_dir=${QDRANT_STORAGE_DIR}"
     echo "compose_file=${COMPOSE_FILE}"
@@ -172,8 +203,8 @@ create_backup() {
   log "备份完成：${backup_dir}"
 }
 
-update_git_code() {
-  local tracked_changes
+stash_git_changes_if_needed() {
+  local tracked_changes=""
   tracked_changes="$(git status --porcelain --untracked-files=no)"
 
   if [[ -n "${tracked_changes}" ]]; then
@@ -186,6 +217,10 @@ update_git_code() {
       die "检测到已跟踪文件存在未提交改动。请先提交/暂存，或使用 AUTO_STASH=1 bash upgrade.sh"
     fi
   fi
+}
+
+update_git_code() {
+  stash_git_changes_if_needed
 
   log "获取远端代码：${REMOTE}"
   run_cmd git fetch --tags "${REMOTE}"
@@ -209,14 +244,56 @@ update_git_code() {
   fi
 }
 
+write_image_override_file() {
+  [[ -n "${BACKEND_IMAGE}" ]] || die "镜像升级模式下必须提供 BACKEND_IMAGE"
+  [[ -n "${FRONTEND_IMAGE}" ]] || die "镜像升级模式下必须提供 FRONTEND_IMAGE"
+
+  log "生成镜像覆盖文件：${IMAGE_OVERRIDE_FILE}"
+
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    cat <<EOF
+[DRY RUN] 将写入 ${IMAGE_OVERRIDE_FILE}:
+services:
+  backend:
+    image: ${BACKEND_IMAGE}
+    build: null
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    build: null
+EOF
+    return 0
+  fi
+
+  cat > "${IMAGE_OVERRIDE_FILE}" <<EOF
+services:
+  backend:
+    image: ${BACKEND_IMAGE}
+    build: null
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    build: null
+EOF
+}
+
+prepare_image_upgrade() {
+  write_image_override_file
+  refresh_compose_cmd
+}
+
 rebuild_services() {
   if [[ "${PULL_QDRANT}" == "1" ]]; then
     log "尝试拉取 qdrant 基础镜像"
     compose_cmd pull qdrant || warn "qdrant 镜像拉取失败，继续使用本地已有镜像。"
   fi
 
-  log "开始重建并升级容器（不会删除数据卷）"
-  compose_cmd up -d --build --remove-orphans
+  if [[ "${UPGRADE_MODE}" == "image" ]]; then
+    log "开始通过镜像升级 backend / frontend"
+    compose_cmd pull backend frontend
+    compose_cmd up -d --no-build --remove-orphans
+  else
+    log "开始重建并升级容器（不会删除数据卷）"
+    compose_cmd up -d --build --remove-orphans
+  fi
 
   log "当前容器状态"
   compose_cmd ps
@@ -228,9 +305,16 @@ print_summary() {
 
   echo
   log "升级完成"
+  echo "- 升级模式：${UPGRADE_MODE}"
   echo "- 已保留后端数据目录：${BACKEND_DATA_DIR}"
   echo "- 已保留向量数据目录：${QDRANT_STORAGE_DIR}"
   echo "- 已保留上传文档、会话历史、知识库状态（脚本不会执行 docker compose down -v）"
+
+  if [[ "${UPGRADE_MODE}" == "image" ]]; then
+    echo "- backend 镜像：${BACKEND_IMAGE}"
+    echo "- frontend 镜像：${FRONTEND_IMAGE}"
+    echo "- 镜像覆盖文件：${IMAGE_OVERRIDE_FILE}"
+  fi
 
   if [[ "${SKIP_BACKUP}" != "1" ]]; then
     echo "- 备份目录：${BACKUP_ROOT}/${TIMESTAMP}"
@@ -254,10 +338,20 @@ usage() {
 用法：
   bash upgrade.sh
 
+默认模式：
+  - 不传 UPGRADE_MODE 时，按“代码升级模式”执行：git pull + docker compose up --build
+  - 传 UPGRADE_MODE=image 时，按“镜像升级模式”执行：pull 指定镜像 + docker compose up --no-build
+
 常用环境变量：
+  UPGRADE_MODE=git|image        升级模式，默认 git
   REMOTE=origin                 远端名称，默认 origin
-  REF=main                      升级目标分支 / tag / commit，默认当前分支或 main
+  REF=main                      代码升级目标分支 / tag / commit，默认当前分支或 main
   AUTO_STASH=1                  若存在已跟踪文件改动，自动 stash 后再升级
+  BACKEND_IMAGE=...             镜像升级模式下的后端镜像
+  FRONTEND_IMAGE=...            镜像升级模式下的前端镜像
+  IMAGE_OVERRIDE_FILE=docker-compose.image.override.yml
+                                镜像升级模式下生成的 compose 覆盖文件
+  EXTRA_COMPOSE_FILE=...        额外 compose 文件；若不传则自动识别 IMAGE_OVERRIDE_FILE
   SKIP_BACKUP=1                 跳过升级前备份
   BACKUP_COMPRESS=1             备份使用 tar.gz 压缩
   BACKUP_ROOT=backups/upgrade   备份输出目录
@@ -267,9 +361,11 @@ usage() {
   DRY_RUN=1                     只打印将执行的命令，不真正执行
 
 示例：
-  bash upgrade.sh
+  # 代码升级
   REF=main AUTO_STASH=1 bash upgrade.sh
-  REF=v0.2.0 BACKUP_COMPRESS=1 bash upgrade.sh
+
+  # 用镜像升级
+  UPGRADE_MODE=image   BACKEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-backend:v1.0.0   FRONTEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-frontend:v1.0.0   bash upgrade.sh
 EOF
 }
 
@@ -288,9 +384,10 @@ require_cmd python3
 docker info >/dev/null 2>&1 || die "Docker daemon 不可用，请先启动 Docker。"
 docker compose version >/dev/null 2>&1 || die "当前 Docker 不支持 docker compose。"
 
-log "准备升级 AI LocalBase 代码"
-log "目标远端：${REMOTE}"
-log "目标版本：${REF}"
+refresh_compose_cmd
+
+log "准备升级 AI LocalBase"
+log "升级模式：${UPGRADE_MODE}"
 log "数据目录：${BACKEND_DATA_DIR} / ${QDRANT_STORAGE_DIR}"
 
 if [[ "${SKIP_BACKUP}" != "1" ]]; then
@@ -299,6 +396,22 @@ else
   warn "已按要求跳过备份。"
 fi
 
-update_git_code
+case "${UPGRADE_MODE}" in
+  git)
+    log "目标远端：${REMOTE}"
+    log "目标版本：${REF}"
+    update_git_code
+    refresh_compose_cmd
+    ;;
+  image)
+    log "backend 镜像：${BACKEND_IMAGE}"
+    log "frontend 镜像：${FRONTEND_IMAGE}"
+    prepare_image_upgrade
+    ;;
+  *)
+    die "不支持的升级模式：${UPGRADE_MODE}（可选 git / image）"
+    ;;
+esac
+
 rebuild_services
 print_summary

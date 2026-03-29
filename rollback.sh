@@ -23,6 +23,8 @@ set -u
 TARGET_PATH="${1:-}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 ENV_FILE="${ENV_FILE:-.env}"
+EXTRA_COMPOSE_FILE="${EXTRA_COMPOSE_FILE:-}"
+IMAGE_OVERRIDE_FILE="${IMAGE_OVERRIDE_FILE:-docker-compose.image.override.yml}"
 BACKUP_ROOT="${BACKUP_ROOT:-backups/upgrade}"
 BACKUP_DIR="${BACKUP_DIR:-}"
 BACKUP_ARCHIVE="${BACKUP_ARCHIVE:-}"
@@ -44,70 +46,58 @@ SELECTED_META_FILE=""
 RESTORE_GIT_HEAD=""
 RESTORE_GIT_BRANCH=""
 RESTORE_TARGET_REF=""
-COMPOSE_CMD=(docker compose -f "${COMPOSE_FILE}")
+ACTIVE_IMAGE_OVERRIDE_FILE=""
+COMPOSE_CMD=()
 
-if [[ -f "${ENV_FILE}" ]]; then
-  COMPOSE_CMD+=(--env-file "${ENV_FILE}")
-fi
-
-log() {
-  echo "==> $*"
-}
-
-warn() {
-  echo "警告: $*" >&2
-}
-
-die() {
-  echo "错误: $*" >&2
-  exit 1
-}
+log() { echo "==> $*"; }
+warn() { echo "警告: $*" >&2; }
+die() { echo "错误: $*" >&2; exit 1; }
 
 run_cmd() {
   if [[ "${DRY_RUN}" == "1" ]]; then
     printf '[DRY RUN]'
-    for arg in "$@"; do
-      printf ' %q' "$arg"
-    done
+    for arg in "$@"; do printf ' %q' "$arg"; done
     printf '
 '
     return 0
   fi
-
   "$@"
+}
+
+refresh_compose_cmd() {
+  COMPOSE_CMD=(docker compose)
+  [[ -f "${ENV_FILE}" ]] && COMPOSE_CMD+=(--env-file "${ENV_FILE}")
+  COMPOSE_CMD+=(-f "${COMPOSE_FILE}")
+  ACTIVE_IMAGE_OVERRIDE_FILE=""
+  if [[ -n "${EXTRA_COMPOSE_FILE}" ]]; then
+    COMPOSE_CMD+=(-f "${EXTRA_COMPOSE_FILE}")
+    ACTIVE_IMAGE_OVERRIDE_FILE="${EXTRA_COMPOSE_FILE}"
+  elif [[ -f "${IMAGE_OVERRIDE_FILE}" ]]; then
+    COMPOSE_CMD+=(-f "${IMAGE_OVERRIDE_FILE}")
+    ACTIVE_IMAGE_OVERRIDE_FILE="${IMAGE_OVERRIDE_FILE}"
+  fi
 }
 
 compose_cmd() {
   if [[ "${DRY_RUN}" == "1" ]]; then
     printf '[DRY RUN]'
-    for arg in "${COMPOSE_CMD[@]}"; do
-      printf ' %q' "$arg"
-    done
-    for arg in "$@"; do
-      printf ' %q' "$arg"
-    done
+    for arg in "${COMPOSE_CMD[@]}"; do printf ' %q' "$arg"; done
+    for arg in "$@"; do printf ' %q' "$arg"; done
     printf '
 '
     return 0
   fi
-
   "${COMPOSE_CMD[@]}" "$@"
 }
 
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "未找到命令：$1"
-}
+require_cmd() { command -v "$1" >/dev/null 2>&1 || die "未找到命令：$1"; }
 
 cleanup_on_error() {
   local exit_code=$?
   if [[ ${exit_code} -ne 0 ]]; then
     warn "回滚过程中发生错误，当前数据目录未自动删除：${BACKEND_DATA_DIR} / ${QDRANT_STORAGE_DIR}"
-    if [[ -n "${SELECTED_BACKUP_DIR}" ]]; then
-      warn "目标回滚备份：${SELECTED_BACKUP_DIR}"
-    fi
-    if [[ "${STASH_CREATED}" == "1" ]]; then
-      warn "本次回滚前的代码改动已保存到 git stash：${STASH_NAME}"
-    fi
+    [[ -n "${SELECTED_BACKUP_DIR}" ]] && warn "目标回滚备份：${SELECTED_BACKUP_DIR}"
+    [[ "${STASH_CREATED}" == "1" ]] && warn "本次回滚前的代码改动已保存到 git stash：${STASH_NAME}"
   fi
   exit ${exit_code}
 }
@@ -124,6 +114,7 @@ usage() {
   - 默认回滚到 backups/upgrade 下最新的一份备份
   - 回滚前默认会先对当前状态做一次保护备份
   - 默认会恢复备份对应的代码版本、配置文件、上传文档和向量数据
+  - 若存在 docker-compose.image.override.yml，会自动一并纳入回滚流程
 
 常用环境变量：
   BACKUP_DIR=...                指定备份目录
@@ -133,13 +124,8 @@ usage() {
   AUTO_STASH=1                  若存在已跟踪文件改动，自动 stash 后再回滚
   CREATE_SAFETY_BACKUP=0        跳过回滚前保护备份
   SAFETY_BACKUP_COMPRESS=1      保护备份使用 tar.gz
+  IMAGE_OVERRIDE_FILE=docker-compose.image.override.yml
   DRY_RUN=1                     只打印将执行的命令，不真正执行
-
-示例：
-  bash rollback.sh
-  BACKUP_DIR=backups/upgrade/20250329-120000 bash rollback.sh
-  RESTORE_CODE=0 bash rollback.sh
-  AUTO_STASH=1 RESTORE_BRANCH_MODE=1 bash rollback.sh backups/upgrade/20250329-120000
 EOF
 }
 
@@ -158,10 +144,7 @@ find_archive_in_dir() {
 
 resolve_backup_selection() {
   local candidate="${BACKUP_ARCHIVE:-${BACKUP_DIR:-${TARGET_PATH}}}"
-
-  if [[ -z "${candidate}" ]]; then
-    candidate="$(find_latest_backup_dir)"
-  fi
+  [[ -z "${candidate}" ]] && candidate="$(find_latest_backup_dir)"
 
   if [[ -f "${candidate}" ]]; then
     SELECTED_BACKUP_ARCHIVE="${candidate}"
@@ -188,7 +171,6 @@ load_backup_metadata() {
     warn "未找到升级元数据文件：${SELECTED_META_FILE}，将只恢复备份归档内容。"
     return 0
   fi
-
   RESTORE_GIT_HEAD="$(read_meta_value git_head "${SELECTED_META_FILE}")"
   RESTORE_GIT_BRANCH="$(read_meta_value git_branch "${SELECTED_META_FILE}")"
   RESTORE_TARGET_REF="$(read_meta_value target_ref "${SELECTED_META_FILE}")"
@@ -206,6 +188,10 @@ create_safety_backup() {
   [[ -f ".env.example" ]] && paths+=(".env.example")
   [[ -f "${COMPOSE_FILE}" ]] && paths+=("${COMPOSE_FILE}")
   [[ -f "docker-compose.override.yml" ]] && paths+=("docker-compose.override.yml")
+  [[ -f "${IMAGE_OVERRIDE_FILE}" ]] && paths+=("${IMAGE_OVERRIDE_FILE}")
+  if [[ -n "${EXTRA_COMPOSE_FILE}" && -f "${EXTRA_COMPOSE_FILE}" && "${EXTRA_COMPOSE_FILE}" != "${COMPOSE_FILE}" ]]; then
+    paths+=("${EXTRA_COMPOSE_FILE}")
+  fi
   [[ -d "${BACKEND_DATA_DIR}" ]] && paths+=("${BACKEND_DATA_DIR}")
   [[ -d "${QDRANT_STORAGE_DIR}" ]] && paths+=("${QDRANT_STORAGE_DIR}")
 
@@ -235,9 +221,7 @@ create_safety_backup() {
 }
 
 prepare_git_for_restore() {
-  local tracked_changes=""
-  tracked_changes="$(git status --porcelain --untracked-files=no)"
-
+  local tracked_changes="$(git status --porcelain --untracked-files=no)"
   if [[ -n "${tracked_changes}" ]]; then
     if [[ "${AUTO_STASH}" == "1" ]]; then
       log "检测到已跟踪文件有改动，先自动 stash"
@@ -252,7 +236,6 @@ prepare_git_for_restore() {
 
 restore_code_version() {
   [[ "${RESTORE_CODE}" == "1" ]] || return 0
-
   if [[ -z "${RESTORE_GIT_HEAD}" ]]; then
     warn "备份中未记录 git 提交版本，跳过代码恢复。可用 RESTORE_CODE=0 明确关闭此步骤。"
     return 0
@@ -281,60 +264,43 @@ restore_code_version() {
   fi
 }
 
-archive_contains_path() {
-  local archive="$1"
-  local prefix="$2"
-  local compressed=0
-  case "${archive}" in
-    *.tar.gz|*.tgz) compressed=1 ;;
-  esac
-
-  if [[ ${compressed} -eq 1 ]]; then
-    tar -tzf "${archive}" | grep -q "^${prefix%/}/"
-  else
-    tar -tf "${archive}" | grep -q "^${prefix%/}/"
-  fi
-}
-
 remove_restore_targets() {
-  local archive="$1"
-  local paths_to_remove=()
+  local targets=(
+    "${ENV_FILE}"
+    "${COMPOSE_FILE}"
+    "docker-compose.override.yml"
+    "${IMAGE_OVERRIDE_FILE}"
+    "${BACKEND_DATA_DIR}"
+    "${QDRANT_STORAGE_DIR}"
+  )
 
-  if archive_contains_path "${archive}" "${BACKEND_DATA_DIR}"; then
-    paths_to_remove+=("${BACKEND_DATA_DIR}")
+  if [[ -n "${EXTRA_COMPOSE_FILE}" && "${EXTRA_COMPOSE_FILE}" != "${COMPOSE_FILE}" ]]; then
+    targets+=("${EXTRA_COMPOSE_FILE}")
   fi
 
-  if archive_contains_path "${archive}" "${QDRANT_STORAGE_DIR}"; then
-    paths_to_remove+=("${QDRANT_STORAGE_DIR}")
-  fi
-
-  if [[ ${#paths_to_remove[@]} -eq 0 ]]; then
-    warn "备份包中未发现 ${BACKEND_DATA_DIR} 或 ${QDRANT_STORAGE_DIR}，将直接覆盖其他文件。"
-    return 0
-  fi
-
-  log "清理将被回滚恢复的数据目录"
-  run_cmd rm -rf "${paths_to_remove[@]}"
+  log "清理将被回滚恢复的配置与数据目录"
+  run_cmd rm -rf "${targets[@]}"
 }
 
 restore_archive() {
   local archive="$1"
   local tar_args=(-xf)
+  case "${archive}" in *.tar.gz|*.tgz) tar_args=(-xzf) ;; esac
 
-  case "${archive}" in
-    *.tar.gz|*.tgz) tar_args=(-xzf) ;;
-  esac
-
+  refresh_compose_cmd
   log "停止当前容器（不会删除卷）"
   compose_cmd down --remove-orphans
 
-  remove_restore_targets "${archive}"
+  remove_restore_targets
 
   log "从备份恢复文件：${archive}"
   run_cmd tar "${tar_args[@]}" "${archive}" -C "${REPO_ROOT}"
+
+  refresh_compose_cmd
 }
 
 restart_services() {
+  refresh_compose_cmd
   log "按回滚后的代码和配置重建容器"
   compose_cmd up -d --build --remove-orphans
   log "当前容器状态"
@@ -347,27 +313,16 @@ print_summary() {
   echo "- 回滚来源：${SELECTED_BACKUP_DIR}"
   echo "- 已恢复数据目录：${BACKEND_DATA_DIR} / ${QDRANT_STORAGE_DIR}"
   echo "- 已恢复上传文档、知识库状态、会话历史和向量数据"
-
-  if [[ "${CREATE_SAFETY_BACKUP}" == "1" ]]; then
-    echo "- 回滚前保护备份：${SAFETY_BACKUP_ROOT}/${TIMESTAMP}"
-  fi
-
+  [[ "${CREATE_SAFETY_BACKUP}" == "1" ]] && echo "- 回滚前保护备份：${SAFETY_BACKUP_ROOT}/${TIMESTAMP}"
   if [[ "${RESTORE_CODE}" == "1" && -n "${RESTORE_GIT_HEAD}" ]]; then
     echo "- 已恢复代码提交：${RESTORE_GIT_HEAD}"
-    if [[ "${RESTORE_BRANCH_MODE}" != "1" ]]; then
-      echo "- 当前仓库处于 detached HEAD，确认无误后可自行切回目标分支"
-    fi
+    [[ "${RESTORE_BRANCH_MODE}" != "1" ]] && echo "- 当前仓库处于 detached HEAD，确认无误后可自行切回目标分支"
   fi
-
-  if [[ "${STASH_CREATED}" == "1" ]]; then
-    echo "- 回滚前本地代码改动已存入 stash：${STASH_NAME}"
-  fi
+  [[ "${STASH_CREATED}" == "1" ]] && echo "- 回滚前本地代码改动已存入 stash：${STASH_NAME}"
+  [[ -n "${ACTIVE_IMAGE_OVERRIDE_FILE}" ]] && echo "- 当前生效的 compose 覆盖文件：${ACTIVE_IMAGE_OVERRIDE_FILE}"
 }
 
-if [[ "${TARGET_PATH}" == "-h" || "${TARGET_PATH}" == "--help" ]]; then
-  usage
-  exit 0
-fi
+if [[ "${TARGET_PATH}" == "-h" || "${TARGET_PATH}" == "--help" ]]; then usage; exit 0; fi
 
 require_cmd git
 require_cmd docker
@@ -380,6 +335,7 @@ docker compose version >/dev/null 2>&1 || die "当前 Docker 不支持 docker co
 
 resolve_backup_selection
 load_backup_metadata
+refresh_compose_cmd
 
 log "准备执行回滚"
 log "回滚备份目录：${SELECTED_BACKUP_DIR}"

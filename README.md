@@ -255,6 +255,22 @@ REF=main AUTO_STASH=1 bash upgrade.sh
 - 不执行 `docker compose down -v`
 - 重新构建并启动新版本容器
 
+### 镜像升级
+
+如果你的服务器不想拉代码再本地构建，也可以直接使用镜像升级：
+
+```bash
+UPGRADE_MODE=image BACKEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-backend:v1.0.0 FRONTEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-frontend:v1.0.0 bash upgrade.sh
+```
+
+脚本会自动生成：
+
+```text
+docker-compose.image.override.yml
+```
+
+并按镜像方式执行 `pull + up --no-build`，同时仍保留历史数据与升级前备份。
+
 ### 快速回滚
 
 根目录已内置回滚脚本：

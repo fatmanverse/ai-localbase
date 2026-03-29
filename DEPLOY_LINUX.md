@@ -123,6 +123,33 @@ REF=main AUTO_STASH=1 bash upgrade.sh
 - 不执行 `docker compose down -v`
 - 自动重建并启动新版本容器
 
+### 通过镜像升级（不拉代码）
+
+如果你已经提前构建并推送好了镜像，可以直接用镜像升级：
+
+```bash
+UPGRADE_MODE=image BACKEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-backend:v1.0.0 FRONTEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-frontend:v1.0.0 bash upgrade.sh
+```
+
+脚本会自动生成：
+
+```text
+docker-compose.image.override.yml
+```
+
+并按镜像模式执行：
+
+- `docker compose pull backend frontend`
+- `docker compose up -d --no-build --remove-orphans`
+
+同时仍保留：
+
+- 上传文档
+- 会话历史
+- 知识库状态
+- 向量数据
+- 升级前备份
+
 ### 从备份快速回滚
 
 直接回滚到最近一次升级备份：
@@ -165,6 +192,7 @@ bash scripts/linux/ops-check.sh
 
 脚本会检查：
 
+- 若存在 `docker-compose.image.override.yml`，会自动纳入巡检上下文
 - docker compose 容器状态
 - 4173 / 8080 / 6333 端口监听情况
 - 前端 / 后端 / Qdrant HTTP 可达性

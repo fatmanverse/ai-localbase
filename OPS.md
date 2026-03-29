@@ -180,6 +180,22 @@ REF=main AUTO_STASH=1 bash upgrade.sh
 - 拉取目标代码版本
 - 自动重建并启动新版本容器
 
+### 6.1 通过镜像升级
+
+如果你已经把镜像推到仓库，可以不拉代码，直接按镜像升级：
+
+```bash
+UPGRADE_MODE=image BACKEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-backend:v1.0.0 FRONTEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-frontend:v1.0.0 bash upgrade.sh
+```
+
+升级脚本会自动生成：
+
+```text
+docker-compose.image.override.yml
+```
+
+之后 `rollback.sh` 与 `scripts/linux/ops-check.sh` 也会自动识别这个覆盖文件。
+
 ### 升级完成后建议立刻执行
 
 ```bash
