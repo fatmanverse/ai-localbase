@@ -98,6 +98,14 @@ OLLAMA_BASE_URL=http://host.docker.internal:11434
 docker compose up --build -d
 ```
 
+如果你希望直接改成固定运行镜像，也可以在 `.env` 中覆盖：
+
+```bash
+BACKEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-backend:v1.0.0
+FRONTEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-frontend:v1.0.0
+QDRANT_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/qdrant:v1.13.4
+```
+
 ---
 
 ## 本地开发
@@ -106,6 +114,12 @@ docker compose up --build -d
 
 ```bash
 docker compose -f docker-compose.qdrant.yml up -d
+```
+
+如果 Docker Hub 网络不稳定，可以先覆盖 Qdrant 镜像地址，例如：
+
+```bash
+QDRANT_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/<你的命名空间>/qdrant:v1.13.4 docker compose -f docker-compose.qdrant.yml up -d
 ```
 
 ### 启动后端
@@ -270,6 +284,12 @@ UPGRADE_MODE=image BACKEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localba
 bash scripts/linux/upgrade-by-image.sh registry.cn-zhangjiakou.aliyuncs.com/ai_localbase v1.0.0
 ```
 
+如果服务器拉 Docker Hub 不稳定，也可以同时覆盖 Qdrant 镜像：
+
+```bash
+QDRANT_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/<你的命名空间>/qdrant:v1.13.4 bash scripts/linux/upgrade-by-image.sh registry.cn-zhangjiakou.aliyuncs.com/ai_localbase v1.0.0
+```
+
 脚本会自动生成：
 
 ```text
@@ -277,6 +297,16 @@ docker-compose.image.override.yml
 ```
 
 并按镜像方式执行 `pull + up --no-build`，同时仍保留历史数据与升级前备份。
+
+补充说明：当前 `docker-compose.yml` 也已经支持统一镜像变量：
+
+```bash
+BACKEND_IMAGE=...
+FRONTEND_IMAGE=...
+QDRANT_IMAGE=...
+```
+
+如果你有自己的私有仓库，可以直接在 `.env` 中长期固定。
 
 ### 快速回滚
 

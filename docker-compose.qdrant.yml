@@ -1,6 +1,6 @@
 services:
   qdrant:
-    image: qdrant/qdrant:v1.13.4
+    image: "${QDRANT_IMAGE:-qdrant/qdrant:v1.13.4}"
     container_name: ai-localbase-qdrant
     restart: unless-stopped
     ports:

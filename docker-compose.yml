@@ -1,6 +1,6 @@
 services:
   qdrant:
-    image: qdrant/qdrant:v1.13.4
+    image: "${QDRANT_IMAGE:-qdrant/qdrant:v1.13.4}"
     restart: unless-stopped
     ports:
       - "6333:6333"
@@ -9,7 +9,7 @@ services:
       - ./qdrant_storage:/qdrant/storage
 
   backend:
-    image: ai-localbase-backend:local
+    image: "${BACKEND_IMAGE:-ai-localbase-backend:local}"
     build:
       context: ./backend
       dockerfile: ../docker/backend.Dockerfile
@@ -42,7 +42,7 @@ services:
       - ./backend/data:/app/data
 
   frontend:
-    image: ai-localbase-frontend:local
+    image: "${FRONTEND_IMAGE:-ai-localbase-frontend:local}"
     build:
       context: .
       dockerfile: ./docker/frontend.Dockerfile

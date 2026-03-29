@@ -37,6 +37,7 @@ BACKUP_COMPRESS="${BACKUP_COMPRESS:-0}"
 SKIP_BACKUP="${SKIP_BACKUP:-0}"
 AUTO_STASH="${AUTO_STASH:-0}"
 PULL_QDRANT="${PULL_QDRANT:-1}"
+SKIP_IMAGE_PREFLIGHT="${SKIP_IMAGE_PREFLIGHT:-0}"
 DRY_RUN="${DRY_RUN:-0}"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 STASH_NAME="ai-localbase-upgrade-${TIMESTAMP}"
@@ -76,6 +77,57 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "未找到命令：$1"
 }
 
+inspect_image() {
+  local image="$1"
+  local output=""
+
+  if output="$(docker manifest inspect "${image}" 2>&1)"; then
+    return 0
+  fi
+
+  if output="$(docker pull "${image}" 2>&1)"; then
+    return 0
+  fi
+
+  echo "${output}"
+  return 1
+}
+
+preflight_image() {
+  local image="$1"
+  local output=""
+
+  log "校验镜像是否可用：${image}"
+  if output="$(inspect_image "${image}")"; then
+    return 0
+  fi
+
+  if grep -Eqi 'manifest( unknown| for)|not found' <<<"${output}"; then
+    die $'镜像不存在或尚未推送：'"${image}"$'
+- 请先确认镜像 tag 是否已推送到仓库
+- 当前可先手工检查：docker manifest inspect '"${image}"$'
+- 若你是按本仓库已发布稳定版升级，请优先使用已推送的版本号（当前仓库 tag 含 v1.0.0）'
+  fi
+
+  die $'镜像校验失败：'"${image}"$'
+'"${output}"$'
+- 请检查镜像仓库网络、登录状态或仓库地址是否正确
+- 如确认仓库可用，也可临时加 SKIP_IMAGE_PREFLIGHT=1 跳过预检，由 compose pull 阶段继续拉取'
+}
+
+preflight_image_upgrade() {
+  [[ -n "${BACKEND_IMAGE}" ]] || die "镜像升级模式下必须提供 BACKEND_IMAGE"
+  [[ -n "${FRONTEND_IMAGE}" ]] || die "镜像升级模式下必须提供 FRONTEND_IMAGE"
+
+  if [[ "${SKIP_IMAGE_PREFLIGHT}" == "1" ]]; then
+    warn "已跳过镜像预检（SKIP_IMAGE_PREFLIGHT=1）"
+    return 0
+  fi
+
+  preflight_image "${BACKEND_IMAGE}"
+  preflight_image "${FRONTEND_IMAGE}"
+}
+
 init_compose_bin() {
   if docker compose version >/dev/null 2>&1; then
     COMPOSE_BIN=(docker compose)
@@ -99,7 +151,7 @@ refresh_compose_cmd() {
   if [[ -n "${EXTRA_COMPOSE_FILE}" ]]; then
     COMPOSE_CMD+=(-f "${EXTRA_COMPOSE_FILE}")
     ACTIVE_IMAGE_OVERRIDE_FILE="${EXTRA_COMPOSE_FILE}"
-  elif [[ -f "${IMAGE_OVERRIDE_FILE}" ]]; then
+  elif [[ "${UPGRADE_MODE}" == "image" && -f "${IMAGE_OVERRIDE_FILE}" ]]; then
     COMPOSE_CMD+=(-f "${IMAGE_OVERRIDE_FILE}")
     ACTIVE_IMAGE_OVERRIDE_FILE="${IMAGE_OVERRIDE_FILE}"
   fi
@@ -287,6 +339,7 @@ EOF
 }
 
 prepare_image_upgrade() {
+  preflight_image_upgrade
   write_image_override_file
   refresh_compose_cmd
 }
@@ -370,7 +423,9 @@ usage() {
   BACKUP_ROOT=backups/upgrade   备份输出目录
   COMPOSE_FILE=docker-compose.yml
   ENV_FILE=.env
+  QDRANT_IMAGE=...              覆盖 qdrant 镜像地址（例如私有仓库 / 国内镜像）
   PULL_QDRANT=0                 跳过 qdrant 镜像拉取
+  SKIP_IMAGE_PREFLIGHT=1        跳过镜像存在性预检（仅在 registry 特殊环境下使用）
   DRY_RUN=1                     只打印将执行的命令，不真正执行
 
 示例：

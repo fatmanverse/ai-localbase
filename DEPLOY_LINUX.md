@@ -138,6 +138,12 @@ UPGRADE_MODE=image BACKEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localba
 bash scripts/linux/upgrade-by-image.sh registry.cn-zhangjiakou.aliyuncs.com/ai_localbase v1.0.0
 ```
 
+如果服务器无法稳定访问 Docker Hub，可一并指定私有 Qdrant 镜像：
+
+```bash
+QDRANT_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/<你的命名空间>/qdrant:v1.13.4 bash scripts/linux/upgrade-by-image.sh registry.cn-zhangjiakou.aliyuncs.com/ai_localbase v1.0.0
+```
+
 脚本会自动生成：
 
 ```text
@@ -148,6 +154,16 @@ docker-compose.image.override.yml
 
 - `docker compose pull backend frontend`
 - `docker compose up -d --no-build --remove-orphans`
+
+另外，当前 compose 已统一支持以下镜像变量：
+
+```bash
+BACKEND_IMAGE=...
+FRONTEND_IMAGE=...
+QDRANT_IMAGE=...
+```
+
+如果你希望长期固定为自己的私有镜像，可以直接写入 `.env`。
 
 同时仍保留：
 

@@ -195,6 +195,12 @@ UPGRADE_MODE=image BACKEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localba
 bash scripts/linux/upgrade-by-image.sh registry.cn-zhangjiakou.aliyuncs.com/ai_localbase v1.0.0
 ```
 
+如果 Docker Hub 网络不稳定，也可以连同 Qdrant 私有镜像一起指定：
+
+```bash
+QDRANT_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/<你的命名空间>/qdrant:v1.13.4 bash scripts/linux/upgrade-by-image.sh registry.cn-zhangjiakou.aliyuncs.com/ai_localbase v1.0.0
+```
+
 升级脚本会自动生成：
 
 ```text
@@ -202,6 +208,16 @@ docker-compose.image.override.yml
 ```
 
 之后 `rollback.sh` 与 `scripts/linux/ops-check.sh` 也会自动识别这个覆盖文件。
+
+当前 compose 也已统一支持：
+
+```bash
+BACKEND_IMAGE=...
+FRONTEND_IMAGE=...
+QDRANT_IMAGE=...
+```
+
+如需长期固定私有仓库镜像，直接写入 `.env` 即可。
 
 ### 6.2 镜像升级最短命令
 

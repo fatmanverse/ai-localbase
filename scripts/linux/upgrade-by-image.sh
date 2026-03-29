@@ -36,6 +36,7 @@ usage() {
   COMPOSE_FILE=...
   ENV_FILE=...
   IMAGE_OVERRIDE_FILE=...
+  QDRANT_IMAGE=...              可选，覆盖 qdrant 镜像地址
   PULL_QDRANT=0
   DRY_RUN=1
 
@@ -76,5 +77,8 @@ echo "REGISTRY_PREFIX=${REGISTRY_PREFIX}"
 echo "TAG=${TAG}"
 echo "BACKEND_IMAGE=${BACKEND_IMAGE}"
 echo "FRONTEND_IMAGE=${FRONTEND_IMAGE}"
+if [[ -n "${QDRANT_IMAGE:-}" ]]; then
+  echo "QDRANT_IMAGE=${QDRANT_IMAGE}"
+fi
 
 UPGRADE_MODE=image BACKEND_IMAGE="${BACKEND_IMAGE}" FRONTEND_IMAGE="${FRONTEND_IMAGE}" bash upgrade.sh
