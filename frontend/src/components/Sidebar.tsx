@@ -1,12 +1,6 @@
 import React, { useMemo, useState } from 'react'
-import {
-  AppConfig,
-  Conversation,
-  KnowledgeBase,
-  UploadTask,
-} from '../App'
+import { Conversation, KnowledgeBase, UploadTask } from '../App'
 import KnowledgePanel from './knowledge/KnowledgePanel'
-import SettingsPanel from './settings/SettingsPanel'
 
 interface SidebarProps {
   isOpen: boolean
@@ -32,15 +26,10 @@ interface SidebarProps {
   onCreateConversation: () => void
   onRenameConversation: (conversationId: string, title: string) => void
   onDeleteConversation: (conversationId: string) => void
-  config: AppConfig
   isSettingsOpen: boolean
   isKnowledgePanelOpen: boolean
   onToggleSettings: () => void
   onToggleKnowledgePanel: () => void
-  onSaveConfig: (config: AppConfig) => Promise<void>
-  isSavingConfig: boolean
-  configSaveError: string | null
-  configSaveSuccess: string | null
 }
 
 const formatDateTime = (value: string) =>
@@ -75,15 +64,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   onCreateConversation,
   onRenameConversation,
   onDeleteConversation,
-  config,
   isSettingsOpen,
   isKnowledgePanelOpen,
   onToggleSettings,
   onToggleKnowledgePanel,
-  onSaveConfig,
-  isSavingConfig,
-  configSaveError,
-  configSaveSuccess,
 }) => {
   const [collapsedKnowledgeBases, setCollapsedKnowledgeBases] = useState<
     Record<string, boolean>
@@ -303,17 +287,6 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
       </aside>
-
-      {isSettingsOpen && (
-        <SettingsPanel
-          config={config}
-          onClose={onToggleSettings}
-          onSave={onSaveConfig}
-          isSaving={isSavingConfig}
-          saveError={configSaveError}
-          saveSuccess={configSaveSuccess}
-        />
-      )}
 
       <KnowledgePanel
         open={isKnowledgePanelOpen}

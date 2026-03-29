@@ -1,7 +1,8 @@
 import './App.css'
 import ChatArea from './components/ChatArea'
 import Sidebar from './components/Sidebar'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import SettingsPanel from './components/settings/SettingsPanel'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 export interface SourceDocumentReference {
   knowledgeBaseId?: string
@@ -2010,7 +2011,7 @@ function App() {
     return summary
   }
 
-  const handleSaveConfig = async (nextConfig: AppConfig) => {
+  const handleSaveConfig = useCallback(async (nextConfig: AppConfig) => {
     setIsSavingConfig(true)
     setConfigSaveError(null)
     setConfigSaveSuccess(null)
@@ -2083,9 +2084,9 @@ function App() {
     } finally {
       setIsSavingConfig(false)
     }
-  }
+  }, [config, knowledgeBases])
 
-  const handleToggleSettings = () => {
+  const handleToggleSettings = useCallback(() => {
     setIsSettingsOpen((prev) => {
       const next = !prev
       if (next) {
@@ -2095,9 +2096,9 @@ function App() {
       }
       return next
     })
-  }
+  }, [])
 
-  const handleToggleKnowledgePanel = () => {
+  const handleToggleKnowledgePanel = useCallback(() => {
     setIsKnowledgePanelOpen((prev) => {
       const next = !prev
       if (next) {
@@ -2105,13 +2106,17 @@ function App() {
       }
       return next
     })
-  }
+  }, [])
+
+  const handleToggleSidebar = useCallback(() => {
+    setSidebarOpen((prev) => !prev)
+  }, [])
 
   return (
     <div className="chat-page">
       <Sidebar
         isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen(!sidebarOpen)}
+        onToggle={handleToggleSidebar}
         knowledgeBases={knowledgeBases}
         selectedKnowledgeBaseId={selectedKnowledgeBase?.id ?? null}
         selectedDocumentId={selectedDocumentId}
@@ -2133,16 +2138,22 @@ function App() {
         onCreateConversation={handleCreateConversation}
         onRenameConversation={handleRenameConversation}
         onDeleteConversation={handleDeleteConversation}
-        config={config}
         isSettingsOpen={isSettingsOpen}
         isKnowledgePanelOpen={isKnowledgePanelOpen}
         onToggleSettings={handleToggleSettings}
         onToggleKnowledgePanel={handleToggleKnowledgePanel}
-        onSaveConfig={handleSaveConfig}
-        isSavingConfig={isSavingConfig}
-        configSaveError={configSaveError}
-        configSaveSuccess={configSaveSuccess}
       />
+
+      {isSettingsOpen ? (
+        <SettingsPanel
+          config={config}
+          onClose={handleToggleSettings}
+          onSave={handleSaveConfig}
+          isSaving={isSavingConfig}
+          saveError={configSaveError}
+          saveSuccess={configSaveSuccess}
+        />
+      ) : null}
       <ChatArea
         sidebarOpen={sidebarOpen}
         activeConversation={activeConversation}

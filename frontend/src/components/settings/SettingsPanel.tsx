@@ -1034,4 +1034,4 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   )
 }
 
-export default SettingsPanel
+export default memo(SettingsPanel)
