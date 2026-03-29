@@ -131,6 +131,12 @@ REF=main AUTO_STASH=1 bash upgrade.sh
 UPGRADE_MODE=image BACKEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-backend:v1.0.0 FRONTEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-frontend:v1.0.0 bash upgrade.sh
 ```
 
+如果想命令更短，也可以直接用：
+
+```bash
+bash scripts/linux/upgrade-by-image.sh registry.cn-zhangjiakou.aliyuncs.com/ai_localbase v1.0.0
+```
+
 脚本会自动生成：
 
 ```text

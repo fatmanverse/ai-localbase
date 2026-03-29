@@ -188,6 +188,12 @@ REF=main AUTO_STASH=1 bash upgrade.sh
 UPGRADE_MODE=image BACKEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-backend:v1.0.0 FRONTEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-frontend:v1.0.0 bash upgrade.sh
 ```
 
+如果想命令更短，也可以直接用包装脚本：
+
+```bash
+bash scripts/linux/upgrade-by-image.sh registry.cn-zhangjiakou.aliyuncs.com/ai_localbase v1.0.0
+```
+
 升级脚本会自动生成：
 
 ```text
@@ -195,6 +201,19 @@ docker-compose.image.override.yml
 ```
 
 之后 `rollback.sh` 与 `scripts/linux/ops-check.sh` 也会自动识别这个覆盖文件。
+
+### 6.2 镜像升级最短命令
+
+```bash
+bash scripts/linux/upgrade-by-image.sh <REGISTRY_PREFIX> <TAG>
+```
+
+这个脚本会自动把：
+
+- `${REGISTRY_PREFIX}/ai-localbase-backend:${TAG}`
+- `${REGISTRY_PREFIX}/ai-localbase-frontend:${TAG}`
+
+拼成完整镜像地址，再调用 `upgrade.sh`。
 
 ### 升级完成后建议立刻执行
 

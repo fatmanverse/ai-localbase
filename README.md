@@ -263,6 +263,12 @@ REF=main AUTO_STASH=1 bash upgrade.sh
 UPGRADE_MODE=image BACKEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-backend:v1.0.0 FRONTEND_IMAGE=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase/ai-localbase-frontend:v1.0.0 bash upgrade.sh
 ```
 
+如果你想命令更短，可以直接用包装脚本：
+
+```bash
+bash scripts/linux/upgrade-by-image.sh registry.cn-zhangjiakou.aliyuncs.com/ai_localbase v1.0.0
+```
+
 脚本会自动生成：
 
 ```text
@@ -321,6 +327,12 @@ bash rollback.sh
 
 ```bash
 bash scripts/linux/ops-check.sh
+```
+
+镜像升级（简化包装）：
+
+```bash
+bash scripts/linux/upgrade-by-image.sh <REGISTRY_PREFIX> <TAG>
 ```
 
 ---
