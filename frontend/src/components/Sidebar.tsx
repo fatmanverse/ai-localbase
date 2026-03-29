@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { memo, useCallback, useMemo, useState } from 'react'
 import { Conversation, KnowledgeBase, UploadTask } from '../App'
 import KnowledgePanel from './knowledge/KnowledgePanel'
 
@@ -32,6 +32,25 @@ interface SidebarProps {
   onToggleKnowledgePanel: () => void
 }
 
+interface ConversationRowProps {
+  conversation: Conversation
+  knowledgeBaseName: string
+  isActive: boolean
+  isMenuOpen: boolean
+  isEditing: boolean
+  editingTitle: string
+  isComposingTitle: boolean
+  onSelectConversation: (conversationId: string) => void
+  onToggleMenu: (conversationId: string) => void
+  onBeginEdit: (conversation: Conversation) => void
+  onDeleteConversation: (conversation: Conversation) => void
+  onEditingTitleChange: (value: string) => void
+  onEditingCompositionStart: () => void
+  onEditingCompositionEnd: (value: string) => void
+  onCommitRename: (conversation: Conversation) => void
+  onCancelRename: (conversation: Conversation) => void
+}
+
 const formatDateTime = (value: string) =>
   new Date(value).toLocaleString('zh-CN', {
     month: '2-digit',
@@ -39,6 +58,130 @@ const formatDateTime = (value: string) =>
     hour: '2-digit',
     minute: '2-digit',
   })
+
+const ConversationRow = memo(function ConversationRow({
+  conversation,
+  knowledgeBaseName,
+  isActive,
+  isMenuOpen,
+  isEditing,
+  editingTitle,
+  isComposingTitle,
+  onSelectConversation,
+  onToggleMenu,
+  onBeginEdit,
+  onDeleteConversation,
+  onEditingTitleChange,
+  onEditingCompositionStart,
+  onEditingCompositionEnd,
+  onCommitRename,
+  onCancelRename,
+}: ConversationRowProps) {
+  return (
+    <div className={`conversation-item-row ${isMenuOpen ? 'menu-open' : ''}`}>
+      {isEditing ? (
+        <div className={`conversation-item conversation-item-editing ${isActive ? 'active' : ''}`}>
+          <input
+            className="conversation-title-input"
+            type="text"
+            value={editingTitle}
+            autoFocus
+            onFocus={(event) => {
+              event.currentTarget.select()
+            }}
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => onEditingTitleChange(event.currentTarget.value)}
+            onCompositionStart={onEditingCompositionStart}
+            onCompositionEnd={(event) => onEditingCompositionEnd(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              event.stopPropagation()
+
+              if (isComposingTitle || event.nativeEvent.isComposing) {
+                return
+              }
+
+              if (event.key === 'Enter') {
+                onCommitRename(conversation)
+              }
+
+              if (event.key === 'Escape') {
+                onCancelRename(conversation)
+              }
+            }}
+            onKeyUp={(event) => {
+              event.stopPropagation()
+            }}
+            onBlur={() => {
+              if (isComposingTitle) {
+                return
+              }
+              onCommitRename(conversation)
+            }}
+          />
+          <span className="conversation-meta">
+            {knowledgeBaseName} · {conversation.messages.length} 条消息 · {formatDateTime(conversation.updatedAt)}
+          </span>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className={`conversation-item ${isActive ? 'active' : ''}`}
+          onClick={() => onSelectConversation(conversation.id)}
+        >
+          <span className="conversation-title-row-inline">
+            <span className="conversation-title">{conversation.title}</span>
+            <span className="conversation-kb-chip">{knowledgeBaseName}</span>
+          </span>
+          <span className="conversation-meta">
+            {conversation.messages.length} 条消息 · {formatDateTime(conversation.updatedAt)}
+          </span>
+        </button>
+      )}
+
+      <div className="conversation-item-actions">
+        <button
+          type="button"
+          className="conversation-menu-trigger"
+          aria-label="打开会话菜单"
+          onClick={(event) => {
+            event.stopPropagation()
+            onToggleMenu(conversation.id)
+          }}
+        >
+          ⋯
+        </button>
+
+        {isMenuOpen ? (
+          <div className="conversation-menu" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="conversation-menu-item"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onBeginEdit(conversation)}
+            >
+              重命名
+            </button>
+            <button
+              type="button"
+              className="conversation-menu-item danger"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onDeleteConversation(conversation)}
+            >
+              删除
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}, (prev, next) =>
+  prev.conversation === next.conversation &&
+  prev.knowledgeBaseName === next.knowledgeBaseName &&
+  prev.isActive === next.isActive &&
+  prev.isMenuOpen === next.isMenuOpen &&
+  prev.isEditing === next.isEditing &&
+  prev.editingTitle === next.editingTitle &&
+  prev.isComposingTitle === next.isComposingTitle)
 
 const Sidebar: React.FC<SidebarProps> = ({
   isOpen,
@@ -69,9 +212,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleSettings,
   onToggleKnowledgePanel,
 }) => {
-  const [collapsedKnowledgeBases, setCollapsedKnowledgeBases] = useState<
-    Record<string, boolean>
-  >({})
+  const [collapsedKnowledgeBases, setCollapsedKnowledgeBases] = useState<Record<string, boolean>>({})
   const [menuConversationId, setMenuConversationId] = useState<string | null>(null)
   const [editingConversationId, setEditingConversationId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
@@ -79,19 +220,59 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const sortedKnowledgeBases = useMemo(() => knowledgeBases, [knowledgeBases])
   const knowledgeBaseNameById = useMemo(
-    () =>
-      Object.fromEntries(
-        sortedKnowledgeBases.map((knowledgeBase) => [knowledgeBase.id, knowledgeBase.name]),
-      ),
+    () => Object.fromEntries(sortedKnowledgeBases.map((knowledgeBase) => [knowledgeBase.id, knowledgeBase.name])),
     [sortedKnowledgeBases],
   )
 
-  const toggleKnowledgeBaseCollapse = (knowledgeBaseId: string) => {
+  const toggleKnowledgeBaseCollapse = useCallback((knowledgeBaseId: string) => {
     setCollapsedKnowledgeBases((prev) => ({
       ...prev,
       [knowledgeBaseId]: !prev[knowledgeBaseId],
     }))
-  }
+  }, [])
+
+  const handleSelectConversation = useCallback((conversationId: string) => {
+    setMenuConversationId(null)
+    setEditingConversationId(null)
+    onSelectConversation(conversationId)
+  }, [onSelectConversation])
+
+  const handleToggleMenu = useCallback((conversationId: string) => {
+    setEditingConversationId(null)
+    setMenuConversationId((current) => (current === conversationId ? null : conversationId))
+  }, [])
+
+  const handleBeginEdit = useCallback((conversation: Conversation) => {
+    setMenuConversationId(null)
+    setEditingConversationId(conversation.id)
+    setEditingTitle(conversation.title)
+    setIsComposingTitle(false)
+  }, [])
+
+  const handleDeleteConversation = useCallback((conversation: Conversation) => {
+    const confirmed = window.confirm(`确定删除会话“${conversation.title}”吗？`)
+    setMenuConversationId(null)
+    setEditingConversationId(null)
+    if (!confirmed) {
+      return
+    }
+    onDeleteConversation(conversation.id)
+  }, [onDeleteConversation])
+
+  const handleCommitRename = useCallback((conversation: Conversation) => {
+    const nextTitle = editingTitle.trim()
+    setEditingConversationId(null)
+    if (!nextTitle || nextTitle === conversation.title.trim()) {
+      return
+    }
+    onRenameConversation(conversation.id, nextTitle)
+  }, [editingTitle, onRenameConversation])
+
+  const handleCancelRename = useCallback((conversation: Conversation) => {
+    setEditingConversationId(null)
+    setEditingTitle(conversation.title)
+    setIsComposingTitle(false)
+  }, [])
 
   return (
     <>
@@ -113,155 +294,34 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             <div className="conversation-list">
-              {conversations.map((conversation) => {
-                const isMenuOpen = menuConversationId === conversation.id
-                const isEditing = editingConversationId === conversation.id
-                const conversationKnowledgeBaseName = conversation.knowledgeBaseId
-                  ? knowledgeBaseNameById[conversation.knowledgeBaseId] ?? '知识库已删除'
-                  : '未绑定知识库'
-
-                return (
-                  <div
-                    key={conversation.id}
-                    className={`conversation-item-row ${isMenuOpen ? 'menu-open' : ''}`}
-                  >
-                    {isEditing ? (
-                      <div
-                        className={`conversation-item conversation-item-editing ${
-                          activeConversationId === conversation.id ? 'active' : ''
-                        }`}
-                      >
-                        <input
-                          className="conversation-title-input"
-                          type="text"
-                          value={editingTitle}
-                          autoFocus
-                          onFocus={(event) => {
-                            event.currentTarget.select()
-                          }}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) => setEditingTitle(event.currentTarget.value)}
-                          onCompositionStart={() => setIsComposingTitle(true)}
-                          onCompositionEnd={(event) => {
-                            setIsComposingTitle(false)
-                            setEditingTitle(event.currentTarget.value)
-                          }}
-                          onKeyDown={(event) => {
-                            event.stopPropagation()
-
-                            if (isComposingTitle || event.nativeEvent.isComposing) {
-                              return
-                            }
-
-                            if (event.key === 'Enter') {
-                              const nextTitle = editingTitle.trim()
-                              setEditingConversationId(null)
-                              if (!nextTitle || nextTitle === conversation.title.trim()) {
-                                return
-                              }
-                              onRenameConversation(conversation.id, nextTitle)
-                            }
-
-                            if (event.key === 'Escape') {
-                              setEditingConversationId(null)
-                              setEditingTitle(conversation.title)
-                            }
-                          }}
-                          onKeyUp={(event) => {
-                            event.stopPropagation()
-                          }}
-                          onBlur={() => {
-                            if (isComposingTitle) {
-                              return
-                            }
-
-                            const nextTitle = editingTitle.trim()
-                            setEditingConversationId(null)
-                            if (!nextTitle || nextTitle === conversation.title.trim()) {
-                              return
-                            }
-                            onRenameConversation(conversation.id, nextTitle)
-                          }}
-                        />
-                        <span className="conversation-meta">
-                          {conversationKnowledgeBaseName} · {conversation.messages.length} 条消息 · {formatDateTime(conversation.updatedAt)}
-                        </span>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className={`conversation-item ${
-                          activeConversationId === conversation.id ? 'active' : ''
-                        }`}
-                        onClick={() => {
-                          setMenuConversationId(null)
-                          setEditingConversationId(null)
-                          onSelectConversation(conversation.id)
-                        }}
-                      >
-                        <span className="conversation-title-row-inline">
-                          <span className="conversation-title">{conversation.title}</span>
-                          <span className="conversation-kb-chip">{conversationKnowledgeBaseName}</span>
-                        </span>
-                        <span className="conversation-meta">
-                          {conversation.messages.length} 条消息 · {formatDateTime(conversation.updatedAt)}
-                        </span>
-                      </button>
-                    )}
-
-                    <div className="conversation-item-actions">
-                      <button
-                        type="button"
-                        className="conversation-menu-trigger"
-                        aria-label="打开会话菜单"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          setEditingConversationId(null)
-                          setMenuConversationId((current) =>
-                            current === conversation.id ? null : conversation.id,
-                          )
-                        }}
-                      >
-                        ⋯
-                      </button>
-
-                      {isMenuOpen && (
-                        <div className="conversation-menu" onClick={(event) => event.stopPropagation()}>
-                          <button
-                            type="button"
-                            className="conversation-menu-item"
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => {
-                              setMenuConversationId(null)
-                              setEditingConversationId(conversation.id)
-                              setEditingTitle(conversation.title)
-                              setIsComposingTitle(false)
-                            }}
-                          >
-                            重命名
-                          </button>
-                          <button
-                            type="button"
-                            className="conversation-menu-item danger"
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => {
-                              const confirmed = window.confirm(`确定删除会话“${conversation.title}”吗？`)
-                              setMenuConversationId(null)
-                              setEditingConversationId(null)
-                              if (!confirmed) {
-                                return
-                              }
-                              onDeleteConversation(conversation.id)
-                            }}
-                          >
-                            删除
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
+              {conversations.map((conversation) => (
+                <ConversationRow
+                  key={conversation.id}
+                  conversation={conversation}
+                  knowledgeBaseName={
+                    conversation.knowledgeBaseId
+                      ? knowledgeBaseNameById[conversation.knowledgeBaseId] ?? '知识库已删除'
+                      : '未绑定知识库'
+                  }
+                  isActive={activeConversationId === conversation.id}
+                  isMenuOpen={menuConversationId === conversation.id}
+                  isEditing={editingConversationId === conversation.id}
+                  editingTitle={editingConversationId === conversation.id ? editingTitle : conversation.title}
+                  isComposingTitle={editingConversationId === conversation.id ? isComposingTitle : false}
+                  onSelectConversation={handleSelectConversation}
+                  onToggleMenu={handleToggleMenu}
+                  onBeginEdit={handleBeginEdit}
+                  onDeleteConversation={handleDeleteConversation}
+                  onEditingTitleChange={setEditingTitle}
+                  onEditingCompositionStart={() => setIsComposingTitle(true)}
+                  onEditingCompositionEnd={(value) => {
+                    setIsComposingTitle(false)
+                    setEditingTitle(value)
+                  }}
+                  onCommitRename={handleCommitRename}
+                  onCancelRename={handleCancelRename}
+                />
+              ))}
             </div>
           </section>
 
@@ -313,4 +373,16 @@ const Sidebar: React.FC<SidebarProps> = ({
   )
 }
 
-export default Sidebar
+const areSidebarPropsEqual = (prev: SidebarProps, next: SidebarProps) =>
+  prev.isOpen === next.isOpen &&
+  prev.knowledgeBases === next.knowledgeBases &&
+  prev.selectedKnowledgeBaseId === next.selectedKnowledgeBaseId &&
+  prev.selectedDocumentId === next.selectedDocumentId &&
+  prev.uploadTasksByKnowledgeBase === next.uploadTasksByKnowledgeBase &&
+  prev.reindexingKnowledgeBaseId === next.reindexingKnowledgeBaseId &&
+  prev.conversations === next.conversations &&
+  prev.activeConversationId === next.activeConversationId &&
+  prev.isSettingsOpen === next.isSettingsOpen &&
+  prev.isKnowledgePanelOpen === next.isKnowledgePanelOpen
+
+export default memo(Sidebar, areSidebarPropsEqual)

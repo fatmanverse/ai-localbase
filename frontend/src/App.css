@@ -566,6 +566,9 @@
   background: #fafbff;
   overflow: hidden;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  contain: layout paint style;
+  content-visibility: auto;
+  contain-intrinsic-size: 720px;
 }
 
 .kb-card:hover {
@@ -1545,6 +1548,7 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+  contain: layout paint;
 }
 
 .welcome-message {
@@ -1578,6 +1582,9 @@
   flex-direction: column;
   gap: 4px;
   max-width: 72%;
+  contain: layout paint style;
+  content-visibility: auto;
+  contain-intrinsic-size: 220px;
 }
 
 /* AI 消息不限宽，允许展开 */
@@ -1863,6 +1870,7 @@
   display: flex;
   align-items: stretch;
   z-index: 0;
+  contain: layout style;
 }
 
 .conversation-item-row.menu-open {
@@ -2812,6 +2820,9 @@
   border-radius: 16px;
   border: 1px solid #e5e7eb;
   background: #f8fafc;
+  contain: layout paint style;
+  content-visibility: auto;
+  contain-intrinsic-size: 180px;
 }
 
 .message-feedback-headline {

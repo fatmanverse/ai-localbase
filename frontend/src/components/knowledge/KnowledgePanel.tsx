@@ -1,4 +1,4 @@
-import React, { ChangeEvent, useState } from 'react'
+import React, { ChangeEvent, memo, useCallback, useMemo, useState } from 'react'
 import { KnowledgeBase, UploadTask } from '../../App'
 
 interface KnowledgePanelProps {
@@ -22,6 +22,8 @@ interface KnowledgePanelProps {
   reindexingKnowledgeBaseId: string | null
   onClose: () => void
 }
+
+const supportedFileTypes = ['TXT', 'MD', 'PDF', 'DOCX', 'HTML', 'HTM', 'PNG', 'JPG', 'JPEG', 'WEBP', 'GIF']
 
 const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
   open,
@@ -51,42 +53,48 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
   const [dragOverKnowledgeBaseId, setDragOverKnowledgeBaseId] = useState<string | null>(null)
   const [documentFilter, setDocumentFilter] = useState<'all' | 'faq' | 'default' | 'normal'>('all')
 
-  const supportedFileTypes = ['TXT', 'MD', 'PDF', 'DOCX', 'HTML', 'HTM', 'PNG', 'JPG', 'JPEG', 'WEBP', 'GIF']
+  const summary = useMemo(
+    () => ({
+      knowledgeBaseCount: knowledgeBases.length,
+      documentCount: knowledgeBases.reduce((sum, kb) => sum + kb.documents.length, 0),
+    }),
+    [knowledgeBases],
+  )
 
-  if (!open) return null
-
-  const handleUploadByFileList = (knowledgeBaseId: string, files: FileList | null) => {
+  const handleUploadByFileList = useCallback((knowledgeBaseId: string, files: FileList | null) => {
     if (!files || files.length === 0) {
       return
     }
     void onUploadFiles(knowledgeBaseId, files)
-  }
+  }, [onUploadFiles])
 
-  const handleFileChange = (knowledgeBaseId: string, event: ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = useCallback((knowledgeBaseId: string, event: ChangeEvent<HTMLInputElement>) => {
     handleUploadByFileList(knowledgeBaseId, event.target.files)
     event.target.value = ''
-  }
+  }, [handleUploadByFileList])
 
-  const handleOpenCreate = () => {
+  const handleOpenCreate = useCallback(() => {
     setNewName('')
     setNewDescription('')
     setShowCreateModal(true)
-  }
+  }, [])
 
-  const handleConfirmCreate = () => {
+  const handleConfirmCreate = useCallback(() => {
     const trimmedName = newName.trim()
     if (!trimmedName) return
     onCreateKnowledgeBase(trimmedName, newDescription.trim())
     setShowCreateModal(false)
     setNewName('')
     setNewDescription('')
-  }
+  }, [newDescription, newName, onCreateKnowledgeBase])
 
-  const handleCancelCreate = () => {
+  const handleCancelCreate = useCallback(() => {
     setShowCreateModal(false)
     setNewName('')
     setNewDescription('')
-  }
+  }, [])
+
+  if (!open) return null
 
   const statusLabel = (status: string) => {
     if (status === 'indexed') return { text: '已索引', color: '#16a34a', bg: '#dcfce7' }
@@ -137,8 +145,8 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
               <div>
                 <h2 className="kb-header-title">知识库管理</h2>
                 <p className="kb-header-sub">
-                  共 {knowledgeBases.length} 个知识库 ·{' '}
-                  {knowledgeBases.reduce((s, kb) => s + kb.documents.length, 0)} 份文档
+                  共 {summary.knowledgeBaseCount} 个知识库 ·{' '}
+                  {summary.documentCount} 份文档
                 </p>
               </div>
             </div>
@@ -554,4 +562,13 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
   )
 }
 
-export default KnowledgePanel
+const areKnowledgePanelPropsEqual = (prev: KnowledgePanelProps, next: KnowledgePanelProps) =>
+  prev.open === next.open &&
+  prev.knowledgeBases === next.knowledgeBases &&
+  prev.collapsedKnowledgeBases === next.collapsedKnowledgeBases &&
+  prev.selectedKnowledgeBaseId === next.selectedKnowledgeBaseId &&
+  prev.selectedDocumentId === next.selectedDocumentId &&
+  prev.uploadTasksByKnowledgeBase === next.uploadTasksByKnowledgeBase &&
+  prev.reindexingKnowledgeBaseId === next.reindexingKnowledgeBaseId
+
+export default memo(KnowledgePanel, areKnowledgePanelPropsEqual)

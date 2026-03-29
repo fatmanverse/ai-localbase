@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { AppConfig, Conversation, DEFAULT_SUGGESTED_PROMPTS, DocumentItem, KnowledgeBase, MessageFeedbackSummary } from '../App'
@@ -565,6 +565,88 @@ interface ChatAreaProps {
   ) => Promise<MessageFeedbackSummary>
 }
 
+interface ChatToolbarItem {
+  icon: string
+  text: string
+}
+
+interface ChatTopBarProps {
+  title: string
+  updatedAt: string
+  conversationKnowledgeBaseLabel: string
+  hasBoundKnowledgeBase: boolean
+  toolbarItems: ChatToolbarItem[]
+  currentKnowledgeBaseSelectValue: string
+  activeConversationKnowledgeBaseId: string
+  knowledgeBases: KnowledgeBase[]
+  isSwitchingKnowledgeBase: boolean
+  onChangeKnowledgeBase: (knowledgeBaseId: string) => void
+  onClearConversation: () => void
+}
+
+interface WelcomeStateProps {
+  welcomeMessage: string
+  conversationDocument: DocumentItem | null
+}
+
+interface MessageBubbleProps {
+  message: Conversation['messages'][number]
+  isStreamingPlaceholder: boolean
+  copied: boolean
+  feedbackNotice: string
+  hasSubmittedFeedback: boolean
+  isFeedbackExpanded: boolean
+  isFeedbackSubmitting: boolean
+  selectedFeedbackReason: string
+  feedbackText: string
+  canCollectFeedback: boolean
+  onCopyMessage: (messageId: string, content: string) => void
+  onSubmitLikeFeedback: (messageId: string) => void
+  onToggleFeedback: (messageId: string) => void
+  onSelectFeedbackReason: (messageId: string, reason: string) => void
+  onFeedbackTextChange: (messageId: string, value: string) => void
+  onCancelFeedback: () => void
+  onSubmitDislikeFeedback: (messageId: string) => void
+}
+
+interface MessageListProps {
+  messages: Conversation['messages']
+  isLoading: boolean
+  copiedMessageId: string | null
+  expandedFeedbackMessageId: string | null
+  feedbackSubmittingMessageId: string | null
+  feedbackReasons: Record<string, string>
+  feedbackTexts: Record<string, string>
+  feedbackNotices: Record<string, string>
+  onCopyMessage: (messageId: string, content: string) => void
+  onSubmitLikeFeedback: (messageId: string) => void
+  onToggleFeedback: (messageId: string) => void
+  onSelectFeedbackReason: (messageId: string, reason: string) => void
+  onFeedbackTextChange: (messageId: string, value: string) => void
+  onCancelFeedback: () => void
+  onSubmitDislikeFeedback: (messageId: string) => void
+  messagesEndRef: React.RefObject<HTMLDivElement>
+  welcomeMessage: string
+  conversationDocument: DocumentItem | null
+}
+
+interface PromptListProps {
+  prompts: string[]
+  canAsk: boolean
+  onPromptClick: (prompt: string) => void
+}
+
+interface ChatComposerProps {
+  inputValue: string
+  canSend: boolean
+  hasBoundKnowledgeBase: boolean
+  isSwitchingKnowledgeBase: boolean
+  isLoading: boolean
+  onInputChange: (value: string) => void
+  onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void
+  onSubmit: () => void
+}
+
 const normalChatFeedbackReasonOptions = [
   '答非所问',
   '内容不准确',
@@ -604,6 +686,429 @@ const formatTime = (value: string) =>
     minute: '2-digit',
   })
 
+const markdownComponents = {
+  code({ className, children, ...props }: any) {
+    const isInline = !className
+    const codeContent = String(children).replace(/\n$/, '')
+
+    if (!isInline && className?.includes('language-mermaid')) {
+      return <MermaidDiagram chart={codeContent} />
+    }
+
+    return isInline ? (
+      <code className="md-inline-code" {...props}>
+        {children}
+      </code>
+    ) : (
+      <pre className="md-code-block">
+        <code className={className} {...props}>
+          {children}
+        </code>
+      </pre>
+    )
+  },
+  a({ href, children, ...props }: any) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="md-link" {...props}>
+        {children}
+      </a>
+    )
+  },
+  table({ children, ...props }: any) {
+    return (
+      <div className="md-table-wrap">
+        <table {...props}>{children}</table>
+      </div>
+    )
+  },
+}
+
+const MarkdownMessage = memo(function MarkdownMessage({ content }: { content: string }) {
+  const normalizedContent = useMemo(() => fixMarkdown(content), [content])
+
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+      {normalizedContent}
+    </ReactMarkdown>
+  )
+})
+
+const ChatTopBar = memo(function ChatTopBar({
+  title,
+  updatedAt,
+  conversationKnowledgeBaseLabel,
+  hasBoundKnowledgeBase,
+  toolbarItems,
+  currentKnowledgeBaseSelectValue,
+  activeConversationKnowledgeBaseId,
+  knowledgeBases,
+  isSwitchingKnowledgeBase,
+  onChangeKnowledgeBase,
+  onClearConversation,
+}: ChatTopBarProps) {
+  return (
+    <div className="chat-topbar">
+      <div className="chat-topbar-left">
+        <span className="chat-topbar-title">AI Assistant</span>
+        <span className="chat-topbar-sep">·</span>
+        <span className="chat-topbar-hint">{title}</span>
+        <span className="chat-topbar-sep">·</span>
+        <span className={`chat-topbar-kb-tag ${hasBoundKnowledgeBase ? '' : 'is-missing'}`.trim()} title={conversationKnowledgeBaseLabel}>
+          {conversationKnowledgeBaseLabel}
+        </span>
+        <span className="chat-topbar-sep">·</span>
+        <span className="chat-topbar-hint">{formatTime(updatedAt)}</span>
+      </div>
+
+      <div className="chat-topbar-pills">
+        {toolbarItems.map((item) => (
+          <div key={item.text} className="topbar-pill" title={item.text}>
+            <span className="topbar-pill-icon">{item.icon}</span>
+            <span className="topbar-pill-text">{item.text}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="chat-topbar-right">
+        <label className="chat-topbar-scope">
+          <span className="chat-topbar-scope-label">知识库</span>
+          <select
+            className="chat-scope-select"
+            value={currentKnowledgeBaseSelectValue}
+            disabled={knowledgeBases.length === 0 || isSwitchingKnowledgeBase}
+            onChange={(event) => onChangeKnowledgeBase(event.target.value)}
+          >
+            {!currentKnowledgeBaseSelectValue ? <option value="">请选择知识库</option> : null}
+            {!hasBoundKnowledgeBase && activeConversationKnowledgeBaseId ? (
+              <option value={activeConversationKnowledgeBaseId}>当前绑定知识库已失效</option>
+            ) : null}
+            {knowledgeBases.map((knowledgeBase) => (
+              <option key={knowledgeBase.id} value={knowledgeBase.id}>
+                {knowledgeBase.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <button type="button" className="chat-clear-btn" onClick={onClearConversation} disabled={isSwitchingKnowledgeBase}>
+          清空对话
+        </button>
+      </div>
+    </div>
+  )
+})
+
+const WelcomeState = memo(function WelcomeState({ welcomeMessage, conversationDocument }: WelcomeStateProps) {
+  return (
+    <div className="welcome-message">
+      <h2>欢迎使用 AI LocalBase</h2>
+      <p>{welcomeMessage}</p>
+      {conversationDocument ? <p>当前文档范围：{conversationDocument.name}</p> : null}
+    </div>
+  )
+})
+
+const MessageBubble = memo(function MessageBubble({
+  message,
+  isStreamingPlaceholder,
+  copied,
+  feedbackNotice,
+  hasSubmittedFeedback,
+  isFeedbackExpanded,
+  isFeedbackSubmitting,
+  selectedFeedbackReason,
+  feedbackText,
+  canCollectFeedback,
+  onCopyMessage,
+  onSubmitLikeFeedback,
+  onToggleFeedback,
+  onSelectFeedbackReason,
+  onFeedbackTextChange,
+  onCancelFeedback,
+  onSubmitDislikeFeedback,
+}: MessageBubbleProps) {
+  const degradedMetadata = message.role === 'assistant' && message.metadata?.degraded ? message.metadata : null
+  const sourceDocuments = message.role === 'assistant' ? message.metadata?.sources ?? [] : []
+  const relatedImages = message.role === 'assistant' ? message.metadata?.relatedImages ?? [] : []
+  const feedbackSummary = message.role === 'assistant' ? message.metadata?.feedbackSummary : undefined
+  const hasMessageContent = Boolean(message.content.trim())
+
+  return (
+    <div className={`message ${message.role}`}>
+      {!isStreamingPlaceholder && hasMessageContent ? (
+        <button
+          type="button"
+          className="message-copy-btn"
+          onClick={() => onCopyMessage(message.id, message.content)}
+          aria-label="复制消息"
+          title={copied ? '已复制' : '复制消息'}
+        >
+          {copied ? '✓' : '⧉'}
+        </button>
+      ) : null}
+
+      <div className={`message-content ${isStreamingPlaceholder ? 'message-content-thinking' : ''} ${message.role === 'assistant' ? 'message-content-markdown' : ''}`.trim()}>
+        {degradedMetadata ? (
+          <div className="message-degraded-banner" role="status" aria-live="polite">
+            <div className="message-degraded-title">这次先给你一版保守结论，现有资料还不算特别完整。</div>
+            <div className="message-degraded-detail">你可以先按当前答案处理；如果还卡住，我再继续帮你缩小范围。</div>
+          </div>
+        ) : null}
+
+        {isStreamingPlaceholder ? (
+          <div className="thinking-indicator" aria-label="AI 正在思考">
+            <span className="thinking-dot" />
+            <span className="thinking-dot" />
+            <span className="thinking-dot" />
+          </div>
+        ) : message.role === 'assistant' ? (
+          <MarkdownMessage content={message.content} />
+        ) : (
+          message.content
+        )}
+      </div>
+
+      {message.role === 'assistant' && sourceDocuments.length > 0 ? (
+        <div className="message-sources">
+          <span className="message-sources-label">知识来源</span>
+          <div className="message-source-list">
+            {sourceDocuments.map((source) => (
+              <span key={`${source.knowledgeBaseId ?? ''}-${source.documentId ?? ''}-${source.documentName ?? ''}`} className="message-source-chip">
+                {source.documentName || source.documentId || '文档片段'}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {message.role === 'assistant' && relatedImages.length > 0 ? (
+        <div className="message-related-images">
+          <div className="message-related-images-title">相关图片</div>
+          <div className="message-related-image-grid">
+            {relatedImages.map((image) => (
+              <div key={image.id} className="message-related-image-card">
+                {image.publicUrl ? (
+                  <img src={image.publicUrl} alt={image.description || image.documentName || image.id} loading="lazy" />
+                ) : null}
+                <div className="message-related-image-meta">
+                  <strong>{image.documentName || '相关图片'}</strong>
+                  {image.classification ? <span>{image.classification}</span> : null}
+                  {image.description ? <p>{image.description}</p> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {canCollectFeedback ? (
+        <div className="message-feedback-box">
+          <div className="message-feedback-headline">这条回答是否帮你解决了问题？</div>
+
+          {(feedbackSummary?.likeCount ?? 0) > 0 || (feedbackSummary?.dislikeCount ?? 0) > 0 ? (
+            <div className="message-feedback-summary">
+              <span>👍 {feedbackSummary?.likeCount ?? 0}</span>
+              <span>👎 {feedbackSummary?.dislikeCount ?? 0}</span>
+            </div>
+          ) : null}
+
+          {feedbackNotice ? (
+            <div className={`message-feedback-notice ${hasSubmittedFeedback ? 'is-muted' : ''}`.trim()}>
+              {feedbackNotice}
+            </div>
+          ) : null}
+
+          {!hasSubmittedFeedback ? (
+            <>
+              <div className="message-feedback-actions">
+                <button
+                  type="button"
+                  className="message-feedback-action primary"
+                  disabled={isFeedbackSubmitting}
+                  onClick={() => onSubmitLikeFeedback(message.id)}
+                >
+                  {isFeedbackSubmitting ? '提交中...' : '👍 已解决'}
+                </button>
+                <button
+                  type="button"
+                  className="message-feedback-action secondary"
+                  disabled={isFeedbackSubmitting}
+                  onClick={() => onToggleFeedback(message.id)}
+                >
+                  👎 还不够
+                </button>
+              </div>
+
+              {isFeedbackExpanded ? (
+                <div className="message-feedback-panel">
+                  <div className="message-feedback-reasons">
+                    {normalChatFeedbackReasonOptions.map((reason) => (
+                      <button
+                        key={reason}
+                        type="button"
+                        className={`message-feedback-reason ${selectedFeedbackReason === reason ? 'selected' : ''}`.trim()}
+                        disabled={isFeedbackSubmitting}
+                        onClick={() => onSelectFeedbackReason(message.id, reason)}
+                      >
+                        {reason}
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    rows={3}
+                    value={feedbackText}
+                    disabled={isFeedbackSubmitting}
+                    placeholder="如果你愿意，可以补充一下实际卡住的点，我后面会优先优化这类回答。"
+                    onChange={(event) => onFeedbackTextChange(message.id, event.target.value)}
+                  />
+                  <div className="message-feedback-submit-row">
+                    <span>选好原因后提交，我会把这类问题归到后续优化清单里。</span>
+                    <div className="message-feedback-submit-actions">
+                      <button type="button" className="message-feedback-action secondary" disabled={isFeedbackSubmitting} onClick={onCancelFeedback}>
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        className="message-feedback-action primary"
+                        disabled={isFeedbackSubmitting}
+                        onClick={() => onSubmitDislikeFeedback(message.id)}
+                      >
+                        {isFeedbackSubmitting ? '提交中...' : '提交反馈'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="message-time">{formatTime(message.timestamp)}</div>
+    </div>
+  )
+})
+
+const MessageList = memo(function MessageList({
+  messages,
+  isLoading,
+  copiedMessageId,
+  expandedFeedbackMessageId,
+  feedbackSubmittingMessageId,
+  feedbackReasons,
+  feedbackTexts,
+  feedbackNotices,
+  onCopyMessage,
+  onSubmitLikeFeedback,
+  onToggleFeedback,
+  onSelectFeedbackReason,
+  onFeedbackTextChange,
+  onCancelFeedback,
+  onSubmitDislikeFeedback,
+  messagesEndRef,
+  welcomeMessage,
+  conversationDocument,
+}: MessageListProps) {
+  const lastMessage = messages.at(-1)
+
+  return (
+    <div className="messages-container">
+      {messages.length === 0 ? (
+        <WelcomeState welcomeMessage={welcomeMessage} conversationDocument={conversationDocument} />
+      ) : (
+        messages.map((message, index) => {
+          const isStreamingPlaceholder =
+            isLoading && message.role === 'assistant' && message.id === lastMessage?.id && !message.content.trim()
+          const previousMessage = messages[index - 1]
+          const feedbackSummary = message.role === 'assistant' ? message.metadata?.feedbackSummary : undefined
+          const feedbackNotice = feedbackNotices[message.id] || describeFeedbackSummary(feedbackSummary)
+          const hasSubmittedFeedback = Boolean(feedbackSummary?.latestFeedbackId)
+          const canCollectFeedback =
+            message.role === 'assistant' && previousMessage?.role === 'user' && !isStreamingPlaceholder && Boolean(message.content.trim())
+
+          return (
+            <MessageBubble
+              key={message.id}
+              message={message}
+              isStreamingPlaceholder={isStreamingPlaceholder}
+              copied={copiedMessageId === message.id}
+              feedbackNotice={feedbackNotice}
+              hasSubmittedFeedback={hasSubmittedFeedback}
+              isFeedbackExpanded={expandedFeedbackMessageId === message.id}
+              isFeedbackSubmitting={feedbackSubmittingMessageId === message.id}
+              selectedFeedbackReason={feedbackReasons[message.id] ?? '没有解决问题'}
+              feedbackText={feedbackTexts[message.id] ?? ''}
+              canCollectFeedback={canCollectFeedback}
+              onCopyMessage={onCopyMessage}
+              onSubmitLikeFeedback={onSubmitLikeFeedback}
+              onToggleFeedback={onToggleFeedback}
+              onSelectFeedbackReason={onSelectFeedbackReason}
+              onFeedbackTextChange={onFeedbackTextChange}
+              onCancelFeedback={onCancelFeedback}
+              onSubmitDislikeFeedback={onSubmitDislikeFeedback}
+            />
+          )
+        })
+      )}
+
+      {isLoading && lastMessage?.role !== 'assistant' ? (
+        <div className="message assistant loading">
+          <div className="message-content">AI 正在生成回答...</div>
+        </div>
+      ) : null}
+
+      <div ref={messagesEndRef} />
+    </div>
+  )
+})
+
+const PromptList = memo(function PromptList({ prompts, canAsk, onPromptClick }: PromptListProps) {
+  return (
+    <div className="prompt-list">
+      {prompts.map((prompt) => (
+        <button key={prompt} type="button" className="prompt-chip" disabled={!canAsk} onClick={() => onPromptClick(prompt)}>
+          {prompt}
+        </button>
+      ))}
+    </div>
+  )
+})
+
+const ChatComposer = memo(function ChatComposer({
+  inputValue,
+  canSend,
+  hasBoundKnowledgeBase,
+  isSwitchingKnowledgeBase,
+  isLoading,
+  onInputChange,
+  onKeyDown,
+  onSubmit,
+}: ChatComposerProps) {
+  return (
+    <div className="input-area">
+      <div className="input-container">
+        <textarea
+          value={inputValue}
+          onChange={(event) => onInputChange(event.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={
+            isSwitchingKnowledgeBase
+              ? '正在切换知识库，请稍候...'
+              : hasBoundKnowledgeBase
+                ? '输入您的问题，Enter 发送，Shift + Enter 换行'
+                : '请先为当前会话绑定知识库后再提问'
+          }
+          rows={3}
+          disabled={!hasBoundKnowledgeBase || isSwitchingKnowledgeBase}
+        />
+        <button type="button" onClick={onSubmit} disabled={!canSend} className="send-btn">
+          {isSwitchingKnowledgeBase ? '切换中...' : isLoading ? '发送中...' : '发送'}
+        </button>
+      </div>
+    </div>
+  )
+})
+
 const ChatArea: React.FC<ChatAreaProps> = ({
   sidebarOpen,
   activeConversation,
@@ -629,8 +1134,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   const hasBoundKnowledgeBase = Boolean(conversationKnowledgeBase)
-  const currentKnowledgeBaseSelectValue =
-    conversationKnowledgeBase?.id ?? activeConversation.knowledgeBaseId ?? ''
+  const currentKnowledgeBaseSelectValue = conversationKnowledgeBase?.id ?? activeConversation.knowledgeBaseId ?? ''
   const conversationKnowledgeBaseLabel = conversationKnowledgeBase
     ? `知识库：${conversationKnowledgeBase.name}`
     : activeConversation.knowledgeBaseId
@@ -638,19 +1142,21 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       : '未绑定知识库'
   const canAsk = hasBoundKnowledgeBase && !isLoading && !isSwitchingKnowledgeBase
   const canSend = inputValue.trim().length > 0 && canAsk
-  const suggestedPrompts =
-    config.ui?.suggestedPrompts && config.ui.suggestedPrompts.length > 0
-      ? config.ui.suggestedPrompts
-      : DEFAULT_SUGGESTED_PROMPTS
+
+  const suggestedPrompts = useMemo(
+    () =>
+      config.ui?.suggestedPrompts && config.ui.suggestedPrompts.length > 0
+        ? config.ui.suggestedPrompts
+        : DEFAULT_SUGGESTED_PROMPTS,
+    [config.ui?.suggestedPrompts],
+  )
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [activeConversation.messages, isLoading])
 
   const conversationStats = useMemo(() => {
-    const userCount = activeConversation.messages.filter(
-      (message) => message.role === 'user',
-    ).length
+    const userCount = activeConversation.messages.filter((message) => message.role === 'user').length
 
     return {
       userCount,
@@ -658,15 +1164,20 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     }
   }, [activeConversation.messages])
 
-  const scopeText = conversationDocument
-    ? `文档问答：${conversationDocument.name}`
-    : conversationKnowledgeBase
-      ? `知识库问答：${conversationKnowledgeBase.name}`
-      : activeConversation.knowledgeBaseId
-        ? '会话绑定的知识库已失效'
-        : '当前会话未绑定知识库'
+  const scopeText = useMemo(() => {
+    if (conversationDocument) {
+      return `文档问答：${conversationDocument.name}`
+    }
+    if (conversationKnowledgeBase) {
+      return `知识库问答：${conversationKnowledgeBase.name}`
+    }
+    if (activeConversation.knowledgeBaseId) {
+      return '会话绑定的知识库已失效'
+    }
+    return '当前会话未绑定知识库'
+  }, [activeConversation.knowledgeBaseId, conversationDocument, conversationKnowledgeBase])
 
-  const toolbarItems = [
+  const toolbarItems = useMemo<ChatToolbarItem[]>(() => [
     {
       icon: '📚',
       text: scopeText,
@@ -682,9 +1193,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       icon: '💬',
       text: `${conversationStats.totalCount} 条消息`,
     },
-  ]
+  ], [config.chat.candidates, config.chat.model, conversationStats.totalCount, scopeText])
 
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     const content = inputValue.trim()
     if (!content || !canAsk) {
       return
@@ -692,16 +1203,32 @@ const ChatArea: React.FC<ChatAreaProps> = ({
 
     setInputValue('')
     await onSendMessage(content)
-  }
+  }, [inputValue, canAsk, onSendMessage])
 
-  const handleKeyDown = async (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = useCallback(async (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
       await handleSubmit()
     }
-  }
+  }, [handleSubmit])
 
-  const handleCopyMessage = async (messageId: string, content: string) => {
+  const handleInputChange = useCallback((value: string) => {
+    setInputValue(value)
+  }, [])
+
+  const handlePromptClick = useCallback((prompt: string) => {
+    void onSendMessage(prompt)
+  }, [onSendMessage])
+
+  const handleKnowledgeBaseChange = useCallback((knowledgeBaseId: string) => {
+    void onChangeConversationKnowledgeBase(knowledgeBaseId)
+  }, [onChangeConversationKnowledgeBase])
+
+  const handleClearConversationClick = useCallback(() => {
+    onClearConversation()
+  }, [onClearConversation])
+
+  const handleCopyMessage = useCallback(async (messageId: string, content: string) => {
     try {
       await navigator.clipboard.writeText(content)
       setCopiedMessageId(messageId)
@@ -711,9 +1238,35 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     } catch {
       // 忽略复制异常，避免影响主流程
     }
-  }
+  }, [])
 
-  const handleSubmitLikeFeedback = async (messageId: string) => {
+  const handleToggleFeedback = useCallback((messageId: string) => {
+    setExpandedFeedbackMessageId((prev) => (prev === messageId ? null : messageId))
+    setFeedbackReasons((prev) => ({
+      ...prev,
+      [messageId]: prev[messageId] ?? '没有解决问题',
+    }))
+  }, [])
+
+  const handleSelectFeedbackReason = useCallback((messageId: string, reason: string) => {
+    setFeedbackReasons((prev) => ({
+      ...prev,
+      [messageId]: reason,
+    }))
+  }, [])
+
+  const handleFeedbackTextChange = useCallback((messageId: string, value: string) => {
+    setFeedbackTexts((prev) => ({
+      ...prev,
+      [messageId]: value,
+    }))
+  }, [])
+
+  const handleCancelFeedback = useCallback(() => {
+    setExpandedFeedbackMessageId(null)
+  }, [])
+
+  const handleSubmitLikeFeedback = useCallback(async (messageId: string) => {
     setFeedbackSubmittingMessageId(messageId)
     try {
       await onSubmitMessageFeedback(messageId, { feedbackType: 'like' })
@@ -727,9 +1280,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     } finally {
       setFeedbackSubmittingMessageId(null)
     }
-  }
+  }, [onSubmitMessageFeedback])
 
-  const handleSubmitDislikeFeedback = async (messageId: string) => {
+  const handleSubmitDislikeFeedback = useCallback(async (messageId: string) => {
     const feedbackReason = feedbackReasons[messageId] ?? '没有解决问题'
     const feedbackText = feedbackTexts[messageId]?.trim() ?? ''
 
@@ -750,404 +1303,72 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     } finally {
       setFeedbackSubmittingMessageId(null)
     }
-  }
+  }, [feedbackReasons, feedbackTexts, onSubmitMessageFeedback])
 
   return (
     <main className={`chat-area ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
-      <div className="chat-topbar">
-        <div className="chat-topbar-left">
-          <span className="chat-topbar-title">AI Assistant</span>
-          <span className="chat-topbar-sep">·</span>
-          <span className="chat-topbar-hint">{activeConversation.title}</span>
-          <span className="chat-topbar-sep">·</span>
-          <span
-            className={`chat-topbar-kb-tag ${conversationKnowledgeBase ? '' : 'is-missing'}`.trim()}
-            title={conversationKnowledgeBaseLabel}
-          >
-            {conversationKnowledgeBaseLabel}
-          </span>
-          <span className="chat-topbar-sep">·</span>
-          <span className="chat-topbar-hint">{formatTime(activeConversation.updatedAt)}</span>
-        </div>
+      <ChatTopBar
+        title={activeConversation.title}
+        updatedAt={activeConversation.updatedAt}
+        conversationKnowledgeBaseLabel={conversationKnowledgeBaseLabel}
+        hasBoundKnowledgeBase={hasBoundKnowledgeBase}
+        toolbarItems={toolbarItems}
+        currentKnowledgeBaseSelectValue={currentKnowledgeBaseSelectValue}
+        activeConversationKnowledgeBaseId={activeConversation.knowledgeBaseId}
+        knowledgeBases={knowledgeBases}
+        isSwitchingKnowledgeBase={isSwitchingKnowledgeBase}
+        onChangeKnowledgeBase={handleKnowledgeBaseChange}
+        onClearConversation={handleClearConversationClick}
+      />
 
-        <div className="chat-topbar-pills">
-          {toolbarItems.map((item) => (
-            <div key={item.text} className="topbar-pill" title={item.text}>
-              <span className="topbar-pill-icon">{item.icon}</span>
-              <span className="topbar-pill-text">{item.text}</span>
-            </div>
-          ))}
-        </div>
+      <MessageList
+        messages={activeConversation.messages}
+        isLoading={isLoading}
+        copiedMessageId={copiedMessageId}
+        expandedFeedbackMessageId={expandedFeedbackMessageId}
+        feedbackSubmittingMessageId={feedbackSubmittingMessageId}
+        feedbackReasons={feedbackReasons}
+        feedbackTexts={feedbackTexts}
+        feedbackNotices={feedbackNotices}
+        onCopyMessage={handleCopyMessage}
+        onSubmitLikeFeedback={handleSubmitLikeFeedback}
+        onToggleFeedback={handleToggleFeedback}
+        onSelectFeedbackReason={handleSelectFeedbackReason}
+        onFeedbackTextChange={handleFeedbackTextChange}
+        onCancelFeedback={handleCancelFeedback}
+        onSubmitDislikeFeedback={handleSubmitDislikeFeedback}
+        messagesEndRef={messagesEndRef}
+        welcomeMessage={welcomeMessage}
+        conversationDocument={conversationDocument}
+      />
 
-        <div className="chat-topbar-right">
-          <label className="chat-topbar-scope">
-            <span className="chat-topbar-scope-label">知识库</span>
-            <select
-              className="chat-scope-select"
-              value={currentKnowledgeBaseSelectValue}
-              disabled={knowledgeBases.length === 0 || isSwitchingKnowledgeBase}
-              onChange={(event) => {
-                void onChangeConversationKnowledgeBase(event.target.value)
-              }}
-            >
-              {!currentKnowledgeBaseSelectValue ? <option value="">请选择知识库</option> : null}
-              {!conversationKnowledgeBase && activeConversation.knowledgeBaseId ? (
-                <option value={activeConversation.knowledgeBaseId}>当前绑定知识库已失效</option>
-              ) : null}
-              {knowledgeBases.map((knowledgeBase) => (
-                <option key={knowledgeBase.id} value={knowledgeBase.id}>
-                  {knowledgeBase.name}
-                </option>
-              ))}
-            </select>
-          </label>
+      <PromptList prompts={suggestedPrompts} canAsk={canAsk} onPromptClick={handlePromptClick} />
 
-          <button
-            type="button"
-            className="chat-clear-btn"
-            onClick={onClearConversation}
-            disabled={isSwitchingKnowledgeBase}
-          >
-            清空对话
-          </button>
-        </div>
-      </div>
-
-      <div className="messages-container">
-        {activeConversation.messages.length === 0 ? (
-          <div className="welcome-message">
-            <h2>欢迎使用 AI LocalBase</h2>
-            <p>{welcomeMessage}</p>
-            {conversationDocument ? <p>当前文档范围：{conversationDocument.name}</p> : null}
-          </div>
-        ) : (
-          activeConversation.messages.map((message, index) => {
-            const isStreamingPlaceholder =
-              isLoading &&
-              message.role === 'assistant' &&
-              message.id === activeConversation.messages.at(-1)?.id &&
-              !message.content.trim()
-            const degradedMetadata =
-              message.role === 'assistant' && message.metadata?.degraded
-                ? message.metadata
-                : null
-            const previousMessage = activeConversation.messages[index - 1]
-            const sourceDocuments = message.role === 'assistant' ? message.metadata?.sources ?? [] : []
-            const relatedImages = message.role === 'assistant' ? message.metadata?.relatedImages ?? [] : []
-            const feedbackSummary =
-              message.role === 'assistant' ? message.metadata?.feedbackSummary : undefined
-            const feedbackNotice = feedbackNotices[message.id] || describeFeedbackSummary(feedbackSummary)
-            const hasSubmittedFeedback = Boolean(feedbackSummary?.latestFeedbackId)
-            const isFeedbackExpanded = expandedFeedbackMessageId === message.id
-            const isFeedbackSubmitting = feedbackSubmittingMessageId === message.id
-            const selectedFeedbackReason = feedbackReasons[message.id] ?? '没有解决问题'
-            const feedbackText = feedbackTexts[message.id] ?? ''
-            const canCollectFeedback =
-              message.role === 'assistant' &&
-              previousMessage?.role === 'user' &&
-              !isStreamingPlaceholder &&
-              Boolean(message.content.trim())
-
-            return (
-              <div key={message.id} className={`message ${message.role}`}>
-                {!isStreamingPlaceholder && message.content.trim() && (
-                  <button
-                    type="button"
-                    className="message-copy-btn"
-                    onClick={() => {
-                      void handleCopyMessage(message.id, message.content)
-                    }}
-                    aria-label="复制消息"
-                    title={copiedMessageId === message.id ? '已复制' : '复制消息'}
-                  >
-                    {copiedMessageId === message.id ? '✓' : '⧉'}
-                  </button>
-                )}
-                <div
-                  className={`message-content ${
-                    isStreamingPlaceholder ? 'message-content-thinking' : ''
-                  } ${message.role === 'assistant' ? 'message-content-markdown' : ''}`}
-                >
-                  {degradedMetadata && (
-                    <div className="message-degraded-banner" role="status" aria-live="polite">
-                      <div className="message-degraded-title">这次先给你一版保守结论，现有资料还不算特别完整。</div>
-                      <div className="message-degraded-detail">
-                        你可以先按当前答案处理；如果还卡住，我再继续帮你缩小范围。
-                      </div>
-                    </div>
-                  )}
-                  {isStreamingPlaceholder ? (
-                    <div className="thinking-indicator" aria-label="AI 正在思考">
-                      <span className="thinking-dot" />
-                      <span className="thinking-dot" />
-                      <span className="thinking-dot" />
-                    </div>
-                  ) : message.role === 'assistant' ? (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        code({ className, children, ...props }) {
-                          const isInline = !className
-                          const codeContent = String(children).replace(/\n$/, '')
-
-                          if (!isInline && className?.includes('language-mermaid')) {
-                            return <MermaidDiagram chart={codeContent} />
-                          }
-
-                          return isInline ? (
-                            <code className="md-inline-code" {...props}>
-                              {children}
-                            </code>
-                          ) : (
-                            <pre className="md-code-block">
-                              <code className={className} {...props}>
-                                {children}
-                              </code>
-                            </pre>
-                          )
-                        },
-                        a({ href, children, ...props }) {
-                          return (
-                            <a
-                              href={href}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="md-link"
-                              {...props}
-                            >
-                              {children}
-                            </a>
-                          )
-                        },
-                        table({ children, ...props }) {
-                          return (
-                            <div className="md-table-wrap">
-                              <table {...props}>{children}</table>
-                            </div>
-                          )
-                        },
-                      }}
-                    >
-                      {fixMarkdown(message.content)}
-                    </ReactMarkdown>
-                  ) : (
-                    message.content
-                  )}
-                </div>
-                {message.role === 'assistant' && sourceDocuments.length > 0 ? (
-                  <div className="message-sources">
-                    <span className="message-sources-label">知识来源</span>
-                    <div className="message-source-list">
-                      {sourceDocuments.map((source) => (
-                        <span
-                          key={`${source.knowledgeBaseId ?? ''}-${source.documentId ?? ''}-${source.documentName ?? ''}`}
-                          className="message-source-chip"
-                        >
-                          {source.documentName || source.documentId || '文档片段'}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {message.role === 'assistant' && relatedImages.length > 0 ? (
-                  <div className="message-related-images">
-                    <div className="message-related-images-title">相关图片</div>
-                    <div className="message-related-image-grid">
-                      {relatedImages.map((image) => (
-                        <div key={image.id} className="message-related-image-card">
-                          {image.publicUrl ? (
-                            <img
-                              src={image.publicUrl}
-                              alt={image.description || image.documentName || image.id}
-                              loading="lazy"
-                            />
-                          ) : null}
-                          <div className="message-related-image-meta">
-                            <strong>{image.documentName || '相关图片'}</strong>
-                            {image.classification ? <span>{image.classification}</span> : null}
-                            {image.description ? <p>{image.description}</p> : null}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {canCollectFeedback ? (
-                  <div className="message-feedback-box">
-                    <div className="message-feedback-headline">这条回答是否帮你解决了问题？</div>
-
-                    {(feedbackSummary?.likeCount ?? 0) > 0 || (feedbackSummary?.dislikeCount ?? 0) > 0 ? (
-                      <div className="message-feedback-summary">
-                        <span>👍 {feedbackSummary?.likeCount ?? 0}</span>
-                        <span>👎 {feedbackSummary?.dislikeCount ?? 0}</span>
-                      </div>
-                    ) : null}
-
-                    {feedbackNotice ? (
-                      <div className={`message-feedback-notice ${hasSubmittedFeedback ? 'is-muted' : ''}`.trim()}>
-                        {feedbackNotice}
-                      </div>
-                    ) : null}
-
-                    {!hasSubmittedFeedback ? (
-                      <>
-                        <div className="message-feedback-actions">
-                          <button
-                            type="button"
-                            className="message-feedback-action primary"
-                            disabled={isFeedbackSubmitting}
-                            onClick={() => {
-                              void handleSubmitLikeFeedback(message.id)
-                            }}
-                          >
-                            {isFeedbackSubmitting ? '提交中...' : '👍 已解决'}
-                          </button>
-                          <button
-                            type="button"
-                            className="message-feedback-action secondary"
-                            disabled={isFeedbackSubmitting}
-                            onClick={() => {
-                              setExpandedFeedbackMessageId((prev) =>
-                                prev === message.id ? null : message.id,
-                              )
-                              setFeedbackReasons((prev) => ({
-                                ...prev,
-                                [message.id]: prev[message.id] ?? '没有解决问题',
-                              }))
-                            }}
-                          >
-                            👎 还不够
-                          </button>
-                        </div>
-
-                        {isFeedbackExpanded ? (
-                          <div className="message-feedback-panel">
-                            <div className="message-feedback-reasons">
-                              {normalChatFeedbackReasonOptions.map((reason) => (
-                                <button
-                                  key={reason}
-                                  type="button"
-                                  className={`message-feedback-reason ${
-                                    selectedFeedbackReason === reason ? 'selected' : ''
-                                  }`}
-                                  disabled={isFeedbackSubmitting}
-                                  onClick={() => {
-                                    setFeedbackReasons((prev) => ({
-                                      ...prev,
-                                      [message.id]: reason,
-                                    }))
-                                  }}
-                                >
-                                  {reason}
-                                </button>
-                              ))}
-                            </div>
-                            <textarea
-                              rows={3}
-                              value={feedbackText}
-                              disabled={isFeedbackSubmitting}
-                              placeholder="如果你愿意，可以补充一下实际卡住的点，我后面会优先优化这类回答。"
-                              onChange={(event) => {
-                                const nextValue = event.target.value
-                                setFeedbackTexts((prev) => ({
-                                  ...prev,
-                                  [message.id]: nextValue,
-                                }))
-                              }}
-                            />
-                            <div className="message-feedback-submit-row">
-                              <span>选好原因后提交，我会把这类问题归到后续优化清单里。</span>
-                              <div className="message-feedback-submit-actions">
-                                <button
-                                  type="button"
-                                  className="message-feedback-action secondary"
-                                  disabled={isFeedbackSubmitting}
-                                  onClick={() => setExpandedFeedbackMessageId(null)}
-                                >
-                                  取消
-                                </button>
-                                <button
-                                  type="button"
-                                  className="message-feedback-action primary"
-                                  disabled={isFeedbackSubmitting}
-                                  onClick={() => {
-                                    void handleSubmitDislikeFeedback(message.id)
-                                  }}
-                                >
-                                  {isFeedbackSubmitting ? '提交中...' : '提交反馈'}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
-                      </>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                <div className="message-time">{formatTime(message.timestamp)}</div>
-              </div>
-            )
-          })
-        )}
-
-        {isLoading && activeConversation.messages.at(-1)?.role !== 'assistant' && (
-          <div className="message assistant loading">
-            <div className="message-content">AI 正在生成回答...</div>
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      <div className="prompt-list">
-        {suggestedPrompts.map((prompt) => (
-          <button
-            key={prompt}
-            type="button"
-            className="prompt-chip"
-            disabled={!canAsk}
-            onClick={() => {
-              void onSendMessage(prompt)
-            }}
-          >
-            {prompt}
-          </button>
-        ))}
-      </div>
-
-      <div className="input-area">
-        <div className="input-container">
-          <textarea
-            value={inputValue}
-            onChange={(event) => setInputValue(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              isSwitchingKnowledgeBase
-                ? '正在切换知识库，请稍候...'
-                : hasBoundKnowledgeBase
-                  ? '输入您的问题，Enter 发送，Shift + Enter 换行'
-                  : '请先为当前会话绑定知识库后再提问'
-            }
-            rows={3}
-            disabled={!hasBoundKnowledgeBase || isSwitchingKnowledgeBase}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              void handleSubmit()
-            }}
-            disabled={!canSend}
-            className="send-btn"
-          >
-            {isSwitchingKnowledgeBase ? '切换中...' : isLoading ? '发送中...' : '发送'}
-          </button>
-        </div>
-      </div>
+      <ChatComposer
+        inputValue={inputValue}
+        canSend={canSend}
+        hasBoundKnowledgeBase={hasBoundKnowledgeBase}
+        isSwitchingKnowledgeBase={isSwitchingKnowledgeBase}
+        isLoading={isLoading}
+        onInputChange={handleInputChange}
+        onKeyDown={handleKeyDown}
+        onSubmit={() => {
+          void handleSubmit()
+        }}
+      />
     </main>
   )
 }
 
-export default ChatArea
+const areChatAreaPropsEqual = (prev: ChatAreaProps, next: ChatAreaProps) =>
+  prev.sidebarOpen === next.sidebarOpen &&
+  prev.activeConversation === next.activeConversation &&
+  prev.conversationKnowledgeBase === next.conversationKnowledgeBase &&
+  prev.conversationDocument === next.conversationDocument &&
+  prev.knowledgeBases === next.knowledgeBases &&
+  prev.config === next.config &&
+  prev.welcomeMessage === next.welcomeMessage &&
+  prev.isLoading === next.isLoading &&
+  prev.isSwitchingKnowledgeBase === next.isSwitchingKnowledgeBase
+
+export default memo(ChatArea, areChatAreaPropsEqual)
