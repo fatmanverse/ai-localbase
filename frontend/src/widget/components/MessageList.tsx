@@ -6,6 +6,8 @@ import { ServiceDeskMessage } from '../types'
 interface MessageListProps {
   messages: ServiceDeskMessage[]
   loading?: boolean
+  emptyTitle?: string
+  emptyDescription?: string
   onLike: (message: ServiceDeskMessage) => Promise<void>
   onDislike: (message: ServiceDeskMessage, reason: string, feedbackText: string) => Promise<void>
 }
@@ -23,12 +25,21 @@ const formatTime = (value: string) => {
   }
 }
 
-export function MessageList({ messages, loading, onLike, onDislike }: MessageListProps) {
+export function MessageList({
+  messages,
+  loading,
+  emptyTitle,
+  emptyDescription,
+  onLike,
+  onDislike,
+}: MessageListProps) {
   if (messages.length === 0) {
     return (
       <div className="service-desk-empty-state">
-        <h3>欢迎使用工单机器人</h3>
-        <p>你可以直接描述故障现象、影响范围、已尝试操作，机器人会结合知识库给出处理建议。</p>
+        <h3>{emptyTitle ?? '欢迎使用工单机器人'}</h3>
+        <p>
+          {emptyDescription ?? '你可以直接描述故障现象、影响范围、已尝试操作，机器人会结合知识库给出处理建议。'}
+        </p>
       </div>
     )
   }
@@ -54,14 +65,15 @@ export function MessageList({ messages, loading, onLike, onDislike }: MessageLis
                 <div className="service-desk-plain-text">{message.content}</div>
               )}
 
-
               {isAssistant && relatedImages.length > 0 ? (
                 <div className="service-desk-related-images">
                   <div className="service-desk-related-images-title">相关图片知识</div>
                   <div className="service-desk-related-image-grid">
                     {relatedImages.map((image) => (
                       <div key={image.id} className="service-desk-related-image-card">
-                        {image.publicUrl ? <img src={image.publicUrl} alt={image.description || image.documentName || image.id} /> : null}
+                        {image.publicUrl ? (
+                          <img src={image.publicUrl} alt={image.description || image.documentName || image.id} />
+                        ) : null}
                         <div className="service-desk-related-image-meta">
                           <strong>{image.documentName || '图片知识'}</strong>
                           {image.classification ? <span>{image.classification}</span> : null}

@@ -176,6 +176,45 @@ ollama | http://10.0.0.8:11434 | qwen2.5:14b
 
 ---
 
+## 纯问答入口
+
+推荐把“只允许问答、不展示设置和知识库管理”的场景统一走：
+
+```text
+http://localhost:4173/chat/{knowledgeBaseId}
+```
+
+例如：
+
+```text
+http://localhost:4173/chat/kb-it-support
+```
+
+如果部署环境暂未配置 SPA 路由回退，可改用：
+
+```text
+http://localhost:4173/?mode=chat-only&kb=kb-it-support
+```
+
+这个入口的特点：
+- 固定绑定一个知识库
+- 页面只保留问答
+- 不显示设置面板
+- 不显示知识库管理
+- 适合外链、门户页、公开问答入口
+
+如果要把纯问答页嵌到 iframe，并希望页面**无边距、无外层卡片、更加贴近宿主页面**，可直接使用：
+
+```text
+http://localhost:4173/chat/kb-it-support?frameless=1
+```
+
+详细说明见：
+
+- `docs/chat-integration/chat-only-route.md`
+
+---
+
 ## iframe 嵌入入口
 
 推荐使用：
@@ -195,10 +234,100 @@ http://localhost:4173/?embed=1&kb=kb-it-support
 - `docs/chat-integration/embed-final.md`
 - `docs/chat-integration/embed-deployment.md`
 - `docs/chat-integration/embed-handoff-template.md`
+- `OPS.md`
+
+---
+
+## 升级与回滚
+
+### 安全升级
+
+根目录已内置升级脚本：
+
+```bash
+REF=main AUTO_STASH=1 bash upgrade.sh
+```
+
+默认行为：
+
+- 升级前先备份当前 `.env`、`docker-compose.yml`、`backend/data`、`qdrant_storage`
+- 保留已上传文档、历史会话、知识库状态和向量数据
+- 不执行 `docker compose down -v`
+- 重新构建并启动新版本容器
+
+### 快速回滚
+
+根目录已内置回滚脚本：
+
+```bash
+bash rollback.sh
+```
+
+默认会回滚到 `backups/upgrade/` 下最新的一份升级备份，并且：
+
+- 回滚前再做一次当前状态保护备份
+- 恢复上传文档、会话历史、知识库状态和向量数据
+- 恢复备份对应的代码版本和配置
+
+指定某一份备份回滚：
+
+```bash
+bash rollback.sh backups/upgrade/20250329-120000
+```
+
+如果只想恢复数据，不切换代码版本：
+
+```bash
+RESTORE_CODE=0 bash rollback.sh
+```
 
 ---
 
 ## 常用入口
+
+### 运维命令速查
+
+更完整的日常运维命令请查看：`OPS.md`
+
+安全升级：
+
+```bash
+REF=main AUTO_STASH=1 bash upgrade.sh
+```
+
+快速回滚：
+
+```bash
+bash rollback.sh
+```
+
+巡检当前部署状态：
+
+```bash
+bash scripts/linux/ops-check.sh
+```
+
+---
+
+### 纯问答页
+
+Docker 部署后：
+
+```text
+http://localhost:4173/chat/kb-it-support
+```
+
+iframe 无边距极简版：
+
+```text
+http://localhost:4173/chat/kb-it-support?frameless=1
+```
+
+前端本地开发模式：
+
+```text
+http://localhost:5173/chat/kb-it-support
+```
 
 ### 服务台机器人 Demo
 

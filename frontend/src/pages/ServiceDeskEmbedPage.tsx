@@ -1,58 +1,22 @@
 import { FixedKnowledgeBaseWidget } from '../widget'
+import {
+  readBooleanParam,
+  readFirstParam,
+  readKnowledgeBaseIdFromNamedPath,
+  splitListParam,
+} from './serviceDeskPageParams'
 import './serviceDeskDemo.css'
-
-const splitListParam = (value: string | null) =>
-  (value ?? '')
-    .split(/[|,\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-
-const readBooleanParam = (value: string | null, defaultValue: boolean) => {
-  if (value == null || value.trim() === '') {
-    return defaultValue
-  }
-
-  const normalized = value.trim().toLowerCase()
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
-    return true
-  }
-  if (['0', 'false', 'no', 'off'].includes(normalized)) {
-    return false
-  }
-  return defaultValue
-}
-
-const readFirstParam = (searchParams: URLSearchParams, ...keys: string[]) => {
-  for (const key of keys) {
-    const value = searchParams.get(key)?.trim()
-    if (value) {
-      return value
-    }
-  }
-  return ''
-}
-
-const readKnowledgeBaseIdFromPath = () => {
-  const pathSegments = window.location.pathname
-    .split('/')
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-
-  const embedIndex = pathSegments.findIndex((segment) => segment.toLowerCase() === 'embed')
-  if (embedIndex < 0) {
-    return ''
-  }
-
-  return decodeURIComponent(pathSegments[embedIndex + 1] ?? '').trim()
-}
 
 export default function ServiceDeskEmbedPage() {
   const searchParams = new URLSearchParams(window.location.search)
-  const knowledgeBaseId = readKnowledgeBaseIdFromPath() || readFirstParam(searchParams, 'kb', 'knowledgeBaseId')
+  const knowledgeBaseId =
+    readKnowledgeBaseIdFromNamedPath(['embed']) ||
+    readFirstParam(searchParams, 'kb', 'knowledgeBaseId')
   const title = readFirstParam(searchParams, 'title', 't') || 'AI LocalBase 服务台机器人'
   const apiBaseUrl = readFirstParam(searchParams, 'api', 'apiBaseUrl')
   const initialConversationId = readFirstParam(searchParams, 'cid', 'conversationId') || undefined
-  const quickPrompts = splitListParam(searchParams.get('q') ?? searchParams.get('quickPrompts'))
+  const promptList = splitListParam(searchParams.get('q') ?? searchParams.get('quickPrompts'))
+  const quickPrompts = promptList.length > 0 ? promptList : undefined
   const tags = splitListParam(searchParams.get('tag') ?? searchParams.get('tags'))
   const useStreaming = readBooleanParam(searchParams.get('stream') ?? searchParams.get('s'), true)
   const ticketId = readFirstParam(searchParams, 'ticket', 'ticketId')

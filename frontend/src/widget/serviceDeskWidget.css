@@ -303,3 +303,48 @@
   color: #cbd5e1;
   line-height: 1.5;
 }
+
+
+.service-desk-widget-chat-only {
+  gap: 14px;
+  padding: 18px;
+}
+
+.service-desk-compact-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 4px 2px;
+}
+
+.service-desk-compact-header h2 {
+  margin: 6px 0 0;
+  font-size: 24px;
+  color: #f8fafc;
+}
+
+
+.chat-only-widget-frameless {
+  padding: 16px;
+  background: rgba(2, 6, 23, 0.98);
+}
+
+.chat-only-widget-frameless .service-desk-message-list {
+  max-height: none;
+  min-height: calc(100vh - 152px);
+}
+
+.chat-only-widget-frameless .service-desk-composer {
+  margin-bottom: 0;
+}
+
+@media (max-width: 768px) {
+  .chat-only-widget-frameless {
+    padding: 12px;
+  }
+
+  .chat-only-widget-frameless .service-desk-message-list {
+    min-height: calc(100vh - 136px);
+  }
+}

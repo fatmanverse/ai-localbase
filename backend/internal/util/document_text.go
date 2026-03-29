@@ -861,13 +861,271 @@ func splitImageKnowledgeAwareText(text string, cfg SemanticChunkConfig) (string,
 		result = append(result, chunkParagraphAwareText(intro, cfg, false)...)
 	}
 	for _, block := range blocks {
-		if runeCount(block) <= cfg.MaxChunkSize {
-			result = append(result, block)
-			continue
-		}
-		result = append(result, chunkParagraphAwareText(block, cfg, false)...)
+		result = append(result, chunkImageKnowledgeBlock(block, cfg)...)
 	}
 	return body, result
+}
+
+func chunkImageKnowledgeBlock(block string, cfg SemanticChunkConfig) []string {
+	cleaned := normalizeChunkText(block)
+	if cleaned == "" {
+		return nil
+	}
+	if runeCount(cleaned) <= cfg.MaxChunkSize {
+		return []string{cleaned}
+	}
+
+	lines := splitImageKnowledgeLines(cleaned)
+	if len(lines) == 0 {
+		return nil
+	}
+
+	prefixLines, contentLines := buildImageChunkPrefix(lines, cfg.MaxChunkSize)
+	if len(contentLines) == 0 {
+		return []string{cleaned}
+	}
+
+	availableSize := imageChunkAvailableSize(prefixLines, cfg.MaxChunkSize)
+	if availableSize < 24 {
+		prefixLines = buildImageChunkMandatoryPrefix(lines)
+		availableSize = imageChunkAvailableSize(prefixLines, cfg.MaxChunkSize)
+	}
+	if availableSize < 16 {
+		return []string{cleaned}
+	}
+
+	units := make([]string, 0, len(contentLines))
+	for _, line := range contentLines {
+		units = append(units, splitImageChunkLine(line, availableSize)...)
+	}
+	if len(units) == 0 {
+		return []string{cleaned}
+	}
+
+	prefix := strings.TrimSpace(strings.Join(prefixLines, "\n"))
+	chunks := make([]string, 0, len(units))
+	current := make([]string, 0)
+	currentSize := 0
+	flush := func() {
+		if len(current) == 0 {
+			return
+		}
+		body := strings.Join(current, "\n")
+		if prefix != "" {
+			chunks = append(chunks, strings.TrimSpace(prefix+"\n"+body))
+		} else {
+			chunks = append(chunks, strings.TrimSpace(body))
+		}
+		current = current[:0]
+		currentSize = 0
+	}
+
+	for _, unit := range units {
+		trimmed := strings.TrimSpace(unit)
+		if trimmed == "" {
+			continue
+		}
+		unitSize := runeCount(trimmed)
+		candidateSize := unitSize
+		if currentSize > 0 {
+			candidateSize += currentSize + 1
+		}
+		if currentSize > 0 && candidateSize > availableSize {
+			flush()
+		}
+		current = append(current, trimmed)
+		if currentSize == 0 {
+			currentSize = unitSize
+		} else {
+			currentSize += unitSize + 1
+		}
+	}
+	flush()
+	if len(chunks) == 0 {
+		return []string{cleaned}
+	}
+	return chunks
+}
+
+func splitImageKnowledgeLines(block string) []string {
+	lines := strings.Split(block, "\n")
+	items := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		items = append(items, trimmed)
+	}
+	return items
+}
+
+func buildImageChunkPrefix(lines []string, maxChunkSize int) ([]string, []string) {
+	if len(lines) == 0 {
+		return nil, nil
+	}
+	used := make([]bool, len(lines))
+	prefix := make([]string, 0, len(lines))
+	for index, line := range lines {
+		if !isMandatoryImagePrefixLine(line) {
+			continue
+		}
+		prefix = append(prefix, line)
+		used[index] = true
+	}
+
+	reservedForContent := 96
+	if maxChunkSize > 0 {
+		quarter := maxChunkSize / 4
+		if quarter > reservedForContent {
+			reservedForContent = quarter
+		}
+		if quarter < 48 {
+			reservedForContent = 48
+		}
+	}
+
+	prefixSize := runeCount(strings.Join(prefix, "\n"))
+	for index, line := range lines {
+		if used[index] || !isPreferredImagePrefixLine(line) {
+			continue
+		}
+		extra := runeCount(line)
+		if len(prefix) > 0 {
+			extra += 1
+		}
+		if maxChunkSize > 0 && prefixSize+extra > maxChunkSize-reservedForContent {
+			continue
+		}
+		prefix = append(prefix, line)
+		used[index] = true
+		prefixSize += extra
+	}
+
+	content := make([]string, 0, len(lines))
+	for index, line := range lines {
+		if used[index] {
+			continue
+		}
+		content = append(content, line)
+	}
+	if len(prefix) == 0 {
+		return buildImageChunkMandatoryPrefix(lines), content
+	}
+	return prefix, content
+}
+
+func buildImageChunkMandatoryPrefix(lines []string) []string {
+	prefix := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if isMandatoryImagePrefixLine(line) {
+			prefix = append(prefix, line)
+		}
+	}
+	return prefix
+}
+
+func isMandatoryImagePrefixLine(line string) bool {
+	label, _, _, ok := splitStructuredLabelLine(line)
+	if !ok {
+		return false
+	}
+	switch label {
+	case "图片ID", "图片类型", "图片标题":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPreferredImagePrefixLine(line string) bool {
+	label, _, _, ok := splitStructuredLabelLine(line)
+	if !ok {
+		return false
+	}
+	switch label {
+	case "图片说明", "前文", "后文":
+		return true
+	default:
+		return false
+	}
+}
+
+func imageChunkAvailableSize(prefixLines []string, maxChunkSize int) int {
+	available := maxChunkSize
+	prefix := strings.TrimSpace(strings.Join(prefixLines, "\n"))
+	if prefix != "" {
+		available -= runeCount(prefix) + 1
+	}
+	return available
+}
+
+func splitImageChunkLine(line string, maxSize int) []string {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return nil
+	}
+	if maxSize <= 0 || runeCount(trimmed) <= maxSize {
+		return []string{trimmed}
+	}
+
+	label, sep, value, ok := splitStructuredLabelLine(trimmed)
+	if !ok {
+		return forceWindowSplit(trimmed, maxSize)
+	}
+	prefix := strings.TrimSpace(label + sep)
+	if prefix == "" {
+		return forceWindowSplit(trimmed, maxSize)
+	}
+	prefix += " "
+	available := maxSize - runeCount(prefix)
+	if available <= 8 {
+		return forceWindowSplit(trimmed, maxSize)
+	}
+
+	parts := SemanticChunk(value, SemanticChunkConfig{
+		MaxChunkSize:    available,
+		MinChunkSize:    1,
+		OverlapSize:     0,
+		PreserveNewline: false,
+	})
+	if len(parts) == 0 {
+		parts = forceWindowSplit(value, available)
+	}
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		chunk := strings.TrimSpace(part)
+		if chunk == "" {
+			continue
+		}
+		result = append(result, prefix+chunk)
+	}
+	if len(result) == 0 {
+		return forceWindowSplit(trimmed, maxSize)
+	}
+	return result
+}
+
+func splitStructuredLabelLine(line string) (string, string, string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return "", "", "", false
+	}
+	index := strings.Index(trimmed, "：")
+	sep := "："
+	if asciiIndex := strings.Index(trimmed, ":"); asciiIndex >= 0 && (index < 0 || asciiIndex < index) {
+		index = asciiIndex
+		sep = ":"
+	}
+	if index <= 0 {
+		return "", "", "", false
+	}
+	label := strings.TrimSpace(trimmed[:index])
+	value := strings.TrimSpace(trimmed[index+len(sep):])
+	if label == "" {
+		return "", "", "", false
+	}
+	return label, sep, value, true
 }
 
 func chunkFAQText(text string, cfg SemanticChunkConfig) []string {

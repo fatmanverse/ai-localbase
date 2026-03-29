@@ -36,6 +36,7 @@ func NewRouter(appHandler *handler.AppHandler) *gin.Engine {
 		api.DELETE("/knowledge-bases/:id/document-uploads/:taskId", appHandler.CancelUploadTask)
 		api.POST("/knowledge-bases/:id/reindex", appHandler.ReindexKnowledgeBase)
 		api.POST("/knowledge-bases/:id/documents/:documentId/reindex", appHandler.ReindexDocument)
+		api.POST("/knowledge-bases/:id/documents/:documentId/reindex-task", appHandler.StartAsyncReindexDocument)
 		api.DELETE("/knowledge-bases/:id/documents/:documentId", appHandler.DeleteDocument)
 		api.PATCH("/knowledge-bases/:id/documents/:documentId/faq-collection", appHandler.UpdateDocumentFAQCollection)
 

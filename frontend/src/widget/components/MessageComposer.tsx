@@ -3,10 +3,11 @@ import { FormEvent, useState } from 'react'
 interface MessageComposerProps {
   disabled?: boolean
   placeholder?: string
+  helperText?: string
   onSend: (message: string) => Promise<void>
 }
 
-export function MessageComposer({ disabled, placeholder, onSend }: MessageComposerProps) {
+export function MessageComposer({ disabled, placeholder, helperText, onSend }: MessageComposerProps) {
   const [value, setValue] = useState('')
 
   const handleSubmit = async (event: FormEvent) => {
@@ -30,7 +31,9 @@ export function MessageComposer({ disabled, placeholder, onSend }: MessageCompos
         rows={4}
       />
       <div className="service-desk-composer-footer">
-        <div className="section-caption">支持附带工单号、用户编号、问题分类等业务上下文</div>
+        <div className="section-caption">
+          {helperText ?? '支持附带工单号、用户编号、问题分类等业务上下文'}
+        </div>
         <button type="submit" disabled={disabled || !value.trim()}>
           {disabled ? '处理中...' : '发送问题'}
         </button>

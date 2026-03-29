@@ -19,7 +19,10 @@ interface SidebarProps {
   onClearFinishedUploadTasks: (knowledgeBaseId: string) => void
   onRemoveDocument: (knowledgeBaseId: string, documentId: string) => void
   onReindexKnowledgeBase: (knowledgeBaseId: string) => Promise<void>
+  onReindexDocument: (knowledgeBaseId: string, documentId: string) => Promise<void>
+  onBatchReindexDocuments: (knowledgeBaseId: string, documentIds: string[]) => Promise<void>
   reindexingKnowledgeBaseId: string | null
+  reindexingDocumentKeys: Record<string, true>
   conversations: Conversation[]
   activeConversationId: string | null
   onSelectConversation: (conversationId: string) => void
@@ -200,7 +203,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   onClearFinishedUploadTasks,
   onRemoveDocument,
   onReindexKnowledgeBase,
+  onReindexDocument,
+  onBatchReindexDocuments,
   reindexingKnowledgeBaseId,
+  reindexingDocumentKeys,
   conversations,
   activeConversationId,
   onSelectConversation,
@@ -382,7 +388,10 @@ const Sidebar: React.FC<SidebarProps> = ({
         onClearFinishedUploadTasks={onClearFinishedUploadTasks}
         onRemoveDocument={onRemoveDocument}
         onReindexKnowledgeBase={onReindexKnowledgeBase}
+        onReindexDocument={onReindexDocument}
+        onBatchReindexDocuments={onBatchReindexDocuments}
         reindexingKnowledgeBaseId={reindexingKnowledgeBaseId}
+        reindexingDocumentKeys={reindexingDocumentKeys}
         onClose={onToggleKnowledgePanel}
       />
     </>
@@ -396,6 +405,7 @@ const areSidebarPropsEqual = (prev: SidebarProps, next: SidebarProps) =>
   prev.selectedDocumentId === next.selectedDocumentId &&
   prev.uploadTasksByKnowledgeBase === next.uploadTasksByKnowledgeBase &&
   prev.reindexingKnowledgeBaseId === next.reindexingKnowledgeBaseId &&
+  prev.reindexingDocumentKeys === next.reindexingDocumentKeys &&
   prev.conversations === next.conversations &&
   prev.activeConversationId === next.activeConversationId &&
   prev.isSettingsOpen === next.isSettingsOpen &&

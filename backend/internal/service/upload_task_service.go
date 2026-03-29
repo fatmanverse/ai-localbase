@@ -11,6 +11,11 @@ import (
 
 type UploadTaskProgressCallback func(stage string, progress int, message string)
 
+const (
+	uploadTaskTypeUpload  = "upload"
+	uploadTaskTypeReindex = "reindex"
+)
+
 type UploadTaskService struct {
 	mu         sync.RWMutex
 	tasks      map[string]*model.DocumentUploadTask
@@ -25,18 +30,33 @@ func NewUploadTaskService() *UploadTaskService {
 }
 
 func (s *UploadTaskService) CreateTask(document model.Document) model.DocumentUploadTask {
+	return s.createTask(document, uploadTaskTypeUpload, "uploaded", 5, "文件已上传，等待开始解析")
+}
+
+func (s *UploadTaskService) CreateReindexTask(document model.Document) model.DocumentUploadTask {
+	return s.createTask(document, uploadTaskTypeReindex, "queued", 8, "文档已进入重跑解析队列")
+}
+
+func (s *UploadTaskService) createTask(document model.Document, taskType, stage string, progress int, message string) model.DocumentUploadTask {
 	now := util.NowRFC3339()
+	prefix := "task"
+	if taskType == uploadTaskTypeUpload {
+		prefix = "upload"
+	} else if taskType == uploadTaskTypeReindex {
+		prefix = "reindex"
+	}
 	task := model.DocumentUploadTask{
-		ID:              util.NextID("upload"),
+		ID:              util.NextID(prefix),
+		TaskType:        taskType,
 		KnowledgeBaseID: document.KnowledgeBaseID,
 		DocumentID:      document.ID,
 		FileName:        document.Name,
 		FileSize:        document.Size,
 		FileSizeLabel:   document.SizeLabel,
 		Status:          "processing",
-		Stage:           "uploaded",
-		Progress:        5,
-		Message:         "文件已上传，等待开始解析",
+		Stage:           stage,
+		Progress:        clampTaskProgress(progress),
+		Message:         message,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
@@ -85,11 +105,12 @@ func (s *UploadTaskService) StartTask(
 		cancel()
 		return fmt.Errorf("upload task not found")
 	}
+	taskType := task.TaskType
 	s.cancelFunc[taskID] = cancel
 	task.Status = "processing"
 	task.Stage = "queued"
 	task.Progress = 10
-	task.Message = "任务已创建，准备开始解析"
+	task.Message = queuedTaskMessage(taskType)
 	task.UpdatedAt = util.NowRFC3339()
 	s.mu.Unlock()
 
@@ -120,14 +141,14 @@ func (s *UploadTaskService) StartTask(
 				task.Status = "canceled"
 				task.Stage = "canceled"
 				task.Progress = clampTaskProgress(max(task.Progress, 100))
-				task.Message = "上传任务已取消"
-				task.Error = "上传任务已取消"
+				task.Message = canceledTaskMessage(task.TaskType)
+				task.Error = canceledTaskMessage(task.TaskType)
 				return
 			}
 			task.Status = "error"
 			task.Stage = "failed"
 			task.Progress = clampTaskProgress(max(task.Progress, 100))
-			task.Message = "文档处理失败"
+			task.Message = failedTaskMessage(task.TaskType)
 			task.Error = err.Error()
 			return
 		}
@@ -135,7 +156,7 @@ func (s *UploadTaskService) StartTask(
 		task.Status = "success"
 		task.Stage = "completed"
 		task.Progress = 100
-		task.Message = "文档已完成解析、切片和入库"
+		task.Message = successTaskMessage(task.TaskType)
 		task.Error = ""
 		docCopy := document
 		task.Uploaded = &docCopy
@@ -157,8 +178,8 @@ func (s *UploadTaskService) CancelTask(taskID string) (model.DocumentUploadTask,
 	task.Status = "canceled"
 	task.Stage = "canceled"
 	task.Progress = clampTaskProgress(max(task.Progress, 100))
-	task.Message = "正在取消上传任务"
-	task.Error = "上传任务已取消"
+	task.Message = cancelingTaskMessage(task.TaskType)
+	task.Error = canceledTaskMessage(task.TaskType)
 	task.UpdatedAt = util.NowRFC3339()
 	copyTask := *task
 	return copyTask, nil
@@ -179,4 +200,39 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func queuedTaskMessage(taskType string) string {
+	if taskType == uploadTaskTypeReindex {
+		return "任务已创建，准备重新解析文档"
+	}
+	return "任务已创建，准备开始解析"
+}
+
+func cancelingTaskMessage(taskType string) string {
+	if taskType == uploadTaskTypeReindex {
+		return "正在取消重跑解析任务"
+	}
+	return "正在取消上传任务"
+}
+
+func canceledTaskMessage(taskType string) string {
+	if taskType == uploadTaskTypeReindex {
+		return "重跑解析任务已取消"
+	}
+	return "上传任务已取消"
+}
+
+func failedTaskMessage(taskType string) string {
+	if taskType == uploadTaskTypeReindex {
+		return "文档重跑解析失败"
+	}
+	return "文档处理失败"
+}
+
+func successTaskMessage(taskType string) string {
+	if taskType == uploadTaskTypeReindex {
+		return "文档已完成重新解析并更新索引"
+	}
+	return "文档已完成解析、切片和入库"
 }

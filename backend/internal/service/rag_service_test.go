@@ -116,6 +116,43 @@ func TestRagServiceBuildDocumentChunksSeparatesImageKnowledgeBlocks(t *testing.T
 	}
 }
 
+func TestRagServiceBuildDocumentChunksPreservesImageIDsForOversizedImageBlocks(t *testing.T) {
+	rag := NewRagService()
+	document := model.Document{
+		ID:              "doc-image-oversized",
+		KnowledgeBaseID: "kb-1",
+		Name:            "image-guide.md",
+	}
+
+	text := strings.TrimSpace("正文说明：登录后先进入审批页。\n\n## 图片知识补充\n图片ID: img-oversized\n图片类型: 关键操作截图\n图片标题: 审批页操作区\n图片说明: 审批页右上角包含保存按钮和提交流程入口，提交前需要先确认审批状态。\n图片OCR: " + strings.Repeat("保存 提交 返回 审批 状态 说明。", 48))
+	chunks := rag.BuildDocumentChunks(document, text)
+
+	retrieved := make([]RetrievedChunk, 0)
+	for _, chunk := range chunks {
+		if chunk.ChunkType != DocumentChunkTypeImage {
+			continue
+		}
+		if len(chunk.ImageIDs) != 1 || chunk.ImageIDs[0] != "img-oversized" {
+			t.Fatalf("expected image chunk to keep image id, got %v in chunk %q", chunk.ImageIDs, chunk.Text)
+		}
+		retrieved = append(retrieved, RetrievedChunk{DocumentChunk: chunk, Score: 0.91})
+	}
+
+	if len(retrieved) < 2 {
+		t.Fatalf("expected oversized image block to split into multiple image chunks, got %d", len(retrieved))
+	}
+
+	_, sources := rag.BuildContext(retrieved[:2])
+	if len(sources) != 2 {
+		t.Fatalf("expected 2 sources, got %d", len(sources))
+	}
+	for _, source := range sources {
+		if source["imageIds"] != "img-oversized" {
+			t.Fatalf("expected source imageIds to preserve oversized image id, got %q", source["imageIds"])
+		}
+	}
+}
+
 func TestRagServiceBuildDocumentChunksAddsStructuredMetadata(t *testing.T) {
 	rag := NewRagService()
 	faqDocument := model.Document{ID: "doc-faq-meta", KnowledgeBaseID: "kb-1", Name: "ops-faq.md"}
@@ -599,6 +636,97 @@ func TestBuildDocumentRetrievalTextIncludesImageKnowledge(t *testing.T) {
 	}
 	if !strings.Contains(joined, "img-test-1") || !strings.Contains(joined, "审批流程") {
 		t.Fatalf("expected joined retrieval text to contain image knowledge, got %q", joined)
+	}
+}
+
+func TestAppServiceReindexDocumentReprocessesOriginalFile(t *testing.T) {
+	dir := t.TempDir()
+	imagePath := filepath.Join(dir, "step.png")
+	if err := os.WriteFile(imagePath, tinyPNG(), 0o644); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	markdownPath := filepath.Join(dir, "guide.md")
+	if err := os.WriteFile(markdownPath, []byte("# 登录说明\n\n当前版本只有文字内容。\n"), 0o644); err != nil {
+		t.Fatalf("write markdown: %v", err)
+	}
+	otherPath := filepath.Join(dir, "other.txt")
+	if err := os.WriteFile(otherPath, []byte("另一份文档内容"), 0o644); err != nil {
+		t.Fatalf("write other document: %v", err)
+	}
+
+	service := NewAppService(nil, NewAppStateStore(filepath.Join(dir, "state.json")), nil, model.ServerConfig{UploadDir: dir})
+	knowledgeBases := service.ListKnowledgeBases()
+	if len(knowledgeBases) == 0 {
+		t.Fatal("expected default knowledge base")
+	}
+	knowledgeBaseID := knowledgeBases[0].ID
+
+	indexedDoc, err := service.IndexDocument(model.Document{
+		ID:              "doc-reindex",
+		KnowledgeBaseID: knowledgeBaseID,
+		Name:            "guide.md",
+		Path:            markdownPath,
+		Status:          "processing",
+	})
+	if err != nil {
+		t.Fatalf("index markdown document: %v", err)
+	}
+	if indexedDoc.ImageCount != 0 {
+		t.Fatalf("expected initial image count 0, got %d", indexedDoc.ImageCount)
+	}
+
+	otherDoc, err := service.IndexDocument(model.Document{
+		ID:              "doc-other",
+		KnowledgeBaseID: knowledgeBaseID,
+		Name:            "other.txt",
+		Path:            otherPath,
+		Status:          "processing",
+	})
+	if err != nil {
+		t.Fatalf("index other document: %v", err)
+	}
+
+	updatedMarkdown := "# 登录说明\n\n请参考下面这张审批页截图。\n\n![审批页操作区](step.png)\n"
+	if err := os.WriteFile(markdownPath, []byte(updatedMarkdown), 0o644); err != nil {
+		t.Fatalf("rewrite markdown: %v", err)
+	}
+
+	reindexed, err := service.ReindexDocument(knowledgeBaseID, indexedDoc.ID)
+	if err != nil {
+		t.Fatalf("reindex markdown document: %v", err)
+	}
+	if reindexed.ImageCount != 1 {
+		t.Fatalf("expected reindexed document image count 1, got %d", reindexed.ImageCount)
+	}
+	if len(reindexed.Images) != 1 {
+		t.Fatalf("expected reindexed document to keep one image, got %d", len(reindexed.Images))
+	}
+	if !strings.Contains(reindexed.ContentPreview, "登录说明") {
+		t.Fatalf("expected content preview to be refreshed, got %q", reindexed.ContentPreview)
+	}
+
+	knowledgeBases = service.ListKnowledgeBases()
+	var storedGuide model.Document
+	var storedOther model.Document
+	for _, document := range knowledgeBases[0].Documents {
+		switch document.ID {
+		case indexedDoc.ID:
+			storedGuide = document
+		case otherDoc.ID:
+			storedOther = document
+		}
+	}
+	if storedGuide.ID == "" {
+		t.Fatal("expected reindexed guide document to stay in knowledge base")
+	}
+	if storedGuide.ImageCount != 1 {
+		t.Fatalf("expected stored guide image count 1 after reindex, got %d", storedGuide.ImageCount)
+	}
+	if storedOther.ID == "" {
+		t.Fatal("expected sibling document to remain in knowledge base")
+	}
+	if storedOther.ContentPreview != otherDoc.ContentPreview {
+		t.Fatalf("expected sibling document preview unchanged, got %q want %q", storedOther.ContentPreview, otherDoc.ContentPreview)
 	}
 }
 

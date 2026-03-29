@@ -3,6 +3,7 @@ import { ServiceDeskConversationContext } from '../types'
 interface ConversationContextBarProps {
   context?: ServiceDeskConversationContext
   title?: string
+  label?: string
 }
 
 const buildBadges = (context?: ServiceDeskConversationContext) => {
@@ -19,13 +20,13 @@ const buildBadges = (context?: ServiceDeskConversationContext) => {
   ].filter(Boolean) as Array<{ label: string; value: string }>
 }
 
-export function ConversationContextBar({ context, title }: ConversationContextBarProps) {
+export function ConversationContextBar({ context, title, label }: ConversationContextBarProps) {
   const badges = buildBadges(context)
 
   return (
     <div className="service-desk-context-bar">
       <div>
-        <div className="service-desk-context-label">企业服务台机器人</div>
+        <div className="service-desk-context-label">{label || '企业服务台机器人'}</div>
         <h2>{title || '智能工单助手'}</h2>
       </div>
       <div className="service-desk-context-badges">

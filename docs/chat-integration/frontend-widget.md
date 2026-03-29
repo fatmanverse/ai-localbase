@@ -130,6 +130,74 @@ frontend/src/widget/examples/FixedKnowledgeBaseExample.tsx
 
 ---
 
+## 纯问答前端地址接入
+
+如果你希望：
+
+- **只开放消息问答**
+- **不让终端用户看到设置**
+- **不让终端用户看到知识库管理**
+- **并且固定绑定一个知识库**
+
+现在可以直接使用 AI LocalBase 前端地址：
+
+```text
+/chat/{knowledgeBaseId}
+```
+
+例如：
+
+```text
+/chat/kb-it-support
+```
+
+如果部署环境没有配置 SPA 路由回退，也可以使用：
+
+```text
+/?mode=chat-only&kb=kb-it-support
+```
+
+如果要直接用于 iframe，推荐在地址后追加：
+
+```text
+?frameless=1
+```
+
+例如：
+
+```text
+/chat/kb-it-support?frameless=1
+```
+
+可选参数：
+
+- `title` / `t`：页面标题
+- `q` / `quickPrompts`：快捷问题，多个值用 `|` 或 `,` 分隔
+- `ticket` / `ticketId`
+- `uid` / `userId`
+- `tenant` / `tenantId`
+- `src` / `sourcePlatform`
+- `cat` / `category`
+- `p` / `priority`
+- `tag` / `tags`
+- `cid` / `conversationId`
+- `stream` / `s`
+- `api` / `apiBaseUrl`
+- `frameless` / `bare` / `compact`：无边距极简模式
+
+特点：
+
+- 仅保留问答消息流
+- 不显示设置面板
+- 不显示知识库设置
+- 会话固定走指定知识库
+
+详细说明见：
+
+- `docs/chat-integration/chat-only-route.md`
+
+---
+
 ## 通过 AI LocalBase 前端访问地址接入
 
 如果你不想把组件源码复制到宿主项目里，而是希望：

@@ -997,8 +997,19 @@ func (s *AppService) IndexDocumentWithProgress(
 }
 
 func (s *AppService) ReindexDocument(knowledgeBaseID, documentID string) (model.Document, error) {
+	return s.ReindexDocumentWithProgress(context.Background(), knowledgeBaseID, documentID, nil)
+}
+
+func (s *AppService) ReindexDocumentWithProgress(
+	ctx context.Context,
+	knowledgeBaseID, documentID string,
+	onProgress func(stage string, progress int, message string),
+) (model.Document, error) {
 	if s == nil {
 		return model.Document{}, fmt.Errorf("app service is nil")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	knowledgeBaseID = strings.TrimSpace(knowledgeBaseID)
 	documentID = strings.TrimSpace(documentID)
@@ -1008,16 +1019,67 @@ func (s *AppService) ReindexDocument(knowledgeBaseID, documentID string) (model.
 	if documentID == "" {
 		return model.Document{}, fmt.Errorf("document id is required")
 	}
-	knowledgeBase, err := s.ReindexKnowledgeBase(knowledgeBaseID)
+
+	_, document, _, err := s.findKnowledgeBaseDocument(knowledgeBaseID, documentID)
 	if err != nil {
 		return model.Document{}, err
 	}
-	for _, document := range knowledgeBase.Documents {
-		if document.ID == documentID {
-			return document, nil
+
+	indexedDocument, chunks, vectors, err := s.buildIndexedDocumentWithProgress(ctx, document, s.currentEmbeddingConfig(), onProgress)
+	if err != nil {
+		return model.Document{}, err
+	}
+
+	if err := ensureContextActive(ctx); err != nil {
+		return model.Document{}, err
+	}
+	if s.qdrant != nil && s.qdrant.IsEnabled() {
+		reportIndexProgress(onProgress, "indexing", 88, "正在更新文档向量索引")
+	}
+	if err := s.deleteDocumentChunks(ctx, knowledgeBaseID, documentID); err != nil {
+		return model.Document{}, fmt.Errorf("delete previous document chunks: %w", err)
+	}
+	if len(chunks) > 0 {
+		if err := s.upsertDocumentChunks(ctx, knowledgeBaseID, chunks, vectors); err != nil {
+			return model.Document{}, fmt.Errorf("reindex document chunks: %w", err)
 		}
 	}
-	return model.Document{}, fmt.Errorf("document not found")
+
+	reportIndexProgress(onProgress, "finalizing", 96, "正在保存文档状态")
+	s.state.Mu.Lock()
+	latestKnowledgeBase, ok := s.state.KnowledgeBases[knowledgeBaseID]
+	if !ok {
+		s.state.Mu.Unlock()
+		return model.Document{}, fmt.Errorf("knowledge base not found")
+	}
+	originalDocuments := append([]model.Document(nil), latestKnowledgeBase.Documents...)
+	targetIndex := -1
+	for index, item := range latestKnowledgeBase.Documents {
+		if item.ID == documentID {
+			targetIndex = index
+			break
+		}
+	}
+	if targetIndex < 0 {
+		s.state.Mu.Unlock()
+		return model.Document{}, fmt.Errorf("document not found")
+	}
+	latestKnowledgeBase.Documents[targetIndex] = indexedDocument
+	s.state.KnowledgeBases[knowledgeBaseID] = latestKnowledgeBase
+	s.state.Mu.Unlock()
+
+	if err := s.saveState(); err != nil {
+		s.state.Mu.Lock()
+		if rollbackKnowledgeBase, exists := s.state.KnowledgeBases[knowledgeBaseID]; exists {
+			rollbackKnowledgeBase.Documents = originalDocuments
+			s.state.KnowledgeBases[knowledgeBaseID] = rollbackKnowledgeBase
+		}
+		s.state.Mu.Unlock()
+		return model.Document{}, err
+	}
+
+	reportIndexProgress(onProgress, "completed", 100, "文档已完成重新解析并更新索引")
+	return indexedDocument, nil
 }
 
 func (s *AppService) ReindexKnowledgeBase(knowledgeBaseID string) (model.KnowledgeBase, error) {
@@ -1340,6 +1402,10 @@ func mergeGeneratedMarkdownContent(existing string, incoming string) string {
 		return trimmedIncoming + "\n"
 	}
 	return trimmedExisting + "\n\n" + trimmedIncoming + "\n"
+}
+
+func (s *AppService) FindKnowledgeBaseDocument(knowledgeBaseID, documentID string) (model.KnowledgeBase, model.Document, int, error) {
+	return s.findKnowledgeBaseDocument(knowledgeBaseID, documentID)
 }
 
 func (s *AppService) findKnowledgeBaseDocument(knowledgeBaseID, documentID string) (model.KnowledgeBase, model.Document, int, error) {
@@ -2076,6 +2142,22 @@ func (s *AppService) rebuildKnowledgeBaseCollection(knowledgeBaseID string, poin
 	defer cancel()
 	if err := s.qdrant.UpsertPoints(ctx, knowledgeBaseID, points); err != nil {
 		return fmt.Errorf("rebuild qdrant points: %w", err)
+	}
+	return nil
+}
+
+func (s *AppService) deleteDocumentChunks(ctx context.Context, knowledgeBaseID, documentID string) error {
+	if s.qdrant == nil || !s.qdrant.IsEnabled() {
+		return nil
+	}
+	filter := buildQdrantFilter(documentID, "")
+	if len(filter) == 0 {
+		return nil
+	}
+	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if err := s.qdrant.DeletePointsByFilter(timeoutCtx, knowledgeBaseID, filter); err != nil {
+		return fmt.Errorf("delete qdrant points: %w", err)
 	}
 	return nil
 }

@@ -131,6 +131,35 @@ func TestExtractChunkTopic(t *testing.T) {
 	}
 }
 
+func TestChunkDocumentTextPreservesImageIDsForOversizedImageBlocks(t *testing.T) {
+	cfg := DefaultSemanticChunkConfig()
+	cfg.MaxChunkSize = 110
+	cfg.MinChunkSize = 1
+	cfg.OverlapSize = 0
+
+	text := strings.TrimSpace("正文说明：登录后先进入审批页。\n\n## 图片知识补充\n图片ID: img-oversized\n图片类型: 关键操作截图\n图片标题: 审批页操作区\n图片说明: 审批页右上角包含保存按钮和提交流程入口，提交前需要先确认审批状态。\n图片OCR: " + strings.Repeat("保存 提交 返回 审批 状态 说明。", 18))
+	chunks := ChunkDocumentText("image-guide.md", text, cfg)
+
+	var imageChunkCount int
+	for _, chunk := range chunks {
+		if !strings.Contains(chunk, "图片类型:") && !strings.Contains(chunk, "图片OCR:") && !strings.Contains(chunk, "图片说明:") {
+			continue
+		}
+		imageChunkCount += 1
+		ids := ExtractImageIDsFromText(chunk)
+		if len(ids) != 1 || ids[0] != "img-oversized" {
+			t.Fatalf("expected oversized image chunk to preserve image id, got %v in chunk %q", ids, chunk)
+		}
+		if len([]rune(chunk)) > cfg.MaxChunkSize {
+			t.Fatalf("expected chunk to respect max size %d, got %d", cfg.MaxChunkSize, len([]rune(chunk)))
+		}
+	}
+
+	if imageChunkCount < 2 {
+		t.Fatalf("expected oversized image block to split into multiple retrievable chunks, got %d", imageChunkCount)
+	}
+}
+
 func TestIsImageIntentQuery(t *testing.T) {
 	positive := []string{
 		"截图里的保存按钮在哪",

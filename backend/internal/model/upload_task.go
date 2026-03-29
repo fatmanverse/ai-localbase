@@ -2,6 +2,7 @@ package model
 
 type DocumentUploadTask struct {
 	ID              string    `json:"id"`
+	TaskType        string    `json:"taskType,omitempty"`
 	KnowledgeBaseID string    `json:"knowledgeBaseId"`
 	DocumentID      string    `json:"documentId"`
 	FileName        string    `json:"fileName"`

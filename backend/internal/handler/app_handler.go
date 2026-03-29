@@ -279,6 +279,36 @@ func (h *AppHandler) ReindexDocument(c *gin.Context) {
 	})
 }
 
+func (h *AppHandler) StartAsyncReindexDocument(c *gin.Context) {
+	if h.uploadTaskService == nil {
+		writeError(c, http.StatusServiceUnavailable, "upload task service unavailable")
+		return
+	}
+
+	knowledgeBaseID := strings.TrimSpace(c.Param("id"))
+	documentID := strings.TrimSpace(c.Param("documentId"))
+	if knowledgeBaseID == "" || documentID == "" {
+		writeError(c, http.StatusBadRequest, "knowledge base id and document id are required")
+		return
+	}
+
+	_, document, _, err := h.appService.FindKnowledgeBaseDocument(knowledgeBaseID, documentID)
+	if err != nil {
+		writeError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	task := h.uploadTaskService.CreateReindexTask(document)
+	if err := h.uploadTaskService.StartTask(task.ID, func(ctx context.Context, progress service.UploadTaskProgressCallback) (model.Document, error) {
+		return h.appService.ReindexDocumentWithProgress(ctx, knowledgeBaseID, documentID, progress)
+	}); err != nil {
+		writeError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusAccepted, task)
+}
+
 func (h *AppHandler) DeleteDocument(c *gin.Context) {
 	removedDocument, err := h.appService.DeleteDocument(c.Param("id"), c.Param("documentId"))
 	if err != nil {

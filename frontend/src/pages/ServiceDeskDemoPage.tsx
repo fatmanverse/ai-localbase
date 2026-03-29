@@ -22,6 +22,7 @@ export default function ServiceDeskDemoPage() {
           <code>import {'{ ServiceDeskWidget }'} from './src/widget'</code>
           <p>组件源码接入：<code>?mode=service-desk-demo</code></p>
           <p>前端地址嵌入：<code>/embed/kb-1</code></p>
+          <p>纯问答页面：<code>/chat/kb-1</code></p>
         </div>
       </section>
 

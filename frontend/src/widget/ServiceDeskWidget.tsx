@@ -29,6 +29,16 @@ export interface ServiceDeskWidgetProps {
   quickPrompts?: string[]
   initialConversationId?: string
   useStreaming?: boolean
+  displayMode?: 'service-desk' | 'chat-only'
+  showHeader?: boolean
+  showContextBar?: boolean
+  showQuickPrompts?: boolean
+  shellClassName?: string
+  headerLabel?: string
+  composerPlaceholder?: string
+  composerHelperText?: string
+  emptyStateTitle?: string
+  emptyStateDescription?: string
 }
 
 const defaultPrompts = [
@@ -60,6 +70,16 @@ export function ServiceDeskWidget({
   quickPrompts = defaultPrompts,
   initialConversationId,
   useStreaming = true,
+  displayMode = 'service-desk',
+  showHeader,
+  showContextBar,
+  showQuickPrompts,
+  shellClassName,
+  headerLabel,
+  composerPlaceholder,
+  composerHelperText,
+  emptyStateTitle,
+  emptyStateDescription,
 }: ServiceDeskWidgetProps) {
   const [conversation, setConversation] = useState<ServiceDeskConversation | null>(null)
   const [messages, setMessages] = useState<ServiceDeskMessage[]>([])
@@ -74,6 +94,16 @@ export function ServiceDeskWidget({
     }),
     [initialContext],
   )
+
+  const resolvedShowHeader = showHeader ?? true
+  const resolvedShowContextBar = showContextBar ?? displayMode !== 'chat-only'
+  const resolvedShowQuickPrompts = showQuickPrompts ?? quickPrompts.length > 0
+  const resolvedTitle = title ?? conversation?.title ?? '智能工单助手'
+  const resolvedKnowledgeBaseId = knowledgeBaseId ?? conversation?.knowledgeBaseId
+  const shellClasses = ['service-desk-widget-shell', `service-desk-widget-${displayMode}`]
+  if (shellClassName) {
+    shellClasses.push(shellClassName)
+  }
 
   const ensureConversation = async () => {
     if (conversation) {
@@ -218,9 +248,35 @@ export function ServiceDeskWidget({
   }
 
   return (
-    <div className="service-desk-widget-shell">
-      <ConversationContextBar context={conversation?.context ?? context} title={title ?? conversation?.title} />
-      <QuickPrompts prompts={quickPrompts} disabled={loading} onSelect={(prompt) => void handleSend(prompt)} />
+    <div className={shellClasses.join(' ')}>
+      {resolvedShowHeader ? (
+        resolvedShowContextBar ? (
+          <ConversationContextBar
+            context={conversation?.context ?? context}
+            title={resolvedTitle}
+            label={headerLabel}
+          />
+        ) : (
+          <div className="service-desk-compact-header">
+            <div>
+              <div className="service-desk-context-label">{headerLabel || '固定知识库问答'}</div>
+              <h2>{resolvedTitle}</h2>
+            </div>
+            {resolvedKnowledgeBaseId ? (
+              <div className="service-desk-context-badges">
+                <span className="service-desk-badge">
+                  <strong>知识库</strong>
+                  <span>{resolvedKnowledgeBaseId}</span>
+                </span>
+              </div>
+            ) : null}
+          </div>
+        )
+      ) : null}
+
+      {resolvedShowQuickPrompts ? (
+        <QuickPrompts prompts={quickPrompts} disabled={loading} onSelect={(prompt) => void handleSend(prompt)} />
+      ) : null}
 
       {bootstrapError ? <div className="service-desk-error-banner">{bootstrapError}</div> : null}
       {feedbackNotice ? <div className="service-desk-notice-banner">{feedbackNotice}</div> : null}
@@ -228,6 +284,8 @@ export function ServiceDeskWidget({
       <MessageList
         messages={messages}
         loading={loading}
+        emptyTitle={emptyStateTitle}
+        emptyDescription={emptyStateDescription}
         onLike={(message) => submitFeedback(message, { feedbackType: 'like' })}
         onDislike={(message, reason, feedbackText) =>
           submitFeedback(message, {
@@ -238,7 +296,12 @@ export function ServiceDeskWidget({
         }
       />
       <div ref={messagesEndRef} />
-      <MessageComposer disabled={loading || !!bootstrapError} onSend={handleSend} />
+      <MessageComposer
+        disabled={loading || !!bootstrapError}
+        placeholder={composerPlaceholder}
+        helperText={composerHelperText}
+        onSend={handleSend}
+      />
     </div>
   )
 }

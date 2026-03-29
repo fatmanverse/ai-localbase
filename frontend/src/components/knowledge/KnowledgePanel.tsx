@@ -19,7 +19,10 @@ interface KnowledgePanelProps {
   onClearFinishedUploadTasks: (knowledgeBaseId: string) => void
   onRemoveDocument: (knowledgeBaseId: string, documentId: string) => void
   onReindexKnowledgeBase: (knowledgeBaseId: string) => Promise<void>
+  onReindexDocument: (knowledgeBaseId: string, documentId: string) => Promise<void>
+  onBatchReindexDocuments: (knowledgeBaseId: string, documentIds: string[]) => Promise<void>
   reindexingKnowledgeBaseId: string | null
+  reindexingDocumentKeys: Record<string, true>
   onClose: () => void
 }
 
@@ -43,7 +46,10 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
   onClearFinishedUploadTasks,
   onRemoveDocument,
   onReindexKnowledgeBase,
+  onReindexDocument,
+  onBatchReindexDocuments,
   reindexingKnowledgeBaseId,
+  reindexingDocumentKeys,
   onClose,
 }) => {
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -119,12 +125,13 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
     status === 'queued' || status === 'uploading' || status === 'processing'
 
   const getUploadTaskStatusText = (task: UploadTask) => {
-    if (task.status === 'queued') return '等待开始'
+    const isReindexTask = task.taskType === 'reindex'
+    if (task.status === 'queued') return isReindexTask ? '等待重跑' : '等待开始'
     if (task.status === 'uploading') return `上传中 ${task.networkProgress}%`
-    if (task.status === 'processing') return `处理中 ${task.progress}%`
-    if (task.status === 'success') return '处理完成'
+    if (task.status === 'processing') return isReindexTask ? `重跑中 ${task.progress}%` : `处理中 ${task.progress}%`
+    if (task.status === 'success') return isReindexTask ? '重跑完成' : '处理完成'
     if (task.status === 'canceled') return '已取消'
-    return '处理失败'
+    return isReindexTask ? '重跑失败' : '处理失败'
   }
 
   const handleRetryFailedTasks = async (knowledgeBaseId: string, tasks: UploadTask[]) => {
@@ -257,6 +264,30 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                             }
                           >
                             {reindexingKnowledgeBaseId === kb.id ? '重建中...' : '重建索引'}
+                          </button>
+                          <button
+                            className="kb-reindex-btn kb-reindex-btn--secondary"
+                            onClick={() => {
+                              void onBatchReindexDocuments(
+                                kb.id,
+                                filteredDocuments.map((document) => document.id),
+                              )
+                            }}
+                            disabled={
+                              filteredDocuments.length === 0 ||
+                              reindexingKnowledgeBaseId === kb.id ||
+                              activeUploadTasks.length > 0 ||
+                              filteredDocuments.every((document) => reindexingDocumentKeys[`${kb.id}:${document.id}`])
+                            }
+                            title={
+                              activeUploadTasks.length > 0
+                                ? '请等待当前上传任务完成后再批量重跑解析'
+                                : filteredDocuments.length === 0
+                                  ? '当前筛选结果中暂无可处理文档'
+                                  : '按当前筛选结果批量重跑图片提取、OCR、切片与向量入库'
+                            }
+                          >
+                            批量重跑
                           </button>
                           <button
                             className="kb-collapse-btn"
@@ -455,6 +486,9 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                           ) : (
                             filteredDocuments.map((doc) => {
                               const badge = statusLabel(doc.status)
+                              const documentReindexKey = `${kb.id}:${doc.id}`
+                              const isDocumentReindexing = Boolean(reindexingDocumentKeys[documentReindexKey])
+                              const isDocumentActionDisabled = activeUploadTasks.length > 0 || reindexingKnowledgeBaseId === kb.id || isDocumentReindexing
                               return (
                                 <div
                                   key={doc.id}
@@ -489,13 +523,34 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                                       <span>{new Date(doc.uploadedAt).toLocaleDateString('zh-CN')}</span>
                                     </div>
                                   </button>
-                                  <button
-                                    className="kb-doc-remove"
-                                    onClick={() => onRemoveDocument(kb.id, doc.id)}
-                                    title="删除文档"
-                                  >
-                                    ✕
-                                  </button>
+                                  <div className="kb-doc-actions">
+                                    <button
+                                      className="kb-doc-reindex"
+                                      onClick={() => {
+                                        void onReindexDocument(kb.id, doc.id)
+                                      }}
+                                      disabled={isDocumentActionDisabled}
+                                      title={
+                                        activeUploadTasks.length > 0
+                                          ? '请等待当前上传任务完成后再重跑解析'
+                                          : reindexingKnowledgeBaseId === kb.id
+                                            ? '当前知识库正在重建索引'
+                                            : isDocumentReindexing
+                                              ? '当前文档正在重跑解析'
+                                              : '重新读取原文件，重跑图片提取、OCR、切片与向量入库'
+                                      }
+                                    >
+                                      {isDocumentReindexing ? '重跑中...' : '重跑解析'}
+                                    </button>
+                                    <button
+                                      className="kb-doc-remove"
+                                      onClick={() => onRemoveDocument(kb.id, doc.id)}
+                                      title={isDocumentActionDisabled ? '当前文档处理中，暂不可删除' : '删除文档'}
+                                      disabled={isDocumentActionDisabled}
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
                                 </div>
                               )
                             })
@@ -569,6 +624,7 @@ const areKnowledgePanelPropsEqual = (prev: KnowledgePanelProps, next: KnowledgeP
   prev.selectedKnowledgeBaseId === next.selectedKnowledgeBaseId &&
   prev.selectedDocumentId === next.selectedDocumentId &&
   prev.uploadTasksByKnowledgeBase === next.uploadTasksByKnowledgeBase &&
-  prev.reindexingKnowledgeBaseId === next.reindexingKnowledgeBaseId
+  prev.reindexingKnowledgeBaseId === next.reindexingKnowledgeBaseId &&
+  prev.reindexingDocumentKeys === next.reindexingDocumentKeys
 
 export default memo(KnowledgePanel, areKnowledgePanelPropsEqual)

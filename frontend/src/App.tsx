@@ -75,6 +75,7 @@ export interface KnowledgeBase {
 
 export interface UploadTask {
   id: string
+  taskType?: 'upload' | 'reindex'
   knowledgeBaseId: string
   fileName: string
   sizeBytes: number
@@ -86,8 +87,10 @@ export interface UploadTask {
   stage?: string
   detail?: string
   uploadedDocumentId?: string
+  targetDocumentId?: string
   shouldAutoSelect?: boolean
   error?: string
+  rollbackDocument?: DocumentItem
 }
 
 export interface ModelEndpointConfig {
@@ -374,6 +377,7 @@ interface BackendConversation {
 
 interface BackendUploadTask {
   id: string
+  taskType?: 'upload' | 'reindex'
   knowledgeBaseId: string
   documentId: string
   fileName: string
@@ -392,6 +396,12 @@ interface BackendUploadTask {
 interface ReindexKnowledgeBaseResponse {
   message: string
   knowledgeBase: BackendKnowledgeBase
+}
+
+interface ReindexDocumentResponse {
+  message: string
+  knowledgeBaseId: string
+  document: BackendDocumentItem
 }
 
 const normalizeDocument = (document: BackendDocumentItem): DocumentItem => ({
@@ -581,17 +591,22 @@ const normalizeUploadTaskFromBackend = (
   task: BackendUploadTask,
 ): Partial<UploadTask> => ({
   backendTaskId: task.id,
+  taskType: task.taskType ?? 'upload',
+  fileName: task.fileName,
+  sizeBytes: Math.max(1, task.fileSize || 0),
+  sizeLabel: task.fileSizeLabel || '—',
   status: normalizeUploadTaskStatus(task),
   progress: mapBackendTaskProgress(task.progress),
   networkProgress: 100,
   stage: task.stage,
   detail: task.message || resolveUploadStageLabel(task.stage),
-  uploadedDocumentId: task.uploaded?.id,
+  uploadedDocumentId: task.uploaded?.id ?? task.documentId,
+  targetDocumentId: task.documentId,
   error:
     task.status === 'error'
       ? task.error || task.message || '文档处理失败'
       : task.status === 'canceled'
-        ? task.error || task.message || '上传任务已取消'
+        ? task.error || task.message || '处理任务已取消'
         : undefined,
 })
 
@@ -636,6 +651,22 @@ const uploadKnowledgeBaseDocument = (
     xhr.send(formData)
   })
 
+const startDocumentReindexTask = async (
+  knowledgeBaseId: string,
+  documentId: string,
+) => {
+  const response = await fetch(
+    `${API_BASE_PATH}/api/knowledge-bases/${knowledgeBaseId}/documents/${documentId}/reindex-task`,
+    {
+      method: 'POST',
+    },
+  )
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response))
+  }
+  return (await response.json()) as BackendUploadTask
+}
+
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
@@ -657,12 +688,36 @@ function App() {
   const [configSaveError, setConfigSaveError] = useState<string | null>(null)
   const [configSaveSuccess, setConfigSaveSuccess] = useState<string | null>(null)
   const [reindexingKnowledgeBaseId, setReindexingKnowledgeBaseId] = useState<string | null>(null)
+  const [reindexingDocumentKeys, setReindexingDocumentKeys] = useState<Record<string, true>>({})
   const [uploadTasksByKnowledgeBase, setUploadTasksByKnowledgeBase] = useState<Record<string, UploadTask[]>>({})
   const uploadTaskFilesRef = useRef<Record<string, File>>({})
   const uploadTaskXhrRef = useRef<Record<string, XMLHttpRequest>>({})
   const uploadTaskPollTimerRef = useRef<Record<string, number>>({})
   const uploadTasksByKnowledgeBaseRef = useRef<Record<string, UploadTask[]>>({})
   const canceledUploadTaskIdsRef = useRef<Set<string>>(new Set())
+
+  const markDocumentReindexing = (knowledgeBaseId: string, documentId: string) => {
+    const reindexKey = `${knowledgeBaseId}:${documentId}`
+    setReindexingDocumentKeys((current) =>
+      current[reindexKey] ? current : { ...current, [reindexKey]: true },
+    )
+  }
+
+  const clearDocumentReindexing = (knowledgeBaseId: string, documentId: string) => {
+    const reindexKey = `${knowledgeBaseId}:${documentId}`
+    setReindexingDocumentKeys((current) => {
+      if (!current[reindexKey]) {
+        return current
+      }
+      const next = { ...current }
+      delete next[reindexKey]
+      return next
+    })
+  }
+
+  const isTaskActive = (status: UploadTask['status']) =>
+    status === 'queued' || status === 'uploading' || status === 'processing'
+
 
   const loadConversationDetail = async (conversationId: string): Promise<Conversation> => {
     const response = await fetch(`${API_BASE_PATH}/api/conversations/${conversationId}`)
@@ -1259,8 +1314,7 @@ function App() {
     }
   }
 
-  function upsertUploadedDocument(knowledgeBaseId: string, document: BackendDocumentItem) {
-    const normalizedDocument = normalizeDocument(document)
+  function upsertDocumentItem(knowledgeBaseId: string, normalizedDocument: DocumentItem) {
     setKnowledgeBases((prev) =>
       prev.map((knowledgeBase) =>
         knowledgeBase.id === knowledgeBaseId
@@ -1277,27 +1331,42 @@ function App() {
     return normalizedDocument
   }
 
+  function upsertUploadedDocument(knowledgeBaseId: string, document: BackendDocumentItem) {
+    return upsertDocumentItem(knowledgeBaseId, normalizeDocument(document))
+  }
+
   function applyBackendUploadTask(
     knowledgeBaseId: string,
     taskId: string,
     backendTask: BackendUploadTask,
   ) {
+    const currentTask = uploadTasksByKnowledgeBaseRef.current[knowledgeBaseId]?.find(
+      (item) => item.id === taskId,
+    )
     updateUploadTask(knowledgeBaseId, taskId, normalizeUploadTaskFromBackend(backendTask))
 
     if (backendTask.uploaded) {
       const uploadedDocument = upsertUploadedDocument(knowledgeBaseId, backendTask.uploaded)
-      const currentTask = uploadTasksByKnowledgeBaseRef.current[knowledgeBaseId]?.find(
-        (item) => item.id === taskId,
-      )
       if (backendTask.status === 'success' && currentTask?.shouldAutoSelect) {
         setSelectedKnowledgeBaseId(knowledgeBaseId)
         setSelectedDocumentId(uploadedDocument.id)
       }
+    } else if (
+      (backendTask.status === 'error' || backendTask.status === 'canceled') &&
+      currentTask?.taskType === 'reindex' &&
+      currentTask.rollbackDocument
+    ) {
+      upsertDocumentItem(knowledgeBaseId, currentTask.rollbackDocument)
     }
 
     if (backendTask.status === 'success') {
       delete uploadTaskFilesRef.current[taskId]
       canceledUploadTaskIdsRef.current.delete(taskId)
+      updateUploadTask(knowledgeBaseId, taskId, { rollbackDocument: undefined })
+    }
+
+    if (currentTask?.taskType === 'reindex' && currentTask.targetDocumentId && (backendTask.status === 'success' || backendTask.status === 'error' || backendTask.status === 'canceled')) {
+      clearDocumentReindexing(knowledgeBaseId, currentTask.targetDocumentId)
     }
 
     if (
@@ -1458,6 +1527,168 @@ function App() {
     }
   }
 
+  const runDocumentReindexTask = async (task: UploadTask) => {
+    stopPollingUploadTask(task.id)
+
+    if (task.targetDocumentId) {
+      markDocumentReindexing(task.knowledgeBaseId, task.targetDocumentId)
+    }
+
+    if (canceledUploadTaskIdsRef.current.has(task.id)) {
+      updateUploadTask(task.knowledgeBaseId, task.id, {
+        status: 'canceled',
+        stage: 'canceled',
+        detail: '重跑解析任务已取消',
+        error: '重跑解析任务已取消',
+      })
+      return
+    }
+
+    if (!task.targetDocumentId) {
+      updateUploadTask(task.knowledgeBaseId, task.id, {
+        status: 'error',
+        stage: 'failed',
+        detail: '未找到目标文档，无法重跑解析。',
+        error: '未找到目标文档，无法重跑解析。',
+      })
+      return
+    }
+
+    updateUploadTask(task.knowledgeBaseId, task.id, {
+      taskType: 'reindex',
+      status: 'processing',
+      progress: 6,
+      networkProgress: 100,
+      backendTaskId: undefined,
+      stage: 'queued',
+      detail: '正在提交重跑解析任务',
+      uploadedDocumentId: task.targetDocumentId,
+      error: undefined,
+    })
+
+    try {
+      const backendTask = await startDocumentReindexTask(task.knowledgeBaseId, task.targetDocumentId)
+      applyBackendUploadTask(task.knowledgeBaseId, task.id, backendTask)
+
+      if (canceledUploadTaskIdsRef.current.has(task.id)) {
+        void fetch(
+          `${API_BASE_PATH}/api/knowledge-bases/${task.knowledgeBaseId}/document-uploads/${backendTask.id}`,
+          { method: 'DELETE' },
+        )
+          .then(async (response) => {
+            if (!response.ok) {
+              throw new Error(await extractErrorMessage(response))
+            }
+            const canceledTask = (await response.json()) as BackendUploadTask
+            applyBackendUploadTask(task.knowledgeBaseId, task.id, canceledTask)
+          })
+          .catch((cancelError) => {
+            const message = cancelError instanceof Error ? cancelError.message : '取消重跑解析任务失败。'
+            updateUploadTask(task.knowledgeBaseId, task.id, {
+              status: 'canceled',
+              stage: 'canceled',
+              detail: '取消请求已发送，但服务端确认失败',
+              error: message,
+            })
+          })
+        return
+      }
+
+      if (backendTask.status === 'processing') {
+        scheduleUploadTaskPoll(task.knowledgeBaseId, task.id, backendTask.id, 400)
+      }
+    } catch (error) {
+      stopPollingUploadTask(task.id)
+      const message = error instanceof Error ? error.message : '重跑解析任务创建失败，请稍后重试。'
+      updateUploadTask(task.knowledgeBaseId, task.id, {
+        status: 'error',
+        stage: 'failed',
+        detail: '重跑解析任务创建失败',
+        error: message,
+      })
+      if (task.rollbackDocument) {
+        upsertDocumentItem(task.knowledgeBaseId, task.rollbackDocument)
+      }
+      if (task.targetDocumentId) {
+        clearDocumentReindexing(task.knowledgeBaseId, task.targetDocumentId)
+      }
+    }
+  }
+
+
+  const hasActiveDocumentReindexTask = (knowledgeBaseId: string, documentId: string) =>
+    (uploadTasksByKnowledgeBaseRef.current[knowledgeBaseId] ?? []).some(
+      (task) =>
+        task.taskType === 'reindex' &&
+        task.targetDocumentId === documentId &&
+        isTaskActive(task.status),
+    )
+
+  const enqueueDocumentReindexTasks = (
+    knowledgeBaseId: string,
+    documents: DocumentItem[],
+    shouldAutoSelect = false,
+  ) => {
+    const nextDocuments = documents.filter(
+      (document) => !hasActiveDocumentReindexTask(knowledgeBaseId, document.id),
+    )
+    if (nextDocuments.length === 0) {
+      return 0
+    }
+
+    nextDocuments.forEach((document) => {
+      markDocumentReindexing(knowledgeBaseId, document.id)
+    })
+
+    const targetDocumentIds = new Set(nextDocuments.map((document) => document.id))
+    const tasks = nextDocuments.map((document, index) => ({
+      id: createId(),
+      taskType: 'reindex' as const,
+      knowledgeBaseId,
+      fileName: document.name,
+      sizeBytes: 1,
+      sizeLabel: document.sizeLabel || '—',
+      progress: 0,
+      networkProgress: 100,
+      status: 'queued' as const,
+      stage: 'queued',
+      detail: '等待开始重跑解析',
+      uploadedDocumentId: document.id,
+      targetDocumentId: document.id,
+      rollbackDocument: document,
+      shouldAutoSelect: shouldAutoSelect && index === 0,
+    }))
+
+    setKnowledgeBases((prev) =>
+      prev.map((knowledgeBase) =>
+        knowledgeBase.id !== knowledgeBaseId
+          ? knowledgeBase
+          : {
+              ...knowledgeBase,
+              documents: knowledgeBase.documents.map((document) =>
+                targetDocumentIds.has(document.id)
+                  ? { ...document, status: 'processing' }
+                  : document,
+              ),
+            },
+      ),
+    )
+
+    setUploadTasksByKnowledgeBase((prev) => {
+      const next = {
+        ...prev,
+        [knowledgeBaseId]: [...tasks, ...(prev[knowledgeBaseId] ?? [])],
+      }
+      uploadTasksByKnowledgeBaseRef.current = next
+      return next
+    })
+
+    tasks.forEach((task) => {
+      void runDocumentReindexTask(task)
+    })
+    return tasks.length
+  }
+
   const handleUploadFiles = async (knowledgeBaseId: string, files: FileList | null) => {
     if (!files || files.length === 0) {
       return
@@ -1466,6 +1697,7 @@ function App() {
     const fileList = Array.from(files)
     const nextTasks = fileList.map((file, index) => ({
       id: createId(),
+      taskType: 'upload' as const,
       knowledgeBaseId,
       fileName: file.name,
       sizeBytes: file.size,
@@ -1517,11 +1749,21 @@ function App() {
     updateUploadTask(knowledgeBaseId, taskId, {
       status: 'canceled',
       stage: 'canceled',
-      detail: task?.backendTaskId ? '正在取消服务端处理任务' : '上传任务已取消',
-      error: '上传任务已取消',
+      detail: task?.backendTaskId
+        ? '正在取消服务端处理任务'
+        : task?.taskType === 'reindex'
+          ? '正在取消重跑解析任务'
+          : '上传任务已取消',
+      error: task?.taskType === 'reindex' ? '重跑解析任务已取消' : '上传任务已取消',
     })
 
     if (!task?.backendTaskId) {
+      if (task?.taskType === 'reindex' && task.targetDocumentId) {
+        clearDocumentReindexing(knowledgeBaseId, task.targetDocumentId)
+        if (task.rollbackDocument) {
+          upsertDocumentItem(knowledgeBaseId, task.rollbackDocument)
+        }
+      }
       return
     }
 
@@ -1553,6 +1795,39 @@ function App() {
   const handleRetryUploadTask = async (knowledgeBaseId: string, taskId: string) => {
     stopPollingUploadTask(taskId)
 
+    const existingTask = uploadTasksByKnowledgeBaseRef.current[knowledgeBaseId]?.find(
+      (item) => item.id === taskId,
+    )
+    if (!existingTask) {
+      return
+    }
+
+    if (existingTask.taskType === 'reindex' && existingTask.targetDocumentId) {
+      canceledUploadTaskIdsRef.current.delete(taskId)
+      updateUploadTask(knowledgeBaseId, taskId, {
+        status: 'queued',
+        progress: 0,
+        networkProgress: 100,
+        backendTaskId: undefined,
+        stage: 'queued',
+        detail: '等待重新发起重跑解析',
+        uploadedDocumentId: existingTask.targetDocumentId,
+        error: undefined,
+      })
+      await runDocumentReindexTask({
+        ...existingTask,
+        status: 'queued',
+        progress: 0,
+        networkProgress: 100,
+        backendTaskId: undefined,
+        stage: 'queued',
+        detail: '等待重新发起重跑解析',
+        uploadedDocumentId: existingTask.targetDocumentId,
+        error: undefined,
+      })
+      return
+    }
+
     const file = uploadTaskFilesRef.current[taskId]
     if (!file) {
       updateUploadTask(knowledgeBaseId, taskId, {
@@ -1567,6 +1842,7 @@ function App() {
     canceledUploadTaskIdsRef.current.delete(taskId)
     const task: UploadTask = {
       id: taskId,
+      taskType: 'upload',
       knowledgeBaseId,
       fileName: file.name,
       sizeBytes: file.size,
@@ -1579,6 +1855,7 @@ function App() {
       shouldAutoSelect: true,
     }
     updateUploadTask(knowledgeBaseId, taskId, {
+      taskType: 'upload',
       fileName: file.name,
       sizeBytes: file.size,
       sizeLabel: formatUploadFileSize(file.size),
@@ -1595,6 +1872,7 @@ function App() {
 
     await runUploadTask(task, file)
   }
+
 
   const handleRemoveDocument = async (knowledgeBaseId: string, documentId: string) => {
     try {
@@ -1693,6 +1971,66 @@ function App() {
       setReindexingKnowledgeBaseId(null)
     }
   }
+
+  const handleReindexDocument = async (knowledgeBaseId: string, documentId: string) => {
+    const targetKnowledgeBase = knowledgeBases.find((knowledgeBase) => knowledgeBase.id === knowledgeBaseId)
+    const targetDocument = targetKnowledgeBase?.documents.find((document) => document.id === documentId)
+    if (!targetKnowledgeBase || !targetDocument) {
+      return
+    }
+
+    const confirmed = window.confirm(
+      `确定重跑文档“${targetDocument.name}”的解析吗？这会重新读取原文件，并重跑图片提取、OCR、切片与向量入库，无需重新上传。`,
+    )
+    if (!confirmed) {
+      return
+    }
+
+    const startedCount = enqueueDocumentReindexTasks(
+      knowledgeBaseId,
+      [targetDocument],
+      selectedKnowledgeBaseId === knowledgeBaseId,
+    )
+    if (startedCount === 0) {
+      window.alert('这份文档已经在重跑解析中了。')
+    }
+  }
+
+  const handleBatchReindexDocuments = async (knowledgeBaseId: string, documentIds: string[]) => {
+    const targetKnowledgeBase = knowledgeBases.find((knowledgeBase) => knowledgeBase.id === knowledgeBaseId)
+    if (!targetKnowledgeBase) {
+      return
+    }
+
+    const requestedDocuments = targetKnowledgeBase.documents.filter((document) =>
+      documentIds.includes(document.id),
+    )
+    if (requestedDocuments.length === 0) {
+      window.alert('当前没有可批量重跑的文档。')
+      return
+    }
+
+    const readyDocuments = requestedDocuments.filter(
+      (document) => !hasActiveDocumentReindexTask(knowledgeBaseId, document.id),
+    )
+    if (readyDocuments.length === 0) {
+      window.alert('当前筛选文档都已经在重跑解析中了。')
+      return
+    }
+
+    const confirmed = window.confirm(
+      `确定批量重跑 ${readyDocuments.length} 份文档的解析吗？这会重新读取原文件，并重跑图片提取、OCR、切片与向量入库。`,
+    )
+    if (!confirmed) {
+      return
+    }
+
+    const startedCount = enqueueDocumentReindexTasks(knowledgeBaseId, readyDocuments, false)
+    if (startedCount > 0) {
+      window.alert(`已加入 ${startedCount} 个重跑解析任务，请在任务列表中查看进度。`)
+    }
+  }
+
 
   const handleSendMessage = async (content: string) => {
     if (!activeConversation || streamingConversationId || isSwitchingConversationKnowledgeBase) {
@@ -2131,7 +2469,10 @@ function App() {
         onClearFinishedUploadTasks={clearFinishedUploadTasks}
         onRemoveDocument={handleRemoveDocument}
         onReindexKnowledgeBase={handleReindexKnowledgeBase}
+        onReindexDocument={handleReindexDocument}
+        onBatchReindexDocuments={handleBatchReindexDocuments}
         reindexingKnowledgeBaseId={reindexingKnowledgeBaseId}
+        reindexingDocumentKeys={reindexingDocumentKeys}
         conversations={conversations}
         activeConversationId={activeConversation?.id ?? null}
         onSelectConversation={handleSelectConversation}

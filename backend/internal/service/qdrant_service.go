@@ -64,6 +64,10 @@ type qdrantPointUpsertRequest struct {
 	Points []QdrantPoint `json:"points"`
 }
 
+type qdrantPointDeleteRequest struct {
+	Filter map[string]any `json:"filter,omitempty"`
+}
+
 type qdrantSearchRequest struct {
 	Vector      []float64      `json:"vector"`
 	Limit       int            `json:"limit"`
@@ -175,6 +179,19 @@ func (s *QdrantService) UpsertPoints(ctx context.Context, knowledgeBaseID string
 		}
 	}
 	return nil
+}
+
+func (s *QdrantService) DeletePointsByFilter(ctx context.Context, knowledgeBaseID string, filter map[string]any) error {
+	if !s.IsEnabled() || len(filter) == 0 {
+		return nil
+	}
+
+	collPath := "/collections/" + url.PathEscape(s.CollectionName(knowledgeBaseID)) + "/points/delete"
+	_, err := s.doJSON(ctx, http.MethodPost, collPath, qdrantPointDeleteRequest{Filter: filter})
+	if err != nil && isQdrantNotFound(err) {
+		return nil
+	}
+	return err
 }
 
 func (s *QdrantService) Search(ctx context.Context, knowledgeBaseID string, vector []float64, limit int, filter map[string]any) ([]QdrantSearchResult, error) {
