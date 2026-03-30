@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createServiceDeskConversation,
   getServiceDeskConversation,
@@ -86,7 +86,8 @@ export function ServiceDeskWidget({
   const [loading, setLoading] = useState(false)
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  const conversationRef = useRef<ServiceDeskConversation | null>(null)
+  const messagesRef = useRef<ServiceDeskMessage[]>([])
 
   const context = useMemo<ServiceDeskConversationContext>(
     () => ({
@@ -105,9 +106,17 @@ export function ServiceDeskWidget({
     shellClasses.push(shellClassName)
   }
 
-  const ensureConversation = async () => {
-    if (conversation) {
-      return conversation
+  useEffect(() => {
+    conversationRef.current = conversation
+  }, [conversation])
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  const ensureConversation = useCallback(async () => {
+    if (conversationRef.current) {
+      return conversationRef.current
     }
 
     if (initialConversationId) {
@@ -127,14 +136,14 @@ export function ServiceDeskWidget({
     setConversation(createdConversation)
     setMessages(createdConversation.messages ?? [])
     return createdConversation
-  }
+  }, [apiBaseUrl, context, initialConversationId, knowledgeBaseId, sessionMetadata, title])
 
-  const refreshConversation = async (conversationId: string) => {
+  const refreshConversation = useCallback(async (conversationId: string) => {
     const latestConversation = await getServiceDeskConversation(apiBaseUrl, conversationId)
     setConversation(latestConversation)
     setMessages(latestConversation.messages ?? [])
     return latestConversation
-  }
+  }, [apiBaseUrl])
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -147,14 +156,9 @@ export function ServiceDeskWidget({
     }
 
     void bootstrap()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiBaseUrl, initialConversationId, knowledgeBaseId, title])
+  }, [ensureConversation])
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
-
-  const handleSend = async (content: string) => {
+  const handleSend = useCallback(async (content: string) => {
     const currentConversation = await ensureConversation()
     setLoading(true)
     setFeedbackNotice(null)
@@ -187,7 +191,7 @@ export function ServiceDeskWidget({
       } else {
         const response = await sendServiceDeskMessage(apiBaseUrl, currentConversation.id, payload)
         setConversation(response.conversation)
-        setMessages(response.conversation.messages ?? [...messages, response.userMessage, response.assistantMessage])
+        setMessages((prev) => response.conversation.messages ?? [...prev, response.userMessage, response.assistantMessage])
       }
     } catch (error) {
       setMessages((prev) =>
@@ -203,35 +207,38 @@ export function ServiceDeskWidget({
     } finally {
       setLoading(false)
     }
-  }
+  }, [apiBaseUrl, context, ensureConversation, knowledgeBaseId, refreshConversation, sessionMetadata, useStreaming])
 
-  const submitFeedback = async (
+  const submitFeedback = useCallback(async (
     message: ServiceDeskMessage,
     payload: Pick<FeedbackPayload, 'feedbackType' | 'feedbackReason' | 'feedbackText'>,
   ) => {
-    if (!conversation) {
+    const currentConversation = conversationRef.current
+    const currentMessages = messagesRef.current
+
+    if (!currentConversation) {
       return
     }
 
     const question = (() => {
-      const index = messages.findIndex((item) => item.id === message.id)
+      const index = currentMessages.findIndex((item) => item.id === message.id)
       for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-        if (messages[cursor]?.role === 'user') {
-          return messages[cursor]?.content ?? ''
+        if (currentMessages[cursor]?.role === 'user') {
+          return currentMessages[cursor]?.content ?? ''
         }
       }
       return ''
     })()
 
     await submitServiceDeskFeedback(apiBaseUrl, {
-      conversationId: conversation.id,
+      conversationId: currentConversation.id,
       messageId: message.id,
       feedbackType: payload.feedbackType,
       feedbackReason: payload.feedbackReason,
       feedbackText: payload.feedbackText,
       questionText: question,
       answerText: message.content,
-      knowledgeBaseId: message.trace?.knowledgeBaseId ?? conversation.knowledgeBaseId,
+      knowledgeBaseId: message.trace?.knowledgeBaseId ?? currentConversation.knowledgeBaseId,
       retrievedContext: message.trace?.retrievedContext,
       sourceDocuments: message.trace?.sourceDocuments,
       sourcePlatform: context.sourcePlatform,
@@ -243,9 +250,21 @@ export function ServiceDeskWidget({
       },
     })
 
-    await refreshConversation(conversation.id)
+    await refreshConversation(currentConversation.id)
     setFeedbackNotice(payload.feedbackType === 'like' ? '已记录“已解决”反馈，可用于沉淀 FAQ 候选。' : '已记录问题反馈，将进入知识库 / FAQ 优化队列。')
-  }
+  }, [apiBaseUrl, context, refreshConversation])
+
+  const handleLikeFeedback = useCallback((message: ServiceDeskMessage) => submitFeedback(message, { feedbackType: 'like' }), [submitFeedback])
+
+  const handleDislikeFeedback = useCallback(
+    (message: ServiceDeskMessage, reason: string, feedbackText: string) =>
+      submitFeedback(message, {
+        feedbackType: 'dislike',
+        feedbackReason: reason,
+        feedbackText,
+      }),
+    [submitFeedback],
+  )
 
   return (
     <div className={shellClasses.join(' ')}>
@@ -286,16 +305,9 @@ export function ServiceDeskWidget({
         loading={loading}
         emptyTitle={emptyStateTitle}
         emptyDescription={emptyStateDescription}
-        onLike={(message) => submitFeedback(message, { feedbackType: 'like' })}
-        onDislike={(message, reason, feedbackText) =>
-          submitFeedback(message, {
-            feedbackType: 'dislike',
-            feedbackReason: reason,
-            feedbackText,
-          })
-        }
+        onLike={handleLikeFeedback}
+        onDislike={handleDislikeFeedback}
       />
-      <div ref={messagesEndRef} />
       <MessageComposer
         disabled={loading || !!bootstrapError}
         placeholder={composerPlaceholder}

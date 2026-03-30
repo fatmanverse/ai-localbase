@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import MarkdownRenderer from './markdown/MarkdownRenderer'
+import { usePinnedAutoScroll } from '../hooks/usePinnedAutoScroll'
 import { AppConfig, Conversation, DEFAULT_SUGGESTED_PROMPTS, DocumentItem, KnowledgeBase, MessageFeedbackSummary } from '../App'
 
 interface ChatAreaProps {
@@ -86,7 +87,6 @@ interface MessageListProps {
   onFeedbackTextChange: (messageId: string, value: string) => void
   onCancelFeedback: () => void
   onSubmitDislikeFeedback: (messageId: string) => void
-  messagesEndRef: React.RefObject<HTMLDivElement>
   welcomeMessage: string
   conversationDocument: DocumentItem | null
 }
@@ -456,7 +456,6 @@ const MessageList = memo(function MessageList({
   onFeedbackTextChange,
   onCancelFeedback,
   onSubmitDislikeFeedback,
-  messagesEndRef,
   welcomeMessage,
   conversationDocument,
 }: MessageListProps) {
@@ -464,6 +463,8 @@ const MessageList = memo(function MessageList({
   const [visibleCount, setVisibleCount] = useState(() => Math.min(messages.length, CHAT_MESSAGE_WINDOW_SIZE))
   const previousConversationIdRef = useRef(conversationId)
   const previousMessageLengthRef = useRef(messages.length)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const lastMessageContentSignature = `${lastMessage?.id ?? ''}|${lastMessage?.content.length ?? 0}`
 
   useEffect(() => {
     const previousConversationId = previousConversationIdRef.current
@@ -490,12 +491,21 @@ const MessageList = memo(function MessageList({
   const hiddenCount = Math.max(0, messages.length - visibleCount)
   const renderedMessages = hiddenCount > 0 ? messages.slice(-visibleCount) : messages
 
+  usePinnedAutoScroll({
+    containerRef,
+    conversationKey: conversationId,
+    itemCount: messages.length,
+    lastItemId: lastMessage?.id,
+    lastItemContentSignature,
+    streaming: Boolean(isLoading && lastMessage?.role === 'assistant'),
+  })
+
   const handleLoadMore = useCallback(() => {
     setVisibleCount((prev) => Math.min(messages.length, prev + CHAT_MESSAGE_LOAD_MORE_STEP))
   }, [messages.length])
 
   return (
-    <div className="messages-container">
+    <div className="messages-container" ref={containerRef}>
       {hiddenCount > 0 ? (
         <div className="message-window-banner">
           <button type="button" className="message-window-load-more" onClick={handleLoadMore}>
@@ -550,7 +560,6 @@ const MessageList = memo(function MessageList({
         </div>
       ) : null}
 
-      <div ref={messagesEndRef} />
     </div>
   )
 })
@@ -624,7 +633,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const [feedbackReasons, setFeedbackReasons] = useState<Record<string, string>>({})
   const [feedbackTexts, setFeedbackTexts] = useState<Record<string, string>>({})
   const [feedbackNotices, setFeedbackNotices] = useState<Record<string, string>>({})
-  const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  const copyResetTimerRef = useRef<number | null>(null)
 
   const hasBoundKnowledgeBase = Boolean(conversationKnowledgeBase)
   const currentKnowledgeBaseSelectValue = conversationKnowledgeBase?.id ?? activeConversation.knowledgeBaseId ?? ''
@@ -644,9 +653,11 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     [config.ui?.suggestedPrompts],
   )
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [activeConversation.messages, isLoading])
+  useEffect(() => () => {
+    if (copyResetTimerRef.current) {
+      window.clearTimeout(copyResetTimerRef.current)
+    }
+  }, [])
 
   const conversationStats = useMemo(() => {
     const userCount = activeConversation.messages.filter((message) => message.role === 'user').length
@@ -725,7 +736,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     try {
       await navigator.clipboard.writeText(content)
       setCopiedMessageId(messageId)
-      window.setTimeout(() => {
+      if (copyResetTimerRef.current) {
+        window.clearTimeout(copyResetTimerRef.current)
+      }
+      copyResetTimerRef.current = window.setTimeout(() => {
         setCopiedMessageId((prev) => (prev === messageId ? null : prev))
       }, 1500)
     } catch {
@@ -831,7 +845,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         onFeedbackTextChange={handleFeedbackTextChange}
         onCancelFeedback={handleCancelFeedback}
         onSubmitDislikeFeedback={handleSubmitDislikeFeedback}
-        messagesEndRef={messagesEndRef}
         welcomeMessage={welcomeMessage}
         conversationDocument={conversationDocument}
       />
