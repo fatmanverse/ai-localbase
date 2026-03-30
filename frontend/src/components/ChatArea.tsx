@@ -146,6 +146,40 @@ const formatTime = (value: string) =>
     minute: '2-digit',
   })
 
+const buildRelatedImagesSignature = (images: NonNullable<Conversation['messages'][number]['metadata']>['relatedImages'] | undefined) =>
+  (images ?? [])
+    .map((image) => `${image.id}|${image.publicUrl ?? ''}|${image.classification ?? ''}|${image.description ?? ''}`)
+    .join(';')
+
+const buildMessageRenderSignature = (message: Conversation['messages'][number]) => {
+  const metadata = message.metadata
+  const feedbackSummary = metadata?.feedbackSummary
+  return [
+    message.id,
+    message.role,
+    message.content,
+    message.timestamp,
+    metadata?.degraded ? '1' : '0',
+    feedbackSummary?.likeCount ?? 0,
+    feedbackSummary?.dislikeCount ?? 0,
+    feedbackSummary?.latestFeedbackId ?? '',
+    feedbackSummary?.latestFeedback ?? '',
+    buildRelatedImagesSignature(metadata?.relatedImages),
+  ].join('|')
+}
+
+const areMessageBubblePropsEqual = (prev: MessageBubbleProps, next: MessageBubbleProps) =>
+  buildMessageRenderSignature(prev.message) === buildMessageRenderSignature(next.message) &&
+  prev.isStreamingPlaceholder === next.isStreamingPlaceholder &&
+  prev.copied === next.copied &&
+  prev.feedbackNotice === next.feedbackNotice &&
+  prev.hasSubmittedFeedback === next.hasSubmittedFeedback &&
+  prev.isFeedbackExpanded === next.isFeedbackExpanded &&
+  prev.isFeedbackSubmitting === next.isFeedbackSubmitting &&
+  prev.selectedFeedbackReason === next.selectedFeedbackReason &&
+  prev.feedbackText === next.feedbackText &&
+  prev.canCollectFeedback === next.canCollectFeedback
+
 const ChatTopBar = memo(function ChatTopBar({
   title,
   updatedAt,
@@ -386,7 +420,7 @@ const MessageBubble = memo(function MessageBubble({
       <div className="message-time">{formatTime(message.timestamp)}</div>
     </div>
   )
-})
+}, areMessageBubblePropsEqual)
 
 const MessageList = memo(function MessageList({
   messages,

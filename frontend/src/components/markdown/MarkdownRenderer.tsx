@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useState } from 'react'
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -378,6 +378,11 @@ function normalizeSummarySections(content: string): string {
 const MARKDOWN_NORMALIZATION_CACHE_LIMIT = 200
 const markdownNormalizationCache = new Map<string, string>()
 
+const MARKDOWN_COLLAPSE_CHAR_THRESHOLD = 2200
+const MARKDOWN_COLLAPSE_LINE_THRESHOLD = 30
+const MARKDOWN_PREVIEW_CHAR_LIMIT = 1400
+const MARKDOWN_PREVIEW_BLOCK_LIMIT = 6
+
 interface MarkdownSegment {
   type: 'text' | 'code'
   value: string
@@ -585,6 +590,89 @@ function fixMarkdown(content: string): string {
   return rememberNormalizedMarkdown(content, normalized)
 }
 
+function shouldCollapseMarkdownContent(content: string): boolean {
+  if (!content.trim()) {
+    return false
+  }
+
+  const lineCount = content.split('\n').length
+  return content.length > MARKDOWN_COLLAPSE_CHAR_THRESHOLD || lineCount > MARKDOWN_COLLAPSE_LINE_THRESHOLD
+}
+
+function buildCollapsedCodeNotice(block: string): string {
+  if (/^```mermaid/i.test(block)) {
+    return '> 流程图内容较长，展开后查看完整图示。'
+  }
+  return '> 长代码或结构化内容已折叠，展开后查看完整内容。'
+}
+
+function buildMarkdownPreview(content: string): string {
+  const segments = splitMarkdownByCodeFences(content)
+  const previewBlocks: string[] = []
+  let remainingChars = MARKDOWN_PREVIEW_CHAR_LIMIT
+  let usedBlocks = 0
+  let truncated = false
+
+  for (const segment of segments) {
+    if (remainingChars <= 0 || usedBlocks >= MARKDOWN_PREVIEW_BLOCK_LIMIT) {
+      truncated = true
+      break
+    }
+
+    if (segment.type === 'code') {
+      const normalizedBlock = segment.value.trim()
+      if (!normalizedBlock) {
+        continue
+      }
+
+      if (normalizedBlock.length <= remainingChars && usedBlocks < MARKDOWN_PREVIEW_BLOCK_LIMIT - 1) {
+        previewBlocks.push(normalizedBlock)
+        remainingChars -= normalizedBlock.length
+        usedBlocks += 1
+        continue
+      }
+
+      previewBlocks.push(buildCollapsedCodeNotice(normalizedBlock))
+      truncated = true
+      break
+    }
+
+    const textBlocks = segment.value
+      .split(/\n{2,}/)
+      .map((block) => block.trim())
+      .filter(Boolean)
+
+    for (const block of textBlocks) {
+      if (remainingChars <= 0 || usedBlocks >= MARKDOWN_PREVIEW_BLOCK_LIMIT) {
+        truncated = true
+        break
+      }
+
+      if (block.length <= remainingChars) {
+        previewBlocks.push(block)
+        remainingChars -= block.length
+        usedBlocks += 1
+        continue
+      }
+
+      const sliced = block.slice(0, Math.max(220, remainingChars)).trim()
+      const safeSliceIndex = Math.max(sliced.lastIndexOf('\n'), sliced.lastIndexOf('。'), sliced.lastIndexOf('；'), sliced.lastIndexOf('：'))
+      const previewText = safeSliceIndex > 80 ? sliced.slice(0, safeSliceIndex).trim() : sliced
+      previewBlocks.push(previewText)
+      truncated = true
+      remainingChars = 0
+      break
+    }
+  }
+
+  const preview = previewBlocks.join('\n\n').trim()
+  if (!preview) {
+    return content
+  }
+
+  return truncated ? `${preview}\n\n> 下面的内容已折叠，展开后可查看完整答复。` : preview
+}
+
 let mermaidModulePromise: Promise<typeof import('mermaid')> | null = null
 let mermaidInitialized = false
 
@@ -602,11 +690,42 @@ interface MermaidDiagramProps {
 }
 
 const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
+  const containerRef = useRef<HTMLDivElement | null>(null)
   const [svg, setSvg] = useState<string>('')
   const [error, setError] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
+  const [shouldRender, setShouldRender] = useState(false)
 
   useEffect(() => {
+    setShouldRender(false)
+    const node = containerRef.current
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setShouldRender(true)
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0)) {
+          setShouldRender(true)
+          observer.disconnect()
+        }
+      },
+      { rootMargin: '240px 0px' },
+    )
+
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [chart])
+
+  useEffect(() => {
+    if (!shouldRender) {
+      setSvg('')
+      setError('')
+      setIsLoading(false)
+      return
+    }
+
     let cancelled = false
     setSvg('')
     setError('')
@@ -660,7 +779,15 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
       cancelled = true
       window.clearTimeout(timeout)
     }
-  }, [chart])
+  }, [chart, shouldRender])
+
+  if (!shouldRender) {
+    return (
+      <div ref={containerRef} className="md-mermaid-loading">
+        流程图进入可视区域后再渲染...
+      </div>
+    )
+  }
 
   if (error) {
     return (
@@ -730,11 +857,32 @@ const markdownComponents = {
 
 const MarkdownRenderer = memo(function MarkdownRenderer({ content }: { content: string }) {
   const normalizedContent = useMemo(() => fixMarkdown(content), [content])
+  const shouldCollapse = useMemo(() => shouldCollapseMarkdownContent(normalizedContent), [normalizedContent])
+  const previewContent = useMemo(
+    () => (shouldCollapse ? buildMarkdownPreview(normalizedContent) : normalizedContent),
+    [normalizedContent, shouldCollapse],
+  )
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  useEffect(() => {
+    setIsExpanded(false)
+  }, [content])
+
+  const renderContent = shouldCollapse && !isExpanded ? previewContent : normalizedContent
 
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-      {normalizedContent}
-    </ReactMarkdown>
+    <div className={`md-render-shell ${shouldCollapse ? 'is-collapsible' : ''} ${isExpanded ? 'is-expanded' : 'is-collapsed'}`.trim()}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        {renderContent}
+      </ReactMarkdown>
+      {shouldCollapse ? (
+        <div className="md-render-actions">
+          <button type="button" className="md-render-toggle" onClick={() => setIsExpanded((prev) => !prev)}>
+            {isExpanded ? '收起回答' : '展开完整回答'}
+          </button>
+        </div>
+      ) : null}
+    </div>
   )
 })
 

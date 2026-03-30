@@ -2531,6 +2531,36 @@
   margin-top: 8px;
 }
 
+
+.md-render-shell {
+  width: 100%;
+}
+
+.md-render-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 12px;
+}
+
+.md-render-toggle {
+  appearance: none;
+  border: 1px solid #d7e0ec;
+  background: #f8fafc;
+  color: #1e293b;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.md-render-toggle:hover {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
 /* ── 分隔线 ── */
 .message-content-markdown hr {
   border: none;

@@ -210,6 +210,32 @@
   margin-top: 8px;
 }
 
+
+.service-desk-markdown .md-render-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 12px;
+}
+
+.service-desk-markdown .md-render-toggle {
+  appearance: none;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(148, 163, 184, 0.12);
+  color: #f8fafc;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.service-desk-markdown .md-render-toggle:hover {
+  border-color: rgba(147, 197, 253, 0.5);
+  background: rgba(59, 130, 246, 0.16);
+  color: #dbeafe;
+}
+
 .service-desk-markdown p,
 .service-desk-markdown ul,
 .service-desk-markdown ol,
