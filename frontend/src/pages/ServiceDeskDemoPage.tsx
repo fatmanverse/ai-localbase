@@ -7,7 +7,7 @@ export default function ServiceDeskDemoPage() {
       <section className="service-desk-demo-hero">
         <div>
           <div className="eyebrow">Embeddable Widget Demo</div>
-          <h1>工单机器人 / 客服机器人接入演示</h1>
+          <h1>服务台 / 客服接入演示</h1>
           <p>
             这个页面演示新的对外聊天 API 与可嵌入聊天组件。它适合接入工单系统、客服系统、内部服务台、门户网站或其他前端页面。
           </p>
@@ -27,7 +27,7 @@ export default function ServiceDeskDemoPage() {
       </section>
 
       <ServiceDeskWidget
-        title="IT 服务台机器人"
+        title="IT 服务台"
         initialContext={{
           ticketId: 'INC-2025-00128',
           userId: 'u-10086',

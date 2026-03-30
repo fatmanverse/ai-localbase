@@ -12,7 +12,7 @@ export default function ServiceDeskEmbedPage() {
   const knowledgeBaseId =
     readKnowledgeBaseIdFromNamedPath(['embed']) ||
     readFirstParam(searchParams, 'kb', 'knowledgeBaseId')
-  const title = readFirstParam(searchParams, 'title', 't') || 'AI LocalBase 服务台机器人'
+  const title = readFirstParam(searchParams, 'title', 't') || '企业服务台'
   const apiBaseUrl = readFirstParam(searchParams, 'api', 'apiBaseUrl')
   const initialConversationId = readFirstParam(searchParams, 'cid', 'conversationId') || undefined
   const promptList = splitListParam(searchParams.get('q') ?? searchParams.get('quickPrompts'))
@@ -34,10 +34,10 @@ export default function ServiceDeskEmbedPage() {
           <div className="eyebrow">Embed Config Required</div>
           <h1>缺少知识库参数</h1>
           <p>
-            请通过 AI LocalBase 前端访问地址传入固定知识库，推荐使用以下最简方式：
+            请通过当前前端访问地址传入固定知识库，推荐使用以下最简方式：
           </p>
           <code>
-            /embed/kb-it-support?title=IT服务台机器人
+            /embed/kb-it-support?title=IT服务台
           </code>
           <p>若当前部署未配置前端路由重写，可改用：<code>?embed=1&amp;kb=kb-it-support</code></p>
           <p>兼容旧参数写法：<code>?mode=service-desk-embed&amp;knowledgeBaseId=kb-it-support</code></p>

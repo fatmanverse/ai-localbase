@@ -290,7 +290,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           <button onClick={onToggle} className="toggle-btn" type="button">
             {isOpen ? '◁' : '▷'}
           </button>
-          <h2>AI LocalBase</h2>
+          <h2>LocalBase</h2>
         </div>
 
         <div className="sidebar-body">

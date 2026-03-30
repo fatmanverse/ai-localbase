@@ -99,7 +99,7 @@ export function ServiceDeskWidget({
   const resolvedShowHeader = showHeader ?? true
   const resolvedShowContextBar = showContextBar ?? displayMode !== 'chat-only'
   const resolvedShowQuickPrompts = showQuickPrompts ?? quickPrompts.length > 0
-  const resolvedTitle = title ?? conversation?.title ?? '智能工单助手'
+  const resolvedTitle = title ?? conversation?.title ?? '企业服务台'
   const resolvedKnowledgeBaseId = knowledgeBaseId ?? conversation?.knowledgeBaseId
   const shellClasses = ['service-desk-widget-shell', `service-desk-widget-${displayMode}`]
   if (shellClassName) {

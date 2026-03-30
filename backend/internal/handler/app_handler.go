@@ -353,7 +353,8 @@ func (h *AppHandler) ChatCompletions(c *gin.Context) {
 	response.Metadata["knowledgeBaseId"] = req.KnowledgeBaseID
 	response.Metadata["documentId"] = req.DocumentID
 
-	if assistantMessage := firstAssistantChoice(response); assistantMessage != nil {
+	if assistantMessage := firstAssistantChoice(&response); assistantMessage != nil {
+		assistantMessage.Content = util.PolishAssistantResponse(assistantMessage.Content)
 		savedConversation, saveErr := h.appService.SaveConversation(model.SaveConversationRequest{
 			ID:              req.ConversationID,
 			Title:           "",
@@ -420,7 +421,7 @@ func (h *AppHandler) ChatCompletionsStream(c *gin.Context) {
 		return
 	}
 
-	fullAssistantContent := assistantContent.String()
+	fullAssistantContent := util.PolishAssistantResponse(assistantContent.String())
 	savedConversation, saveErr := h.appService.SaveConversation(model.SaveConversationRequest{
 		ID:              req.ConversationID,
 		Title:           "",
@@ -540,6 +541,7 @@ func (h *AppHandler) prepareChatRequest(req model.ChatCompletionRequest) (model.
 			"- 只基于以下上下文作答；信息不足时明确说明",
 			"- 不要重复用户的问题，直接输出结构化内容",
 			"- 回答优先像售后工程师的正式答复，不要像零散摘抄、培训课件摘要或技术高亮草稿",
+			"- 开头不要写‘根据当前资料’‘结合现有信息’‘从资料来看’这类铺垫句，直接先说结论或处理判断",
 			"- 多用直接、负责、可执行的说法，例如“先看这里”“这一步先这样处理”“如果这里还是不对，再继续查下一项”",
 			"- 回答长度适中，每个子章节 2 至 4 条要点即可，保持空行分隔，禁止连续写成一行",
 			"- 若上下文包含图片 OCR、图片说明、流程图、截图或表格图信息，必须综合这些图片知识作答，不能只按纯文本理解",
@@ -744,11 +746,13 @@ func buildStoredConversationMessages(messages []model.ChatMessage, assistantMess
 	return stored
 }
 
-func firstAssistantChoice(response model.ChatCompletionResponse) *model.ChatMessage {
-	for _, choice := range response.Choices {
-		if strings.EqualFold(strings.TrimSpace(choice.Message.Role), "assistant") {
-			message := choice.Message
-			return &message
+func firstAssistantChoice(response *model.ChatCompletionResponse) *model.ChatMessage {
+	if response == nil {
+		return nil
+	}
+	for index := range response.Choices {
+		if strings.EqualFold(strings.TrimSpace(response.Choices[index].Message.Role), "assistant") {
+			return &response.Choices[index].Message
 		}
 	}
 	return nil

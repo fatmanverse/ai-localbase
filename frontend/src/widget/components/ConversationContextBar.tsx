@@ -26,8 +26,8 @@ export function ConversationContextBar({ context, title, label }: ConversationCo
   return (
     <div className="service-desk-context-bar">
       <div>
-        <div className="service-desk-context-label">{label || '企业服务台机器人'}</div>
-        <h2>{title || '智能工单助手'}</h2>
+        <div className="service-desk-context-label">{label || '企业服务台'}</div>
+        <h2>{title || '问题处理支持'}</h2>
       </div>
       <div className="service-desk-context-badges">
         {badges.length > 0 ? (

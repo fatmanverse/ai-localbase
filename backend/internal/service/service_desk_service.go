@@ -865,7 +865,7 @@ func (s *ServiceDeskService) generateResponse(conversationID string, req model.S
 		return nil, model.ServiceDeskMessage{}, model.ServiceDeskMessage{}, err
 	}
 
-	if conversation.Title == "工单机器人会话" || strings.HasPrefix(conversation.Title, "工单 ") {
+	if conversation.Title == "服务台会话" || conversation.Title == "工单机器人会话" || strings.HasPrefix(conversation.Title, "工单 ") {
 		conversation.Title = buildServiceDeskConversationTitle(content, conversation.Context.TicketID)
 	}
 	conversation.UpdatedAt = now
@@ -898,7 +898,7 @@ func (s *ServiceDeskService) generateResponse(conversationID string, req model.S
 		if err != nil {
 			return nil, model.ServiceDeskMessage{}, model.ServiceDeskMessage{}, err
 		}
-		assistantMessage.Content = firstAssistantContent(response)
+		assistantMessage.Content = util.PolishAssistantResponse(firstAssistantContent(response))
 		mergeTraceMetadata(&assistantMessage, response.Metadata)
 	} else {
 		if err := onEvent("meta", map[string]any{
@@ -918,7 +918,7 @@ func (s *ServiceDeskService) generateResponse(conversationID string, req model.S
 		if streamErr != nil {
 			return nil, model.ServiceDeskMessage{}, model.ServiceDeskMessage{}, streamErr
 		}
-		assistantMessage.Content = builder.String()
+		assistantMessage.Content = util.PolishAssistantResponse(builder.String())
 		if err := onEvent("done", map[string]any{
 			"content": assistantMessage.Content,
 			"trace":   assistantMessage.Trace,
@@ -996,7 +996,7 @@ func (s *ServiceDeskService) prepareChatRequest(req model.ChatCompletionRequest)
 
 func buildServiceDeskSystemPrompt(latestQuestion string, contextParts []string) string {
 	instructions := []string{
-		"你是企业服务台 / 工单机器人助手。你的任务是基于知识库，像售后工程师处理工单一样，给用户提供可执行、结构化、可信的答复。",
+		"你是企业服务台助手。你的任务是基于知识库，像售后工程师处理工单一样，给用户提供可执行、结构化、可信的答复。",
 		"",
 		"## 回答目标",
 		"- 优先直接解决问题，给出步骤、判断条件和下一步建议",
@@ -1012,6 +1012,7 @@ func buildServiceDeskSystemPrompt(latestQuestion string, contextParts []string) 
 		"- 最后增加 `### 是否已解决`，使用 2 条无序列表提示用户可继续反馈：已解决 / 仍未解决",
 		"- 若上下文包含截图、流程图、表格图或 OCR 结果，必须综合图片信息回答，不能忽略图片知识",
 		"- 整体风格要像企业服务台正式答复，不要像资料摘抄，也不要把普通术语大量包成反引号",
+		"- 开头不要写‘根据当前资料’‘结合现有信息’‘从资料来看’这类铺垫句，第一句直接给结论或处理判断",
 		"",
 		"## 限制",
 		"- 严格基于提供的上下文，不得编造系统、流程或链接",
@@ -1095,7 +1096,7 @@ func buildServiceDeskConversationTitle(value string, ticketID string) string {
 	if strings.TrimSpace(ticketID) != "" {
 		return "工单 " + strings.TrimSpace(ticketID)
 	}
-	return "工单机器人会话"
+	return "服务台会话"
 }
 
 func normalizeServiceDeskContext(ctx model.ServiceDeskConversationContext) model.ServiceDeskConversationContext {

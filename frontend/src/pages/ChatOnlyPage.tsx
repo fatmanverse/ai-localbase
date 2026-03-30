@@ -21,7 +21,7 @@ export default function ChatOnlyPage() {
   const knowledgeBaseId =
     readKnowledgeBaseIdFromNamedPath(CHAT_ONLY_ROUTE_SEGMENTS) ||
     readFirstParam(searchParams, 'kb', 'knowledgeBaseId')
-  const title = readFirstParam(searchParams, 'title', 't') || 'AI LocalBase 问答助手'
+  const title = readFirstParam(searchParams, 'title', 't') || '知识库问答入口'
   const apiBaseUrl = readFirstParam(searchParams, 'api', 'apiBaseUrl')
   const initialConversationId = readFirstParam(searchParams, 'cid', 'conversationId') || undefined
   const promptList = splitListParam(searchParams.get('q') ?? searchParams.get('quickPrompts'))
@@ -50,7 +50,7 @@ export default function ChatOnlyPage() {
           </p>
           <code>/chat/kb-it-support</code>
           <p>如果当前部署没有做前端路由重写，也可以直接使用：<code>?mode=chat-only&amp;kb=kb-it-support</code></p>
-          <p>兼容更短的写法：<code>/ask/kb-it-support?title=IT服务台助手</code></p>
+          <p>兼容更短的写法：<code>/ask/kb-it-support?title=IT服务台</code></p>
         </section>
       </main>
     )
@@ -72,11 +72,11 @@ export default function ChatOnlyPage() {
           showContextBar={false}
           showQuickPrompts={promptList.length > 0}
           shellClassName={`chat-only-widget-shell ${frameless ? 'chat-only-widget-frameless' : ''}`.trim()}
-          headerLabel="对外问答页面"
-          composerPlaceholder="请输入你的问题，我会基于当前知识库给你一个可直接执行的答复。"
+          headerLabel="对外问答入口"
+          composerPlaceholder="请输入你的问题，我这边按当前知识库给你一个可直接执行的答复。"
           composerHelperText="当前页面仅保留问答，不显示设置、知识库管理和知识库切换。"
           emptyStateTitle="直接开始提问"
-          emptyStateDescription="这个页面已经固定到指定知识库，你可以直接输入问题、现象或排查目标。"
+          emptyStateDescription="这个页面已经固定到指定知识库，可以直接输入问题、现象或排查目标。"
           initialContext={{
             ticketId,
             userId,

@@ -87,13 +87,13 @@ const ServiceDeskMessageRow = memo(function ServiceDeskMessageRow({
     <div className={`service-desk-message ${message.role}`}>
       <div className="service-desk-message-bubble">
         <div className="service-desk-message-meta">
-          <span>{isAssistant ? '机器人' : '用户'}</span>
+          <span>{isAssistant ? '支持助手' : '用户'}</span>
           <span>{formatTime(message.createdAt)}</span>
         </div>
         {isAssistant ? (
           isReplyStreaming ? (
             <div className={`service-desk-streaming-text ${message.content.trim() ? '' : 'is-empty'}`.trim()}>
-              {message.content.trim() ? message.content : '正在整理答案...'}
+              {message.content.trim() ? message.content : '正在整理答复...'}
             </div>
           ) : (
             <div className="service-desk-markdown">
@@ -267,7 +267,7 @@ export const MessageList = memo(function MessageList({
           />
         )
       })}
-      {loading && lastMessage?.role !== 'assistant' ? <div className="service-desk-typing">机器人正在整理答案...</div> : null}
+      {loading && lastMessage?.role !== 'assistant' ? <div className="service-desk-typing">正在整理答复...</div> : null}
     </div>
   )
 })

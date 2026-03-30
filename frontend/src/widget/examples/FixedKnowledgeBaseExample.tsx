@@ -5,7 +5,7 @@ export function FixedKnowledgeBaseExample() {
     <FixedKnowledgeBaseWidget
       apiBaseUrl=""
       knowledgeBaseId="kb-it-support"
-      title="IT 服务台机器人"
+      title="IT 服务台"
       initialContext={{
         ticketId: 'INC-2025-0001',
         userId: 'u-001',
