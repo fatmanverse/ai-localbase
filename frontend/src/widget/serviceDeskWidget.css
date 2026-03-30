@@ -194,7 +194,7 @@
   margin-top: 0;
 }
 
-.service-desk-markdown .md-render-shell > :not(.md-table-wrap):not(.md-code-shell):not(.md-code-block):not(.md-mermaid):not(.md-mermaid-loading):not(.md-mermaid-fallback):not(.md-render-actions) {
+.service-desk-markdown .md-render-shell > :not(.md-table-shell):not(.md-table-wrap):not(.md-code-shell):not(.md-code-block):not(.md-mermaid):not(.md-mermaid-loading):not(.md-mermaid-fallback):not(.md-render-actions) {
   max-width: 72ch;
 }
 
@@ -300,6 +300,10 @@
   color: #bfdbfe;
 }
 
+.service-desk-markdown .md-table-shell {
+  width: 100%;
+}
+
 .service-desk-markdown .md-table-wrap {
   width: 100%;
   overflow-x: auto;
@@ -308,6 +312,12 @@
   box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.16);
   content-visibility: auto;
   contain-intrinsic-size: 180px;
+}
+
+.service-desk-markdown .md-table-wrap.is-collapsed {
+  max-height: 360px;
+  overflow: auto;
+  mask-image: linear-gradient(180deg, #000 0%, #000 76%, rgba(0, 0, 0, 0.16) 100%);
 }
 
 .service-desk-markdown .md-mermaid {
@@ -467,6 +477,39 @@
 
 .service-desk-markdown tbody tr:hover td {
   background: rgba(255, 255, 255, 0.03);
+}
+
+.service-desk-markdown .md-table-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.service-desk-markdown .md-table-toggle {
+  appearance: none;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(148, 163, 184, 0.12);
+  color: #f8fafc;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.service-desk-markdown .md-table-toggle:hover {
+  border-color: rgba(147, 197, 253, 0.5);
+  background: rgba(59, 130, 246, 0.16);
+  color: #dbeafe;
+}
+
+.service-desk-markdown .md-table-meta {
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
 }
 
 .service-desk-markdown blockquote {
@@ -679,12 +722,16 @@
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.16);
   background: rgba(15, 23, 42, 0.62);
+  contain: layout paint style;
+  content-visibility: auto;
+  contain-intrinsic-size: 210px;
 }
 
 .service-desk-related-image-link {
   position: relative;
   display: block;
   color: inherit;
+  background: rgba(2, 6, 23, 0.72);
 }
 
 .service-desk-related-image-card img {
@@ -725,6 +772,7 @@
   gap: 5px;
   color: #e2e8f0;
   font-size: 12px;
+  min-height: 84px;
 }
 
 .service-desk-related-image-meta strong {

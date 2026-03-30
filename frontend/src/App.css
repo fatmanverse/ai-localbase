@@ -2496,7 +2496,7 @@
   margin-top: 0;
 }
 
-.message.assistant .message-content-markdown .md-render-shell > :not(.md-table-wrap):not(.md-code-shell):not(.md-code-block):not(.md-mermaid):not(.md-mermaid-loading):not(.md-mermaid-fallback):not(.md-render-actions) {
+.message.assistant .message-content-markdown .md-render-shell > :not(.md-table-shell):not(.md-table-wrap):not(.md-code-shell):not(.md-code-block):not(.md-mermaid):not(.md-mermaid-loading):not(.md-mermaid-fallback):not(.md-render-actions) {
   max-width: 74ch;
 }
 
@@ -2735,6 +2735,10 @@
   color: #1d4ed8;
 }
 
+.md-table-shell {
+  width: 100%;
+}
+
 .md-table-wrap {
   width: 100%;
   overflow-x: auto;
@@ -2743,6 +2747,12 @@
   box-shadow: 0 0 0 1px #e2e8f0;
   content-visibility: auto;
   contain-intrinsic-size: 180px;
+}
+
+.md-table-wrap.is-collapsed {
+  max-height: 360px;
+  overflow: auto;
+  mask-image: linear-gradient(180deg, #000 0%, #000 76%, rgba(0, 0, 0, 0.18) 100%);
 }
 
 /* ── 表格：正式说明文风格 ── */
@@ -2793,6 +2803,39 @@
 
 .message-content-markdown tbody tr:hover td {
   background: #f8fafc;
+}
+
+.md-table-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.md-table-toggle {
+  appearance: none;
+  border: 1px solid #d7e0ec;
+  background: #f8fafc;
+  color: #1e293b;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.md-table-toggle:hover {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.md-table-meta {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
 }
 
 .md-mermaid {
@@ -3119,12 +3162,16 @@
   overflow: hidden;
   background: linear-gradient(180deg, #ffffff, #fbfdff);
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  contain: layout paint style;
+  content-visibility: auto;
+  contain-intrinsic-size: 210px;
 }
 
 .message-related-image-link {
   position: relative;
   display: block;
   color: inherit;
+  background: linear-gradient(180deg, #f8fafc, #eef2f7);
 }
 
 .message-related-image-card img {
@@ -3163,6 +3210,7 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
+  min-height: 84px;
 }
 
 .message-related-image-meta strong {

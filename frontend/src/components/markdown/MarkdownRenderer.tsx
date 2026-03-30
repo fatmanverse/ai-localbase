@@ -447,6 +447,9 @@ const LARGE_CODE_BLOCK_LINE_THRESHOLD = 28
 const LARGE_CODE_BLOCK_CHAR_THRESHOLD = 1600
 const LARGE_CODE_BLOCK_PREVIEW_LINES = 18
 
+const LARGE_TABLE_ROW_THRESHOLD = 10
+const LARGE_TABLE_COLUMN_THRESHOLD = 6
+
 interface MarkdownCodeBlockProps {
   className?: string
   codeContent: string
@@ -497,6 +500,62 @@ const MarkdownCodeBlock = memo(function MarkdownCodeBlock({
           <button type="button" className="md-code-toggle" onClick={() => setIsExpanded((prev) => !prev)}>
             {isExpanded ? '收起代码' : '展开完整代码'}
           </button>
+        </div>
+      ) : null}
+    </div>
+  )
+})
+
+interface MarkdownTableProps {
+  children: React.ReactNode
+  props: Record<string, unknown>
+}
+
+function extractTableMetrics(children: React.ReactNode): { rowCount: number; columnCount: number } {
+  const sections = React.Children.toArray(children)
+  let rowCount = 0
+  let columnCount = 0
+
+  for (const section of sections) {
+    if (!React.isValidElement(section)) {
+      continue
+    }
+
+    const rows = React.Children.toArray((section.props as { children?: React.ReactNode }).children)
+    for (const row of rows) {
+      if (!React.isValidElement(row)) {
+        continue
+      }
+
+      rowCount += 1
+      const cells = React.Children.toArray((row.props as { children?: React.ReactNode }).children)
+      columnCount = Math.max(columnCount, cells.length)
+    }
+  }
+
+  return { rowCount, columnCount }
+}
+
+const MarkdownTable = memo(function MarkdownTable({ children, props }: MarkdownTableProps) {
+  const { rowCount, columnCount } = useMemo(() => extractTableMetrics(children), [children])
+  const isLargeTable = rowCount >= LARGE_TABLE_ROW_THRESHOLD || columnCount >= LARGE_TABLE_COLUMN_THRESHOLD
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  useEffect(() => {
+    setIsExpanded(false)
+  }, [rowCount, columnCount])
+
+  return (
+    <div className={`md-table-shell ${isLargeTable ? 'is-collapsible' : ''} ${isExpanded ? 'is-expanded' : 'is-collapsed'}`.trim()}>
+      <div className={`md-table-wrap ${isLargeTable && !isExpanded ? 'is-collapsed' : ''}`.trim()}>
+        <table {...props}>{children}</table>
+      </div>
+      {isLargeTable ? (
+        <div className="md-table-actions">
+          <button type="button" className="md-table-toggle" onClick={() => setIsExpanded((prev) => !prev)}>
+            {isExpanded ? '收起表格' : '展开完整表格'}
+          </button>
+          <span className="md-table-meta">{rowCount} 行 · {columnCount} 列</span>
         </div>
       ) : null}
     </div>
@@ -978,11 +1037,7 @@ const markdownComponents = {
     )
   },
   table({ children, ...props }: any) {
-    return (
-      <div className="md-table-wrap">
-        <table {...props}>{children}</table>
-      </div>
-    )
+    return <MarkdownTable props={props}>{children}</MarkdownTable>
   },
 }
 

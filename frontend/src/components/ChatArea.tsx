@@ -327,7 +327,7 @@ const MessageBubble = memo(function MessageBubble({
                     className="message-related-image-link"
                     title="查看原图"
                   >
-                    <img src={image.publicUrl} alt={image.description || image.documentName || image.id} loading="lazy" decoding="async" />
+                    <img src={image.publicUrl} alt={image.description || image.documentName || image.id} loading="lazy" decoding="async" fetchPriority="low" />
                     <span className="message-related-image-view-tag">查看大图</span>
                   </a>
                 ) : null}
