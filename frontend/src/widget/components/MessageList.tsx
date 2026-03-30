@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import MarkdownRenderer from '../../components/markdown/MarkdownRenderer'
+import DeferredMarkdownRenderer from '../../components/markdown/DeferredMarkdownRenderer'
 import { usePinnedAutoScroll } from '../../hooks/usePinnedAutoScroll'
 import { FeedbackComposer } from './FeedbackComposer'
 import { ServiceDeskImageReference, ServiceDeskMessage } from '../types'
@@ -97,7 +97,7 @@ const ServiceDeskMessageRow = memo(function ServiceDeskMessageRow({
             </div>
           ) : (
             <div className="service-desk-markdown">
-              <MarkdownRenderer content={message.content} />
+              <DeferredMarkdownRenderer content={message.content} fallbackClassName="service-desk-streaming-text service-desk-deferred-markdown" />
             </div>
           )
         ) : (
@@ -118,7 +118,7 @@ const ServiceDeskMessageRow = memo(function ServiceDeskMessageRow({
                       className="service-desk-related-image-link"
                       title="查看原图"
                     >
-                      <img src={image.publicUrl} alt={image.description || image.documentName || image.id} loading="lazy" />
+                      <img src={image.publicUrl} alt={image.description || image.documentName || image.id} loading="lazy" decoding="async" />
                       <span className="service-desk-related-image-view-tag">查看大图</span>
                     </a>
                   ) : null}

@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import MarkdownRenderer from './markdown/MarkdownRenderer'
+import DeferredMarkdownRenderer from './markdown/DeferredMarkdownRenderer'
 import { usePinnedAutoScroll } from '../hooks/usePinnedAutoScroll'
 import { AppConfig, Conversation, DEFAULT_SUGGESTED_PROMPTS, DocumentItem, KnowledgeBase, MessageFeedbackSummary } from '../App'
 
@@ -306,7 +306,7 @@ const MessageBubble = memo(function MessageBubble({
           isReplyStreaming ? (
             <div className="message-streaming-text">{message.content}</div>
           ) : (
-            <MarkdownRenderer content={message.content} />
+            <DeferredMarkdownRenderer content={message.content} fallbackClassName="message-streaming-text message-deferred-markdown" />
           )
         ) : (
           message.content
@@ -327,7 +327,7 @@ const MessageBubble = memo(function MessageBubble({
                     className="message-related-image-link"
                     title="查看原图"
                   >
-                    <img src={image.publicUrl} alt={image.description || image.documentName || image.id} loading="lazy" />
+                    <img src={image.publicUrl} alt={image.description || image.documentName || image.id} loading="lazy" decoding="async" />
                     <span className="message-related-image-view-tag">查看大图</span>
                   </a>
                 ) : null}

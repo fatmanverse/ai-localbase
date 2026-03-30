@@ -132,6 +132,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  content-visibility: auto;
+  contain-intrinsic-size: 220px;
 }
 
 .service-desk-message.user {
@@ -177,6 +179,10 @@
 
 .service-desk-streaming-text.is-empty {
   color: #94a3b8;
+}
+
+.service-desk-deferred-markdown {
+  opacity: 0.96;
 }
 
 .service-desk-markdown {

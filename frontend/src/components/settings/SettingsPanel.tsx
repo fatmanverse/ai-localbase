@@ -549,16 +549,46 @@ const RangeField = memo(function RangeField({
   fullWidth,
   hint,
 }: RangeFieldProps) {
-  const handleChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      onChange(Number(event.target.value))
-    },
-    [onChange],
-  )
+  const [localValue, setLocalValue] = useState(value)
+
+  useEffect(() => {
+    setLocalValue((prev) => (prev === value ? prev : value))
+  }, [value])
+
+  useEffect(() => {
+    if (localValue === value) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      onChange(localValue)
+    }, 60)
+
+    return () => window.clearTimeout(timer)
+  }, [localValue, onChange, value])
+
+  const handleChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setLocalValue(Number(event.target.value))
+  }, [])
+
+  const flushPendingValue = useCallback(() => {
+    if (localValue !== value) {
+      onChange(localValue)
+    }
+  }, [localValue, onChange, value])
 
   return (
     <FieldContainer label={label} fullWidth={fullWidth} hint={hint}>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={handleChange} />
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={localValue}
+        onChange={handleChange}
+        onMouseUp={flushPendingValue}
+        onTouchEnd={flushPendingValue}
+      />
     </FieldContainer>
   )
 })
