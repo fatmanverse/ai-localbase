@@ -177,7 +177,7 @@
   margin-top: 0;
 }
 
-.service-desk-markdown .md-render-shell > :not(.md-table-wrap):not(.md-code-block):not(.md-mermaid):not(.md-mermaid-loading):not(.md-mermaid-fallback):not(.md-render-actions) {
+.service-desk-markdown .md-render-shell > :not(.md-table-wrap):not(.md-code-shell):not(.md-code-block):not(.md-mermaid):not(.md-mermaid-loading):not(.md-mermaid-fallback):not(.md-render-actions) {
   max-width: 72ch;
 }
 
@@ -191,8 +191,51 @@
   word-break: break-word;
 }
 
-.service-desk-markdown .md-code-block {
+.service-desk-markdown .md-code-shell {
   margin: 12px 0;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(2, 6, 23, 0.92);
+}
+
+.service-desk-markdown .md-code-shell.is-command {
+  border-color: rgba(96, 165, 250, 0.28);
+}
+
+.service-desk-markdown .md-code-block-head {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  background: rgba(148, 163, 184, 0.12);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.service-desk-markdown .md-code-shell.is-command .md-code-block-head {
+  background: rgba(30, 64, 175, 0.18);
+  border-bottom-color: rgba(96, 165, 250, 0.24);
+}
+
+.service-desk-markdown .md-code-block-label {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #cbd5e1;
+}
+
+.service-desk-markdown .md-code-shell.is-command .md-code-block-label {
+  color: #bfdbfe;
+}
+
+.service-desk-markdown .md-code-block {
+  margin: 0;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
 }
 
 .service-desk-markdown .md-link {
@@ -209,6 +252,8 @@
   width: 100%;
   overflow-x: auto;
   margin: 12px 0;
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.16);
 }
 
 .service-desk-markdown .md-mermaid {
@@ -328,12 +373,22 @@
   padding-left: 20px;
 }
 
+.service-desk-markdown ul ul,
+.service-desk-markdown ol ul {
+  list-style: circle;
+}
+
+.service-desk-markdown ul ul,
+.service-desk-markdown ol ul {
+  list-style: circle;
+}
+
 .service-desk-markdown table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: 12px;
 }
 
 .service-desk-markdown th,
@@ -347,6 +402,26 @@
 .service-desk-markdown th {
   color: #f8fafc;
   background: rgba(148, 163, 184, 0.12);
+}
+
+.service-desk-markdown tbody td:first-child {
+  font-weight: 600;
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.service-desk-markdown tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.service-desk-markdown tbody td:first-child {
+  font-weight: 600;
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.service-desk-markdown tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .service-desk-markdown blockquote {

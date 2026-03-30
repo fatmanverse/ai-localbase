@@ -382,6 +382,66 @@ const MARKDOWN_COLLAPSE_CHAR_THRESHOLD = 2200
 const MARKDOWN_COLLAPSE_LINE_THRESHOLD = 30
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 1400
 const MARKDOWN_PREVIEW_BLOCK_LIMIT = 6
+const COMMAND_LANGUAGES = new Set(['shell', 'bash', 'sh', 'zsh', 'console', 'terminal', 'powershell', 'ps1', 'cmd'])
+
+function normalizeCodeLanguage(className?: string, codeContent = ''): string {
+  const language = className?.replace(/^language-/, '').trim().toLowerCase() ?? ''
+  if (language) {
+    return language
+  }
+
+  const trimmed = codeContent.trim()
+  if (/^(\$\s|#\s|kubectl\s|docker\s|npm\s|yarn\s|pnpm\s|go\s|curl\s|wget\s|systemctl\s)/m.test(trimmed)) {
+    return 'shell'
+  }
+
+  return 'text'
+}
+
+function resolveCodeBlockLabel(language: string): string {
+  const labelMap: Record<string, string> = {
+    shell: '命令',
+    bash: '命令',
+    sh: '命令',
+    zsh: '命令',
+    console: '命令',
+    terminal: '命令',
+    powershell: '命令',
+    ps1: '命令',
+    cmd: '命令',
+    json: 'JSON',
+    yaml: 'YAML',
+    yml: 'YAML',
+    toml: 'TOML',
+    ini: 'INI',
+    env: 'ENV',
+    sql: 'SQL',
+    xml: 'XML',
+    html: 'HTML',
+    css: 'CSS',
+    javascript: 'JavaScript',
+    js: 'JavaScript',
+    typescript: 'TypeScript',
+    ts: 'TypeScript',
+    jsx: 'JSX',
+    tsx: 'TSX',
+    go: 'Go',
+    python: 'Python',
+    py: 'Python',
+    java: 'Java',
+    csharp: 'C#',
+    cs: 'C#',
+    cpp: 'C++',
+    c: 'C',
+    rust: 'Rust',
+    markdown: 'Markdown',
+    md: 'Markdown',
+    text: '文本',
+    plaintext: '文本',
+  }
+
+  return labelMap[language] ?? language.toUpperCase()
+}
 
 interface MarkdownSegment {
   type: 'text' | 'code'
@@ -820,23 +880,36 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
 
 const markdownComponents = {
   code({ className, children, ...props }: any) {
-    const isInline = !className
     const codeContent = String(children).replace(/\n$/, '')
+    const language = normalizeCodeLanguage(className, codeContent)
+    const isInline = !className && language === 'text'
 
     if (!isInline && className?.includes('language-mermaid')) {
       return <MermaidDiagram chart={codeContent} />
     }
 
-    return isInline ? (
-      <code className="md-inline-code" {...props}>
-        {children}
-      </code>
-    ) : (
-      <pre className="md-code-block">
-        <code className={className} {...props}>
+    if (isInline) {
+      return (
+        <code className="md-inline-code" {...props}>
           {children}
         </code>
-      </pre>
+      )
+    }
+
+    const isCommandBlock = COMMAND_LANGUAGES.has(language)
+    const label = resolveCodeBlockLabel(language)
+
+    return (
+      <div className={`md-code-shell ${isCommandBlock ? 'is-command' : ''}`.trim()}>
+        <div className="md-code-block-head">
+          <span className="md-code-block-label">{label}</span>
+        </div>
+        <pre className="md-code-block">
+          <code className={className} data-language={language} {...props}>
+            {children}
+          </code>
+        </pre>
+      </div>
     )
   },
   a({ href, children, ...props }: any) {

@@ -2480,7 +2480,7 @@
   margin-top: 0;
 }
 
-.message.assistant .message-content-markdown .md-render-shell > :not(.md-table-wrap):not(.md-code-block):not(.md-mermaid):not(.md-mermaid-loading):not(.md-mermaid-fallback):not(.md-render-actions) {
+.message.assistant .message-content-markdown .md-render-shell > :not(.md-table-wrap):not(.md-code-shell):not(.md-code-block):not(.md-mermaid):not(.md-mermaid-loading):not(.md-mermaid-fallback):not(.md-render-actions) {
   max-width: 74ch;
 }
 
@@ -2547,6 +2547,11 @@
   margin: 8px 0 14px;
 }
 
+.message-content-markdown ul ul,
+.message-content-markdown ol ul {
+  list-style: circle;
+}
+
 .message-content-markdown ul > li,
 .message-content-markdown ol > li {
   margin-bottom: 8px;
@@ -2603,10 +2608,51 @@
 }
 
 /* ── 代码块 ── */
-.md-code-block {
+.md-code-shell {
   margin: 12px 0;
+  border-radius: 12px;
+  overflow: hidden;
   background: #0f172a;
-  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.md-code-shell.is-command {
+  border-color: #c7d2fe;
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.08);
+}
+
+.md-code-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 0 12px;
+  background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.md-code-shell.is-command .md-code-block-head {
+  background: linear-gradient(180deg, #eef2ff, #e0e7ff);
+  border-bottom-color: #c7d2fe;
+}
+
+.md-code-block-label {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #475569;
+  text-transform: uppercase;
+}
+
+.md-code-shell.is-command .md-code-block-label {
+  color: #4338ca;
+}
+
+.md-code-block {
+  margin: 0;
+  background: #0f172a;
   overflow-x: auto;
   max-width: 100%;
   box-shadow: none;
@@ -2638,6 +2684,8 @@
   width: 100%;
   overflow-x: auto;
   margin: 12px 0;
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px #e2e8f0;
 }
 
 /* ── 表格：正式说明文风格 ── */
@@ -2647,9 +2695,9 @@
   border-collapse: collapse;
   margin: 0;
   font-size: 13px;
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 0 0 1px #e2e8f0;
+  box-shadow: none;
   background: #ffffff;
 }
 
@@ -2672,12 +2720,22 @@
   vertical-align: top;
 }
 
+.message-content-markdown tbody td:first-child {
+  font-weight: 600;
+  color: #0f172a;
+  background: #fbfdff;
+}
+
 .message-content-markdown tr:last-child td {
   border-bottom: none;
 }
 
 .message-content-markdown tr:nth-child(even) td {
   background: #fcfcfd;
+}
+
+.message-content-markdown tbody tr:hover td {
+  background: #f8fafc;
 }
 
 .md-mermaid {
