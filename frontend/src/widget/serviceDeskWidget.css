@@ -131,7 +131,7 @@
 .service-desk-message {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .service-desk-message.user {
@@ -367,7 +367,8 @@
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
+  min-height: 32px;
 }
 
 .feedback-meta {
@@ -381,14 +382,26 @@
 .feedback-summary {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.18);
   font-size: 12px;
   color: #94a3b8;
 }
 
 .feedback-compact-notice {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(30, 64, 175, 0.16);
+  border: 1px solid rgba(96, 165, 250, 0.24);
   font-size: 12px;
-  color: #cbd5e1;
+  color: #dbeafe;
   line-height: 1.5;
 }
 
@@ -515,32 +528,39 @@
 }
 
 .service-desk-related-images {
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
 .service-desk-related-images-title {
+  display: inline-flex;
+  align-items: center;
   margin-bottom: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.18);
   color: #cbd5e1;
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .service-desk-related-image-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 10px;
 }
 
 .service-desk-related-image-card {
   border-radius: 14px;
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(15, 23, 42, 0.7);
+  background: rgba(15, 23, 42, 0.62);
 }
 
 .service-desk-related-image-card img {
   display: block;
   width: 100%;
-  max-height: 180px;
+  height: 120px;
   object-fit: cover;
   background: rgba(2, 6, 23, 0.72);
 }
@@ -549,8 +569,12 @@
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   color: #e2e8f0;
+  font-size: 12px;
+}
+
+.service-desk-related-image-meta strong {
   font-size: 12px;
 }
 
