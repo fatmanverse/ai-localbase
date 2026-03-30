@@ -537,6 +537,7 @@ const extractXHRErrorMessage = (xhr: XMLHttpRequest) => {
 
 const UPLOAD_TRANSPORT_PROGRESS_WEIGHT = 35
 const UPLOAD_PROCESS_PROGRESS_WEIGHT = 100 - UPLOAD_TRANSPORT_PROGRESS_WEIGHT
+const UPLOAD_PROGRESS_UPDATE_INTERVAL_MS = 160
 
 const clampProgress = (progress: number) =>
   Math.max(0, Math.min(100, Math.round(progress)))
@@ -697,6 +698,7 @@ function App() {
   const uploadTaskPollTimerRef = useRef<Record<string, number>>({})
   const uploadTasksByKnowledgeBaseRef = useRef<Record<string, UploadTask[]>>({})
   const canceledUploadTaskIdsRef = useRef<Set<string>>(new Set())
+  const uploadTaskProgressSnapshotRef = useRef<Record<string, { networkProgress: number; progress: number; updatedAt: number }>>({})
 
   const markDocumentReindexing = (knowledgeBaseId: string, documentId: string) => {
     const reindexKey = `${knowledgeBaseId}:${documentId}`
@@ -1264,6 +1266,7 @@ function App() {
           stopPollingUploadTask(task.id)
           delete uploadTaskFilesRef.current[task.id]
           delete uploadTaskXhrRef.current[task.id]
+          delete uploadTaskProgressSnapshotRef.current[task.id]
           canceledUploadTaskIdsRef.current.delete(task.id)
         })
         const next = { ...prev }
@@ -1297,14 +1300,69 @@ function App() {
     patch: Partial<UploadTask>,
   ) => {
     setUploadTasksByKnowledgeBase((prev) => {
+      const currentTasks = prev[knowledgeBaseId] ?? []
+      let hasChanged = false
+      const nextTasks = currentTasks.map((task) => {
+        if (task.id !== taskId) {
+          return task
+        }
+
+        const isSamePatch = Object.entries(patch).every(([key, value]) => task[key as keyof UploadTask] === value)
+        if (isSamePatch) {
+          return task
+        }
+
+        hasChanged = true
+        return { ...task, ...patch }
+      })
+
+      if (!hasChanged) {
+        return prev
+      }
+
       const next = {
         ...prev,
-        [knowledgeBaseId]: (prev[knowledgeBaseId] ?? []).map((task) =>
-          task.id === taskId ? { ...task, ...patch } : task,
-        ),
+        [knowledgeBaseId]: nextTasks,
       }
       uploadTasksByKnowledgeBaseRef.current = next
       return next
+    })
+  }
+
+  const updateUploadTransportProgress = (
+    knowledgeBaseId: string,
+    taskId: string,
+    networkProgress: number,
+  ) => {
+    const progress = mapTransportProgress(networkProgress)
+    const now = Date.now()
+    const snapshot = uploadTaskProgressSnapshotRef.current[taskId]
+
+    const shouldFlush =
+      !snapshot ||
+      networkProgress >= 100 ||
+      networkProgress <= snapshot.networkProgress ||
+      Math.abs(networkProgress - snapshot.networkProgress) >= 2 ||
+      progress !== snapshot.progress ||
+      now - snapshot.updatedAt >= UPLOAD_PROGRESS_UPDATE_INTERVAL_MS
+
+    if (!shouldFlush) {
+      return
+    }
+
+    uploadTaskProgressSnapshotRef.current[taskId] = {
+      networkProgress,
+      progress,
+      updatedAt: now,
+    }
+
+    updateUploadTask(knowledgeBaseId, taskId, {
+      status: 'uploading',
+      networkProgress,
+      progress,
+      stage: 'uploading',
+      detail: `正在上传文件到服务器（${networkProgress}%）`,
+      error: undefined,
     })
   }
 
@@ -1363,6 +1421,7 @@ function App() {
 
     if (backendTask.status === 'success') {
       delete uploadTaskFilesRef.current[taskId]
+      delete uploadTaskProgressSnapshotRef.current[taskId]
       canceledUploadTaskIdsRef.current.delete(taskId)
       updateUploadTask(knowledgeBaseId, taskId, { rollbackDocument: undefined })
     }
@@ -1378,6 +1437,7 @@ function App() {
     ) {
       stopPollingUploadTask(taskId)
       delete uploadTaskXhrRef.current[taskId]
+      delete uploadTaskProgressSnapshotRef.current[taskId]
     }
   }
 
@@ -1442,6 +1502,7 @@ function App() {
         stopPollingUploadTask(task.id)
         delete uploadTaskFilesRef.current[task.id]
         delete uploadTaskXhrRef.current[task.id]
+        delete uploadTaskProgressSnapshotRef.current[task.id]
         canceledUploadTaskIdsRef.current.delete(task.id)
       })
       const next = {
@@ -1457,6 +1518,7 @@ function App() {
 
   const runUploadTask = async (task: UploadTask, file: File) => {
     stopPollingUploadTask(task.id)
+    delete uploadTaskProgressSnapshotRef.current[task.id]
 
     if (canceledUploadTaskIdsRef.current.has(task.id)) {
       updateUploadTask(task.knowledgeBaseId, task.id, {
@@ -1484,14 +1546,7 @@ function App() {
         task.knowledgeBaseId,
         file,
         (networkProgress) => {
-          updateUploadTask(task.knowledgeBaseId, task.id, {
-            status: 'uploading',
-            networkProgress,
-            progress: mapTransportProgress(networkProgress),
-            stage: 'uploading',
-            detail: `正在上传文件到服务器（${networkProgress}%）`,
-            error: undefined,
-          })
+          updateUploadTransportProgress(task.knowledgeBaseId, task.id, networkProgress)
         },
         (xhr) => {
           uploadTaskXhrRef.current[task.id] = xhr
@@ -1531,6 +1586,7 @@ function App() {
 
   const runDocumentReindexTask = async (task: UploadTask) => {
     stopPollingUploadTask(task.id)
+    delete uploadTaskProgressSnapshotRef.current[task.id]
 
     if (task.targetDocumentId) {
       markDocumentReindexing(task.knowledgeBaseId, task.targetDocumentId)
