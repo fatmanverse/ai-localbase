@@ -18,12 +18,28 @@ type LLMService struct {
 	client *http.Client
 }
 
+type providerChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+func buildProviderChatMessages(messages []model.ChatMessage) []providerChatMessage {
+	result := make([]providerChatMessage, 0, len(messages))
+	for _, message := range messages {
+		result = append(result, providerChatMessage{
+			Role:    message.Role,
+			Content: message.Content,
+		})
+	}
+	return result
+}
+
 // ── OpenAI-compatible structs ────────────────────────────────────────────────
 
 type openAIChatRequest struct {
-	Model       string              `json:"model"`
-	Messages    []model.ChatMessage `json:"messages"`
-	Temperature float64             `json:"temperature,omitempty"`
+	Model       string                `json:"model"`
+	Messages    []providerChatMessage `json:"messages"`
+	Temperature float64               `json:"temperature,omitempty"`
 }
 
 type openAIChatResponse struct {
@@ -42,10 +58,10 @@ type openAICompatibleErrorPayload struct {
 }
 
 type openAIChatStreamRequest struct {
-	Model       string              `json:"model"`
-	Messages    []model.ChatMessage `json:"messages"`
-	Temperature float64             `json:"temperature,omitempty"`
-	Stream      bool                `json:"stream"`
+	Model       string                `json:"model"`
+	Messages    []providerChatMessage `json:"messages"`
+	Temperature float64               `json:"temperature,omitempty"`
+	Stream      bool                  `json:"stream"`
 }
 
 type openAIChatStreamChunk struct {
@@ -62,10 +78,10 @@ type openAIChatStreamChunk struct {
 // ── Ollama native API structs ────────────────────────────────────────────────
 
 type ollamaChatRequest struct {
-	Model    string              `json:"model"`
-	Messages []model.ChatMessage `json:"messages"`
-	Stream   bool                `json:"stream"`
-	Options  *ollamaOptions      `json:"options,omitempty"`
+	Model    string                `json:"model"`
+	Messages []providerChatMessage `json:"messages"`
+	Stream   bool                  `json:"stream"`
+	Options  *ollamaOptions        `json:"options,omitempty"`
 }
 
 type ollamaOptions struct {
@@ -206,7 +222,7 @@ func (s *LLMService) StreamChat(req model.ChatCompletionRequest, onChunk func(st
 func (s *LLMService) openAIChat(cfg model.ChatModelConfig, req model.ChatCompletionRequest) (model.ChatCompletionResponse, error) {
 	payload := openAIChatRequest{
 		Model:       cfg.Model,
-		Messages:    req.Messages,
+		Messages:    buildProviderChatMessages(req.Messages),
 		Temperature: cfg.Temperature,
 	}
 
@@ -271,7 +287,7 @@ func (s *LLMService) openAIChat(cfg model.ChatModelConfig, req model.ChatComplet
 func (s *LLMService) openAIStreamChat(cfg model.ChatModelConfig, req model.ChatCompletionRequest, onChunk func(string) error) error {
 	payload := openAIChatStreamRequest{
 		Model:       cfg.Model,
-		Messages:    req.Messages,
+		Messages:    buildProviderChatMessages(req.Messages),
 		Temperature: cfg.Temperature,
 		Stream:      true,
 	}
@@ -359,7 +375,7 @@ func (s *LLMService) openAIStreamChat(cfg model.ChatModelConfig, req model.ChatC
 func (s *LLMService) ollamaChat(cfg model.ChatModelConfig, req model.ChatCompletionRequest) (model.ChatCompletionResponse, error) {
 	payload := ollamaChatRequest{
 		Model:    cfg.Model,
-		Messages: req.Messages,
+		Messages: buildProviderChatMessages(req.Messages),
 		Stream:   false,
 	}
 	if cfg.Temperature > 0 {
@@ -426,7 +442,7 @@ func (s *LLMService) ollamaChat(cfg model.ChatModelConfig, req model.ChatComplet
 func (s *LLMService) ollamaStreamChat(cfg model.ChatModelConfig, req model.ChatCompletionRequest, onChunk func(string) error) error {
 	payload := ollamaChatRequest{
 		Model:    cfg.Model,
-		Messages: req.Messages,
+		Messages: buildProviderChatMessages(req.Messages),
 		Stream:   true,
 	}
 	if cfg.Temperature > 0 {

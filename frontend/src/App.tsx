@@ -157,9 +157,11 @@ interface ChatRequestBody {
   model: string
   knowledgeBaseId: string
   documentId: string
+  assistantMessageId?: string
   config: ChatConfig
   embedding: EmbeddingConfig
   messages: Array<{
+    id: string
     role: ChatMessage['role']
     content: string
   }>
@@ -2076,9 +2078,11 @@ function App() {
       model: config.chat.model,
       knowledgeBaseId: conversationKnowledgeBaseId,
       documentId: conversationDocumentId,
+      assistantMessageId,
       config: config.chat,
       embedding: config.embedding,
       messages: nextMessages.map((message) => ({
+        id: message.id,
         role: message.role,
         content: message.content,
       })),

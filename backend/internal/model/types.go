@@ -118,6 +118,7 @@ type DocumentFAQCollectionUpdateRequest struct {
 }
 
 type ChatMessage struct {
+	ID      string `json:"id,omitempty"`
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
@@ -143,13 +144,14 @@ type EmbeddingModelConfig struct {
 }
 
 type ChatCompletionRequest struct {
-	ConversationID  string               `json:"conversationId"`
-	Model           string               `json:"model"`
-	Messages        []ChatMessage        `json:"messages"`
-	KnowledgeBaseID string               `json:"knowledgeBaseId"`
-	DocumentID      string               `json:"documentId"`
-	Config          ChatModelConfig      `json:"config"`
-	Embedding       EmbeddingModelConfig `json:"embedding"`
+	ConversationID     string               `json:"conversationId"`
+	Model              string               `json:"model"`
+	Messages           []ChatMessage        `json:"messages"`
+	AssistantMessageID string               `json:"assistantMessageId,omitempty"`
+	KnowledgeBaseID    string               `json:"knowledgeBaseId"`
+	DocumentID         string               `json:"documentId"`
+	Config             ChatModelConfig      `json:"config"`
+	Embedding          EmbeddingModelConfig `json:"embedding"`
 }
 
 type ChatCompletionChoice struct {

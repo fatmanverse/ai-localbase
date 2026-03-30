@@ -354,16 +354,19 @@ func (h *AppHandler) ChatCompletions(c *gin.Context) {
 	response.Metadata["documentId"] = req.DocumentID
 
 	if assistantMessage := firstAssistantChoice(response); assistantMessage != nil {
-		_, saveErr := h.appService.SaveConversation(model.SaveConversationRequest{
+		savedConversation, saveErr := h.appService.SaveConversation(model.SaveConversationRequest{
 			ID:              req.ConversationID,
 			Title:           "",
 			KnowledgeBaseID: req.KnowledgeBaseID,
 			DocumentID:      req.DocumentID,
-			Messages:        buildStoredConversationMessages(req.Messages, assistantMessage.Content, response.Metadata),
+			Messages:        buildStoredConversationMessages(req.Messages, req.AssistantMessageID, assistantMessage.Content, response.Metadata),
 		})
 		if saveErr != nil {
 			writeError(c, http.StatusInternalServerError, saveErr.Error())
 			return
+		}
+		if savedConversation != nil && len(savedConversation.Messages) > 0 {
+			response.Metadata["assistantMessageId"] = savedConversation.Messages[len(savedConversation.Messages)-1].ID
 		}
 	}
 
@@ -418,17 +421,20 @@ func (h *AppHandler) ChatCompletionsStream(c *gin.Context) {
 	}
 
 	fullAssistantContent := assistantContent.String()
-	_, saveErr := h.appService.SaveConversation(model.SaveConversationRequest{
+	savedConversation, saveErr := h.appService.SaveConversation(model.SaveConversationRequest{
 		ID:              req.ConversationID,
 		Title:           "",
 		KnowledgeBaseID: req.KnowledgeBaseID,
 		DocumentID:      req.DocumentID,
-		Messages:        buildStoredConversationMessages(req.Messages, fullAssistantContent, initialMeta),
+		Messages:        buildStoredConversationMessages(req.Messages, req.AssistantMessageID, fullAssistantContent, initialMeta),
 	})
 	if saveErr != nil {
 		c.SSEvent("error", gin.H{"error": saveErr.Error()})
 		flusher.Flush()
 		return
+	}
+	if savedConversation != nil && len(savedConversation.Messages) > 0 {
+		initialMeta["assistantMessageId"] = savedConversation.Messages[len(savedConversation.Messages)-1].ID
 	}
 
 	c.SSEvent("done", gin.H{"content": fullAssistantContent, "metadata": initialMeta})
@@ -701,18 +707,26 @@ func (h *AppHandler) ServeAsset(c *gin.Context) {
 	c.File(fileAbs)
 }
 
-func buildStoredConversationMessages(messages []model.ChatMessage, assistantContent string, metadata map[string]any) []model.StoredChatMessage {
+func buildStoredConversationMessages(messages []model.ChatMessage, assistantMessageID, assistantContent string, metadata map[string]any) []model.StoredChatMessage {
 	stored := make([]model.StoredChatMessage, 0, len(messages)+1)
 	for index, message := range messages {
+		messageID := strings.TrimSpace(message.ID)
+		if messageID == "" {
+			messageID = fmt.Sprintf("msg_%d_%d", time.Now().UnixNano(), index)
+		}
 		stored = append(stored, model.StoredChatMessage{
-			ID:        fmt.Sprintf("msg_%d_%d", time.Now().UnixNano(), index),
+			ID:        messageID,
 			Role:      strings.TrimSpace(message.Role),
 			Content:   message.Content,
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		})
 	}
+	persistedAssistantMessageID := strings.TrimSpace(assistantMessageID)
+	if persistedAssistantMessageID == "" {
+		persistedAssistantMessageID = fmt.Sprintf("msg_%d_assistant", time.Now().UnixNano())
+	}
 	assistantMessage := model.StoredChatMessage{
-		ID:        fmt.Sprintf("msg_%d_assistant", time.Now().UnixNano()),
+		ID:        persistedAssistantMessageID,
 		Role:      "assistant",
 		Content:   assistantContent,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),

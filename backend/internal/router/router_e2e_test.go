@@ -358,6 +358,132 @@ func TestConversationFeedbackAndConversationDetailSummary(t *testing.T) {
 	}
 }
 
+func TestChatCompletionsPreserveClientMessageIDsForFeedback(t *testing.T) {
+	engine, modelBaseURL, cleanup := newTestRouter(t)
+	defer cleanup()
+
+	listResp := performRequest(t, engine, http.MethodGet, "/api/knowledge-bases", nil, "")
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", listResp.Code, listResp.Body.String())
+	}
+
+	var kbList struct {
+		Items []model.KnowledgeBase `json:"items"`
+	}
+	decodeJSONResponse(t, listResp.Body.Bytes(), &kbList)
+	knowledgeBaseID := kbList.Items[0].ID
+
+	firstPayload := map[string]any{
+		"conversationId":     "conv-feedback-ui-1",
+		"assistantMessageId": "client-assistant-1",
+		"model":              "chat-test-model",
+		"knowledgeBaseId":    knowledgeBaseID,
+		"config": map[string]any{
+			"provider":    "ollama",
+			"baseUrl":     modelBaseURL,
+			"model":       "chat-test-model",
+			"apiKey":      "",
+			"temperature": 0.2,
+		},
+		"embedding": map[string]any{
+			"provider": "ollama",
+			"baseUrl":  modelBaseURL,
+			"model":    "embedding-test-model",
+		},
+		"messages": []map[string]string{{
+			"id":      "client-user-1",
+			"role":    "user",
+			"content": "请说明 Redis 的核心特点",
+		}},
+	}
+
+	firstResp := performJSONRequest(t, engine, http.MethodPost, "/v1/chat/completions", firstPayload)
+	if firstResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", firstResp.Code, firstResp.Body.String())
+	}
+
+	conversationResp := performRequest(t, engine, http.MethodGet, "/api/conversations/conv-feedback-ui-1", nil, "")
+	if conversationResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", conversationResp.Code, conversationResp.Body.String())
+	}
+
+	var conversation model.Conversation
+	decodeJSONResponse(t, conversationResp.Body.Bytes(), &conversation)
+	if len(conversation.Messages) != 2 {
+		t.Fatalf("expected 2 messages after first round, got %d", len(conversation.Messages))
+	}
+	if conversation.Messages[0].ID != "client-user-1" || conversation.Messages[1].ID != "client-assistant-1" {
+		t.Fatalf("expected client ids to be preserved after first round, got %+v", conversation.Messages)
+	}
+
+	secondPayload := map[string]any{
+		"conversationId":     "conv-feedback-ui-1",
+		"assistantMessageId": "client-assistant-2",
+		"model":              "chat-test-model",
+		"knowledgeBaseId":    knowledgeBaseID,
+		"config": map[string]any{
+			"provider":    "ollama",
+			"baseUrl":     modelBaseURL,
+			"model":       "chat-test-model",
+			"apiKey":      "",
+			"temperature": 0.2,
+		},
+		"embedding": map[string]any{
+			"provider": "ollama",
+			"baseUrl":  modelBaseURL,
+			"model":    "embedding-test-model",
+		},
+		"messages": []map[string]string{
+			{
+				"id":      "client-user-1",
+				"role":    "user",
+				"content": conversation.Messages[0].Content,
+			},
+			{
+				"id":      "client-assistant-1",
+				"role":    "assistant",
+				"content": conversation.Messages[1].Content,
+			},
+			{
+				"id":      "client-user-2",
+				"role":    "user",
+				"content": "继续说明它的持久化能力",
+			},
+		},
+	}
+
+	secondResp := performJSONRequest(t, engine, http.MethodPost, "/v1/chat/completions", secondPayload)
+	if secondResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", secondResp.Code, secondResp.Body.String())
+	}
+
+	conversationResp = performRequest(t, engine, http.MethodGet, "/api/conversations/conv-feedback-ui-1", nil, "")
+	if conversationResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", conversationResp.Code, conversationResp.Body.String())
+	}
+	decodeJSONResponse(t, conversationResp.Body.Bytes(), &conversation)
+	if len(conversation.Messages) != 4 {
+		t.Fatalf("expected 4 messages after second round, got %d", len(conversation.Messages))
+	}
+	expectedIDs := []string{"client-user-1", "client-assistant-1", "client-user-2", "client-assistant-2"}
+	for index, expectedID := range expectedIDs {
+		if conversation.Messages[index].ID != expectedID {
+			t.Fatalf("expected message %d id %s, got %s", index, expectedID, conversation.Messages[index].ID)
+		}
+	}
+
+	feedbackPayload := map[string]any{
+		"feedbackType":    "like",
+		"questionText":    conversation.Messages[2].Content,
+		"answerText":      conversation.Messages[3].Content,
+		"knowledgeBaseId": knowledgeBaseID,
+	}
+	feedbackResp := performJSONRequest(t, engine, http.MethodPost, "/api/conversations/conv-feedback-ui-1/messages/client-assistant-2/feedback", feedbackPayload)
+	if feedbackResp.Code != http.StatusCreated {
+		t.Fatalf("expected feedback status 201, got %d, body=%s", feedbackResp.Code, feedbackResp.Body.String())
+	}
+}
+
 func newTestRouter(t *testing.T) (*http.ServeMux, string, func()) {
 	t.Helper()
 
