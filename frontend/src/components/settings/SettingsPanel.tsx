@@ -397,16 +397,57 @@ const TextInputField = memo(function TextInputField({
   fullWidth,
   hint,
 }: TextInputFieldProps) {
-  const handleChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      onChange(event.target.value)
-    },
-    [onChange],
-  )
+  const [localValue, setLocalValue] = useState(value)
+  const isComposingRef = useRef(false)
+
+  useEffect(() => {
+    setLocalValue((prev) => (prev === value ? prev : value))
+  }, [value])
+
+  useEffect(() => {
+    if (isComposingRef.current || localValue === value) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      onChange(localValue)
+    }, 140)
+
+    return () => window.clearTimeout(timer)
+  }, [localValue, onChange, value])
+
+  const handleChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setLocalValue(event.target.value)
+  }, [])
+
+  const flushPendingValue = useCallback(() => {
+    if (localValue !== value) {
+      onChange(localValue)
+    }
+  }, [localValue, onChange, value])
+
+  const handleCompositionStart = useCallback(() => {
+    isComposingRef.current = true
+  }, [])
+
+  const handleCompositionEnd = useCallback(() => {
+    isComposingRef.current = false
+    if (localValue !== value) {
+      onChange(localValue)
+    }
+  }, [localValue, onChange, value])
 
   return (
     <FieldContainer label={label} fullWidth={fullWidth} hint={hint}>
-      <input type={type} value={value} onChange={handleChange} placeholder={placeholder} />
+      <input
+        type={type}
+        value={localValue}
+        onChange={handleChange}
+        onBlur={flushPendingValue}
+        onCompositionStart={handleCompositionStart}
+        onCompositionEnd={handleCompositionEnd}
+        placeholder={placeholder}
+      />
     </FieldContainer>
   )
 })
@@ -442,12 +483,46 @@ const NumberInputField = memo(function NumberInputField({
   fullWidth,
   hint,
 }: NumberInputFieldProps) {
-  const handleChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      onChange(Number(event.target.value))
-    },
-    [onChange],
-  )
+  const [localValue, setLocalValue] = useState(String(value))
+
+  useEffect(() => {
+    const normalized = String(value)
+    setLocalValue((prev) => (prev === normalized ? prev : normalized))
+  }, [value])
+
+  useEffect(() => {
+    if (localValue === '' || localValue === String(value)) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      const parsed = Number(localValue)
+      if (Number.isFinite(parsed)) {
+        onChange(parsed)
+      }
+    }, 140)
+
+    return () => window.clearTimeout(timer)
+  }, [localValue, onChange, value])
+
+  const handleChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setLocalValue(event.target.value)
+  }, [])
+
+  const handleBlur = useCallback(() => {
+    if (localValue === '') {
+      setLocalValue(String(value))
+      return
+    }
+
+    const parsed = Number(localValue)
+    if (Number.isFinite(parsed)) {
+      onChange(parsed)
+      return
+    }
+
+    setLocalValue(String(value))
+  }, [localValue, onChange, value])
 
   return (
     <FieldContainer label={label} fullWidth={fullWidth} hint={hint}>
@@ -455,8 +530,9 @@ const NumberInputField = memo(function NumberInputField({
         type="number"
         min={min}
         max={max}
-        value={value}
+        value={localValue}
         onChange={handleChange}
+        onBlur={handleBlur}
         placeholder={placeholder}
       />
     </FieldContainer>

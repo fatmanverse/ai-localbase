@@ -53,6 +53,7 @@ interface WelcomeStateProps {
 interface MessageBubbleProps {
   message: Conversation['messages'][number]
   isStreamingPlaceholder: boolean
+  isReplyStreaming: boolean
   copied: boolean
   feedbackNotice: string
   hasSubmittedFeedback: boolean
@@ -175,6 +176,7 @@ const buildMessageRenderSignature = (message: Conversation['messages'][number]) 
 const areMessageBubblePropsEqual = (prev: MessageBubbleProps, next: MessageBubbleProps) =>
   buildMessageRenderSignature(prev.message) === buildMessageRenderSignature(next.message) &&
   prev.isStreamingPlaceholder === next.isStreamingPlaceholder &&
+  prev.isReplyStreaming === next.isReplyStreaming &&
   prev.copied === next.copied &&
   prev.feedbackNotice === next.feedbackNotice &&
   prev.hasSubmittedFeedback === next.hasSubmittedFeedback &&
@@ -262,6 +264,7 @@ const WelcomeState = memo(function WelcomeState({ welcomeMessage, conversationDo
 const MessageBubble = memo(function MessageBubble({
   message,
   isStreamingPlaceholder,
+  isReplyStreaming,
   copied,
   feedbackNotice,
   hasSubmittedFeedback,
@@ -300,7 +303,11 @@ const MessageBubble = memo(function MessageBubble({
             <span className="thinking-dot" />
           </div>
         ) : message.role === 'assistant' ? (
-          <MarkdownRenderer content={message.content} />
+          isReplyStreaming ? (
+            <div className="message-streaming-text">{message.content}</div>
+          ) : (
+            <MarkdownRenderer content={message.content} />
+          )
         ) : (
           message.content
         )}
@@ -534,6 +541,7 @@ const MessageList = memo(function MessageList({
               key={message.id}
               message={message}
               isStreamingPlaceholder={isStreamingPlaceholder}
+              isReplyStreaming={isReplyStreaming}
               copied={copiedMessageId === message.id}
               feedbackNotice={feedbackNotice}
               hasSubmittedFeedback={hasSubmittedFeedback}

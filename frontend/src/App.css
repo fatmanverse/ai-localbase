@@ -2469,6 +2469,18 @@
 }
 
 /* ── 基础排版 ── */
+.message-streaming-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.8;
+  color: #334155;
+}
+
+.message-streaming-text:empty::before {
+  content: '正在整理答案...';
+  color: #94a3b8;
+}
+
 .message-content-markdown {
   line-height: 1.8;
   font-size: 14px;

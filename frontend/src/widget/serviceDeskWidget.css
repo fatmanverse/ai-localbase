@@ -168,6 +168,17 @@
   color: rgba(255, 255, 255, 0.8);
 }
 
+.service-desk-streaming-text {
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.8;
+}
+
+.service-desk-streaming-text.is-empty {
+  color: #94a3b8;
+}
+
 .service-desk-markdown {
   color: #e2e8f0;
   line-height: 1.8;

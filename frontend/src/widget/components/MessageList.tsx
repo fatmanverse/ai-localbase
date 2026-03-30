@@ -91,9 +91,15 @@ const ServiceDeskMessageRow = memo(function ServiceDeskMessageRow({
           <span>{formatTime(message.createdAt)}</span>
         </div>
         {isAssistant ? (
-          <div className="service-desk-markdown">
-            <MarkdownRenderer content={message.content} />
-          </div>
+          isReplyStreaming ? (
+            <div className={`service-desk-streaming-text ${message.content.trim() ? '' : 'is-empty'}`.trim()}>
+              {message.content.trim() ? message.content : '正在整理答案...'}
+            </div>
+          ) : (
+            <div className="service-desk-markdown">
+              <MarkdownRenderer content={message.content} />
+            </div>
+          )
         ) : (
           <div className="service-desk-plain-text">{message.content}</div>
         )}
