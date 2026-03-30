@@ -443,6 +443,66 @@ function resolveCodeBlockLabel(language: string): string {
   return labelMap[language] ?? language.toUpperCase()
 }
 
+const LARGE_CODE_BLOCK_LINE_THRESHOLD = 28
+const LARGE_CODE_BLOCK_CHAR_THRESHOLD = 1600
+const LARGE_CODE_BLOCK_PREVIEW_LINES = 18
+
+interface MarkdownCodeBlockProps {
+  className?: string
+  codeContent: string
+  language: string
+  label: string
+  children: React.ReactNode
+  props: Record<string, unknown>
+}
+
+const MarkdownCodeBlock = memo(function MarkdownCodeBlock({
+  className,
+  codeContent,
+  language,
+  label,
+  children,
+  props,
+}: MarkdownCodeBlockProps) {
+  const lines = useMemo(() => codeContent.split(/\r?\n/), [codeContent])
+  const isCommandBlock = COMMAND_LANGUAGES.has(language)
+  const isLargeCodeBlock = lines.length >= LARGE_CODE_BLOCK_LINE_THRESHOLD || codeContent.length >= LARGE_CODE_BLOCK_CHAR_THRESHOLD
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  useEffect(() => {
+    setIsExpanded(false)
+  }, [codeContent])
+
+  const displayCodeContent = useMemo(() => {
+    if (!isLargeCodeBlock || isExpanded) {
+      return codeContent
+    }
+
+    return `${lines.slice(0, LARGE_CODE_BLOCK_PREVIEW_LINES).join('\n')}\n\n# ... 已折叠 ${Math.max(lines.length - LARGE_CODE_BLOCK_PREVIEW_LINES, 0)} 行`
+  }, [codeContent, isExpanded, isLargeCodeBlock, lines])
+
+  return (
+    <div className={`md-code-shell ${isCommandBlock ? 'is-command' : ''} ${isLargeCodeBlock ? 'is-collapsible' : ''}`.trim()}>
+      <div className="md-code-block-head">
+        <span className="md-code-block-label">{label}</span>
+        {isLargeCodeBlock ? <span className="md-code-block-meta">{lines.length} 行</span> : null}
+      </div>
+      <pre className="md-code-block">
+        <code className={className} data-language={language} {...props}>
+          {displayCodeContent}
+        </code>
+      </pre>
+      {isLargeCodeBlock ? (
+        <div className="md-code-actions">
+          <button type="button" className="md-code-toggle" onClick={() => setIsExpanded((prev) => !prev)}>
+            {isExpanded ? '收起代码' : '展开完整代码'}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+})
+
 interface MarkdownSegment {
   type: 'text' | 'code'
   value: string
@@ -896,20 +956,18 @@ const markdownComponents = {
       )
     }
 
-    const isCommandBlock = COMMAND_LANGUAGES.has(language)
     const label = resolveCodeBlockLabel(language)
 
     return (
-      <div className={`md-code-shell ${isCommandBlock ? 'is-command' : ''}`.trim()}>
-        <div className="md-code-block-head">
-          <span className="md-code-block-label">{label}</span>
-        </div>
-        <pre className="md-code-block">
-          <code className={className} data-language={language} {...props}>
-            {children}
-          </code>
-        </pre>
-      </div>
+      <MarkdownCodeBlock
+        className={className}
+        codeContent={codeContent}
+        language={language}
+        label={label}
+        props={props}
+      >
+        {children}
+      </MarkdownCodeBlock>
     )
   },
   a({ href, children, ...props }: any) {

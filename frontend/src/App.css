@@ -2634,6 +2634,8 @@
   overflow: hidden;
   background: #0f172a;
   border: 1px solid #e2e8f0;
+  content-visibility: auto;
+  contain-intrinsic-size: 220px;
 }
 
 .md-code-shell.is-command {
@@ -2666,6 +2668,12 @@
   text-transform: uppercase;
 }
 
+.md-code-block-meta {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+
 .md-code-shell.is-command .md-code-block-label {
   color: #4338ca;
 }
@@ -2689,6 +2697,33 @@
   white-space: pre;
 }
 
+.md-code-actions {
+  display: flex;
+  justify-content: flex-start;
+  padding: 10px 12px 12px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 1));
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.md-code-toggle {
+  appearance: none;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e2e8f0;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.md-code-toggle:hover {
+  border-color: rgba(147, 197, 253, 0.42);
+  color: #ffffff;
+  background: rgba(59, 130, 246, 0.14);
+}
+
 /* ── 链接 ── */
 .md-link {
   color: #2563eb;
@@ -2706,6 +2741,8 @@
   margin: 12px 0;
   border-radius: 12px;
   box-shadow: 0 0 0 1px #e2e8f0;
+  content-visibility: auto;
+  contain-intrinsic-size: 180px;
 }
 
 /* ── 表格：正式说明文风格 ── */
@@ -2765,6 +2802,8 @@
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   overflow-x: auto;
+  content-visibility: auto;
+  contain-intrinsic-size: 200px;
 }
 
 .md-mermaid svg {
