@@ -1,3 +1,63 @@
+.app-notice-layer {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  width: min(720px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.app-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid #dbeafe;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1e3a8a;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+.app-notice-success {
+  border-color: #bbf7d0;
+  color: #047857;
+  background: rgba(236, 253, 245, 0.94);
+}
+
+.app-notice-error {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: rgba(254, 242, 242, 0.96);
+}
+
+.app-notice-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.app-notice-close {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.app-notice-close:hover {
+  background: rgba(255, 255, 255, 0.96);
+}
+
 /* App.css */
 .chat-page {
   display: flex;

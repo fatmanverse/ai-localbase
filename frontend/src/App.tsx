@@ -654,6 +654,14 @@ const uploadKnowledgeBaseDocument = (
     xhr.send(formData)
   })
 
+type AppNoticeTone = 'info' | 'success' | 'error'
+
+interface AppNoticeState {
+  id: string
+  tone: AppNoticeTone
+  message: string
+}
+
 const startDocumentReindexTask = async (
   knowledgeBaseId: string,
   documentId: string,
@@ -690,6 +698,7 @@ function App() {
   const [isSavingConfig, setIsSavingConfig] = useState(false)
   const [configSaveError, setConfigSaveError] = useState<string | null>(null)
   const [configSaveSuccess, setConfigSaveSuccess] = useState<string | null>(null)
+  const [appNotice, setAppNotice] = useState<AppNoticeState | null>(null)
   const [reindexingKnowledgeBaseId, setReindexingKnowledgeBaseId] = useState<string | null>(null)
   const [reindexingDocumentKeys, setReindexingDocumentKeys] = useState<Record<string, true>>({})
   const [uploadTasksByKnowledgeBase, setUploadTasksByKnowledgeBase] = useState<Record<string, UploadTask[]>>({})
@@ -699,6 +708,38 @@ function App() {
   const uploadTasksByKnowledgeBaseRef = useRef<Record<string, UploadTask[]>>({})
   const canceledUploadTaskIdsRef = useRef<Set<string>>(new Set())
   const uploadTaskProgressSnapshotRef = useRef<Record<string, { networkProgress: number; progress: number; updatedAt: number }>>({})
+  const appNoticeTimerRef = useRef<number | null>(null)
+
+  const clearAppNotice = useCallback(() => {
+    if (appNoticeTimerRef.current) {
+      window.clearTimeout(appNoticeTimerRef.current)
+      appNoticeTimerRef.current = null
+    }
+    setAppNotice(null)
+  }, [])
+
+  const showAppNotice = useCallback((message: string, tone: AppNoticeTone = 'info') => {
+    if (appNoticeTimerRef.current) {
+      window.clearTimeout(appNoticeTimerRef.current)
+    }
+
+    setAppNotice({
+      id: createId(),
+      tone,
+      message,
+    })
+
+    appNoticeTimerRef.current = window.setTimeout(() => {
+      setAppNotice((current) => (current?.message === message ? null : current))
+      appNoticeTimerRef.current = null
+    }, tone === 'error' ? 5200 : 3200)
+  }, [])
+
+  useEffect(() => () => {
+    if (appNoticeTimerRef.current) {
+      window.clearTimeout(appNoticeTimerRef.current)
+    }
+  }, [])
 
   const markDocumentReindexing = (knowledgeBaseId: string, documentId: string) => {
     const reindexKey = `${knowledgeBaseId}:${documentId}`
@@ -918,7 +959,7 @@ function App() {
 
   const handleCreateConversation = () => {
     if (knowledgeBases.length === 0) {
-      window.alert('当前没有可用知识库，请先创建知识库。')
+      showAppNotice('当前还没有可用知识库，请先创建知识库。', 'info')
       return
     }
 
@@ -934,7 +975,7 @@ function App() {
       knowledgeBases[0]
 
     if (!targetKnowledgeBase) {
-      window.alert('当前没有可用知识库，请先创建知识库。')
+      showAppNotice('当前还没有可用知识库，请先创建知识库。', 'info')
       return
     }
 
@@ -961,7 +1002,7 @@ function App() {
     )
 
     if (!targetKnowledgeBase) {
-      window.alert('目标知识库不存在或已被删除，请刷新后重试。')
+      showAppNotice('目标知识库已经不可用，请刷新后再试。', 'error')
       return
     }
 
@@ -1023,7 +1064,7 @@ function App() {
       setSelectedDocumentId(previousConversation.documentId || null)
       const message =
         error instanceof Error ? error.message : '切换会话知识库失败，请稍后重试。'
-      window.alert(`切换会话知识库失败：${message}`)
+      showAppNotice(`切换会话知识库失败：${message}`, 'error')
     } finally {
       setIsSwitchingConversationKnowledgeBase(false)
     }
@@ -1051,7 +1092,7 @@ function App() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : '加载会话失败，请稍后重试。'
-      window.alert(`加载会话失败：${message}`)
+      showAppNotice(`加载会话失败：${message}`, 'error')
     }
   }
 
@@ -1126,7 +1167,7 @@ function App() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : '重命名会话失败，请稍后重试。'
-      window.alert(`重命名会话失败：${message}`)
+      showAppNotice(`重命名会话失败：${message}`, 'error')
     }
   }
 
@@ -1179,7 +1220,7 @@ function App() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : '删除会话失败，请稍后重试。'
-      window.alert(`删除会话失败：${message}`)
+      showAppNotice(`删除会话失败：${message}`, 'error')
     }
   }
 
@@ -1235,7 +1276,7 @@ function App() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : '创建知识库失败，请稍后重试。'
-      window.alert(`创建知识库失败：${message}`)
+      showAppNotice(`创建知识库失败：${message}`, 'error')
     }
   }
 
@@ -1277,7 +1318,7 @@ function App() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : '删除知识库失败，请稍后重试。'
-      window.alert(`删除知识库失败：${message}`)
+      showAppNotice(`删除知识库失败：${message}`, 'error')
     }
   }
 
@@ -1962,7 +2003,7 @@ function App() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : '删除文档失败，请稍后重试。'
-      window.alert(`删除文档失败：${message}`)
+      showAppNotice(`删除文档失败：${message}`, 'error')
     }
   }
 
@@ -1973,7 +2014,7 @@ function App() {
     }
 
     if (targetKnowledgeBase.documents.length === 0) {
-      window.alert('当前知识库暂无文档，无需重建索引。')
+      showAppNotice('当前知识库还没有文档，不需要重建索引。', 'info')
       return
     }
 
@@ -2015,7 +2056,7 @@ function App() {
           knowledgeBase.id === knowledgeBaseId ? nextKnowledgeBase : knowledgeBase,
         ),
       )
-      window.alert('知识库索引重建完成。')
+      showAppNotice('知识库索引已经重建完成。', 'success')
     } catch (error) {
       setKnowledgeBases((prev) =>
         prev.map((knowledgeBase) =>
@@ -2024,7 +2065,7 @@ function App() {
       )
       const message =
         error instanceof Error ? error.message : '重建索引失败，请稍后重试。'
-      window.alert(`重建索引失败：${message}`)
+      showAppNotice(`重建索引失败：${message}`, 'error')
     } finally {
       setReindexingKnowledgeBaseId(null)
     }
@@ -2050,7 +2091,7 @@ function App() {
       selectedKnowledgeBaseId === knowledgeBaseId,
     )
     if (startedCount === 0) {
-      window.alert('这份文档已经在重跑解析中了。')
+      showAppNotice('这份文档已经在重跑解析中了。', 'info')
     }
   }
 
@@ -2064,7 +2105,7 @@ function App() {
       documentIds.includes(document.id),
     )
     if (requestedDocuments.length === 0) {
-      window.alert('当前没有可批量重跑的文档。')
+      showAppNotice('当前没有可批量重跑的文档。', 'info')
       return
     }
 
@@ -2072,7 +2113,7 @@ function App() {
       (document) => !hasActiveDocumentReindexTask(knowledgeBaseId, document.id),
     )
     if (readyDocuments.length === 0) {
-      window.alert('当前筛选文档都已经在重跑解析中了。')
+      showAppNotice('当前筛选文档都已经在重跑解析中了。', 'info')
       return
     }
 
@@ -2085,7 +2126,7 @@ function App() {
 
     const startedCount = enqueueDocumentReindexTasks(knowledgeBaseId, readyDocuments, false)
     if (startedCount > 0) {
-      window.alert(`已加入 ${startedCount} 个重跑解析任务，请在任务列表中查看进度。`)
+      showAppNotice(`已加入 ${startedCount} 个重跑解析任务，可以在任务列表里查看进度。`, 'success')
     }
   }
 
@@ -2099,7 +2140,7 @@ function App() {
     const conversationDocumentId = activeConversation.documentId || ''
 
     if (!conversationKnowledgeBaseId) {
-      window.alert('当前会话尚未绑定知识库，请先选择知识库后再提问。')
+      showAppNotice('当前会话还没有绑定知识库，请先选择知识库后再提问。', 'info')
       return
     }
 
@@ -2107,7 +2148,7 @@ function App() {
       (knowledgeBase) => knowledgeBase.id === conversationKnowledgeBaseId,
     )
     if (!knowledgeBaseExists) {
-      window.alert('当前会话绑定的知识库已不可用，请先切换到可用知识库后再提问。')
+      showAppNotice('当前会话绑定的知识库已经不可用，请先切换到可用知识库后再提问。', 'error')
       return
     }
 
@@ -2512,6 +2553,17 @@ function App() {
 
   return (
     <div className="chat-page">
+      {appNotice ? (
+        <div className="app-notice-layer" aria-live="polite" aria-atomic="true">
+          <div className={`app-notice app-notice-${appNotice.tone}`.trim()} role="status">
+            <span className="app-notice-text">{appNotice.message}</span>
+            <button type="button" className="app-notice-close" onClick={clearAppNotice} aria-label="关闭提示">
+              ×
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <Sidebar
         isOpen={sidebarOpen}
         onToggle={handleToggleSidebar}
