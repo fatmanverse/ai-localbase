@@ -192,7 +192,75 @@ const parseCandidateLines = (value: string): ModelEndpointConfig[] => {
   return items
 }
 
-const buildEffectiveDraftConfig = (options: {
+
+const serializeCandidateConfigs = (items: ModelEndpointConfig[] | undefined) =>
+  (items ?? [])
+    .map((item) => [item.provider?.trim() ?? '', item.baseUrl?.trim() ?? '', item.model?.trim() ?? '', item.apiKey?.trim() ?? ''].join('|'))
+    .filter((item) => item.split('|')[2])
+    .join('\n')
+
+const serializePromptList = (items: string[] | undefined) =>
+  (items ?? []).map((item) => item.trim()).filter(Boolean).join('\n')
+
+const buildConfigComparisonSignature = (config: AppConfig) =>
+  JSON.stringify({
+    chat: {
+      provider: config.chat.provider,
+      baseUrl: config.chat.baseUrl,
+      model: config.chat.model,
+      apiKey: config.chat.apiKey,
+      temperature: config.chat.temperature,
+      contextMessageLimit: config.chat.contextMessageLimit,
+      circuitBreaker: config.chat.circuitBreaker,
+      candidates: serializeCandidateConfigs(config.chat.candidates),
+    },
+    embedding: {
+      provider: config.embedding.provider,
+      baseUrl: config.embedding.baseUrl,
+      model: config.embedding.model,
+      apiKey: config.embedding.apiKey,
+      circuitBreaker: config.embedding.circuitBreaker,
+      candidates: serializeCandidateConfigs(config.embedding.candidates),
+    },
+    ui: {
+      welcomeMessageTemplate: config.ui?.welcomeMessageTemplate?.trim() || DEFAULT_WELCOME_MESSAGE_TEMPLATE,
+      suggestedPrompts: serializePromptList(config.ui?.suggestedPrompts),
+    },
+  })
+
+const buildDraftComparisonSignature = (options: {
+  draftConfig: AppConfig
+  chatCandidatesText: string
+  embeddingCandidatesText: string
+  suggestedPromptsText: string
+}) =>
+  JSON.stringify({
+    chat: {
+      provider: options.draftConfig.chat.provider,
+      baseUrl: options.draftConfig.chat.baseUrl,
+      model: options.draftConfig.chat.model,
+      apiKey: options.draftConfig.chat.apiKey,
+      temperature: options.draftConfig.chat.temperature,
+      contextMessageLimit: options.draftConfig.chat.contextMessageLimit,
+      circuitBreaker: options.draftConfig.chat.circuitBreaker,
+      candidates: serializeCandidateConfigs(parseCandidateLines(options.chatCandidatesText)),
+    },
+    embedding: {
+      provider: options.draftConfig.embedding.provider,
+      baseUrl: options.draftConfig.embedding.baseUrl,
+      model: options.draftConfig.embedding.model,
+      apiKey: options.draftConfig.embedding.apiKey,
+      circuitBreaker: options.draftConfig.embedding.circuitBreaker,
+      candidates: serializeCandidateConfigs(parseCandidateLines(options.embeddingCandidatesText)),
+    },
+    ui: {
+      welcomeMessageTemplate:
+        options.draftConfig.ui?.welcomeMessageTemplate?.trim() || DEFAULT_WELCOME_MESSAGE_TEMPLATE,
+      suggestedPrompts: serializePromptList(parsePromptLines(options.suggestedPromptsText)),
+    },
+  })
+
+const buildPersistedDraftConfig = (options: {
   draftConfig: AppConfig
   chatCandidatesText: string
   embeddingCandidatesText: string
@@ -846,20 +914,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const deferredEmbeddingCandidatesText = useDeferredValue(embeddingCandidatesText)
   const deferredSuggestedPromptsText = useDeferredValue(suggestedPromptsText)
 
-  const effectiveDraftConfig = useMemo<AppConfig>(
+  const savedConfigSnapshot = useMemo(() => buildConfigComparisonSignature(config), [config])
+  const recommendedDraftSnapshot = useMemo(() => buildConfigComparisonSignature(recommendedDraft), [recommendedDraft])
+  const comparisonDraftSnapshot = useMemo(
     () =>
-      buildEffectiveDraftConfig({
-        draftConfig,
-        chatCandidatesText,
-        embeddingCandidatesText,
-        suggestedPromptsText,
-      }),
-    [chatCandidatesText, draftConfig, embeddingCandidatesText, suggestedPromptsText],
-  )
-
-  const comparisonDraftConfig = useMemo<AppConfig>(
-    () =>
-      buildEffectiveDraftConfig({
+      buildDraftComparisonSignature({
         draftConfig: deferredDraftConfig,
         chatCandidatesText: deferredChatCandidatesText,
         embeddingCandidatesText: deferredEmbeddingCandidatesText,
@@ -872,10 +931,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       deferredSuggestedPromptsText,
     ],
   )
-
-  const savedConfigSnapshot = useMemo(() => JSON.stringify(config), [config])
-  const recommendedDraftSnapshot = useMemo(() => JSON.stringify(recommendedDraft), [recommendedDraft])
-  const comparisonDraftSnapshot = useMemo(() => JSON.stringify(comparisonDraftConfig), [comparisonDraftConfig])
 
   const hasChanges = comparisonDraftSnapshot !== savedConfigSnapshot
   const isUsingRecommendedConfig = comparisonDraftSnapshot === recommendedDraftSnapshot
@@ -963,8 +1018,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   )
 
   const handleSave = useCallback(() => {
-    void onSave(effectiveDraftConfig)
-  }, [effectiveDraftConfig, onSave])
+    const nextConfig = buildPersistedDraftConfig({
+      draftConfig,
+      chatCandidatesText,
+      embeddingCandidatesText,
+      suggestedPromptsText,
+    })
+    void onSave(nextConfig)
+  }, [chatCandidatesText, draftConfig, embeddingCandidatesText, onSave, suggestedPromptsText])
 
   const handleReset = useCallback(() => {
     setDraftConfig(config)
