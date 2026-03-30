@@ -591,7 +591,21 @@ bash scripts/linux/release.sh v1.0.1 registry.cn-zhangjiakou.aliyuncs.com/ai_loc
 PUSH_LATEST=1 bash scripts/linux/release.sh v1.0.1 registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
 ```
 
+打包机一键发布 latest：
+
+```bash
+bash scripts/linux/publish-latest.sh
+```
+
 如果服务器不依赖 git，只想下载单独脚本直接部署 / 升级 latest：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fatmanverse/ai-localbase/main/scripts/linux/upgrade-latest.sh -o upgrade-latest.sh
+chmod +x upgrade-latest.sh
+PULL_QDRANT=0 bash upgrade-latest.sh /data/ai-localbase registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
+```
+
+或者下载功能更完整的部署脚本：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/fatmanverse/ai-localbase/main/scripts/linux/deploy-latest.sh -o deploy-latest.sh

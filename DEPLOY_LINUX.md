@@ -127,7 +127,27 @@ REGISTRY_PREFIX=${REGISTRY_PREFIX} TAG=${RELEASE_TAG} PUSH_LATEST=1 UPDATE_COMPO
 - `${REGISTRY_PREFIX}/ai-localbase-backend:latest`
 - `${REGISTRY_PREFIX}/ai-localbase-frontend:latest`
 
-### 服务器不依赖 git，直接下载脚本部署 / 升级 latest
+### 打包机一键发布 latest
+```bash
+bash scripts/linux/publish-latest.sh
+```
+
+默认会：
+
+- 自动生成时间戳 tag
+- 推送 backend / frontend 时间戳镜像
+- 同时刷新 backend / frontend:latest
+- 不改写本地 compose 文件
+
+### 服务器不依赖 git，直接下载脚本升级 latest
+```bash
+curl -fsSL https://raw.githubusercontent.com/fatmanverse/ai-localbase/main/scripts/linux/upgrade-latest.sh -o upgrade-latest.sh
+chmod +x upgrade-latest.sh
+PULL_QDRANT=0 bash upgrade-latest.sh /data/ai-localbase registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
+```
+
+如果你希望下载功能更完整的 standalone 部署脚本，也可以用：
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/fatmanverse/ai-localbase/main/scripts/linux/deploy-latest.sh -o deploy-latest.sh
 chmod +x deploy-latest.sh

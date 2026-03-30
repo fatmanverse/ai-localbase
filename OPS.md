@@ -264,9 +264,23 @@ bash scripts/linux/upgrade-by-image.sh <REGISTRY_PREFIX> <TAG>
 
 拼成完整镜像地址，再调用 `upgrade.sh`。
 
-### 6.3 无 git 的 standalone latest 部署 / 升级
+### 6.3 打包机一键发布 latest
 
-服务器如果不保留仓库代码，只想下载单独脚本直接部署 / 升级，可执行：
+```bash
+bash scripts/linux/publish-latest.sh
+```
+
+### 6.4 无 git 的 standalone latest 升级
+
+服务器如果不保留仓库代码，只想下载单独脚本直接升级 latest，可执行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fatmanverse/ai-localbase/main/scripts/linux/upgrade-latest.sh -o upgrade-latest.sh
+chmod +x upgrade-latest.sh
+PULL_QDRANT=0 bash upgrade-latest.sh /data/ai-localbase registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
+```
+
+如果你希望首次部署也共用同一脚本，或者想保留更多参数化选项，也可以用：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/fatmanverse/ai-localbase/main/scripts/linux/deploy-latest.sh -o deploy-latest.sh
