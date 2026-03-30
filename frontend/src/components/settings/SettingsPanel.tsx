@@ -1,4 +1,4 @@
-import React, { ReactNode, memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import React, { ReactNode, memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AppConfig,
   ChatConfig,
@@ -482,16 +482,57 @@ const TextareaField = memo(function TextareaField({
   fullWidth,
   hint,
 }: TextareaFieldProps) {
-  const handleChange = useCallback(
-    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-      onChange(event.target.value)
-    },
-    [onChange],
-  )
+  const [localValue, setLocalValue] = useState(value)
+  const isComposingRef = useRef(false)
+
+  useEffect(() => {
+    setLocalValue((prev) => (prev === value ? prev : value))
+  }, [value])
+
+  useEffect(() => {
+    if (isComposingRef.current || localValue === value) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      onChange(localValue)
+    }, 180)
+
+    return () => window.clearTimeout(timer)
+  }, [localValue, onChange, value])
+
+  const handleChange = useCallback((event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setLocalValue(event.target.value)
+  }, [])
+
+  const flushPendingValue = useCallback(() => {
+    if (localValue !== value) {
+      onChange(localValue)
+    }
+  }, [localValue, onChange, value])
+
+  const handleCompositionStart = useCallback(() => {
+    isComposingRef.current = true
+  }, [])
+
+  const handleCompositionEnd = useCallback(() => {
+    isComposingRef.current = false
+    if (localValue !== value) {
+      onChange(localValue)
+    }
+  }, [localValue, onChange, value])
 
   return (
     <FieldContainer label={label} fullWidth={fullWidth} hint={hint}>
-      <textarea rows={rows} value={value} onChange={handleChange} placeholder={placeholder} />
+      <textarea
+        rows={rows}
+        value={localValue}
+        onChange={handleChange}
+        onBlur={flushPendingValue}
+        onCompositionStart={handleCompositionStart}
+        onCompositionEnd={handleCompositionEnd}
+        placeholder={placeholder}
+      />
     </FieldContainer>
   )
 })
