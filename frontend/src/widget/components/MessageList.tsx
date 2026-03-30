@@ -65,6 +65,7 @@ export function MessageList({
 
   const hiddenCount = Math.max(0, messages.length - visibleCount)
   const renderedMessages = hiddenCount > 0 ? messages.slice(-visibleCount) : messages
+  const lastMessageId = messages.at(-1)?.id
   const handleLoadMore = useCallback(() => {
     setVisibleCount((prev) => Math.min(messages.length, prev + WIDGET_MESSAGE_LOAD_MORE_STEP))
   }, [messages.length])
@@ -90,10 +91,14 @@ export function MessageList({
           <span>当前已折叠 {hiddenCount} 条较早消息，减少长会话首屏负担。</span>
         </div>
       ) : null}
-      {renderedMessages.map((message) => {
+      {renderedMessages.map((message, index) => {
+        const actualIndex = hiddenCount + index
+        const previousMessage = messages[actualIndex - 1]
         const isAssistant = message.role === 'assistant'
         const relatedImages = message.trace?.relatedImages ?? []
         const summary = message.feedbackSummary
+        const isReplyStreaming = Boolean(loading && isAssistant && message.id === lastMessageId)
+        const canCollectFeedback = isAssistant && previousMessage?.role === 'user' && !isReplyStreaming && Boolean(message.content.trim())
         return (
           <div key={message.id} className={`service-desk-message ${message.role}`}>
             <div className="service-desk-message-bubble">
@@ -140,7 +145,9 @@ export function MessageList({
             {isAssistant ? (
               <FeedbackComposer
                 messageId={message.id}
-                disabled={loading}
+                hidden={!canCollectFeedback}
+                disabled={isReplyStreaming}
+                summary={summary}
                 onLike={() => onLike(message)}
                 onDislike={(reason, feedbackText) => onDislike(message, reason, feedbackText)}
               />

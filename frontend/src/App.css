@@ -3000,27 +3000,35 @@
 }
 
 .message-feedback-box {
-  margin-top: 14px;
-  padding: 14px;
-  border-radius: 16px;
-  border: 1px solid #e5e7eb;
-  background: #f8fafc;
+  margin-top: 8px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
   contain: layout paint style;
   content-visibility: auto;
-  contain-intrinsic-size: 180px;
+  contain-intrinsic-size: 120px;
 }
 
-.message-feedback-headline {
-  font-size: 13px;
-  font-weight: 600;
-  color: #334155;
+.message-feedback-inline-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .message-feedback-actions {
-  margin-top: 10px;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.message-feedback-actions.compact {
+  gap: 6px;
+  margin-left: auto;
 }
 
 .message-feedback-action {
@@ -3029,6 +3037,7 @@
   padding: 8px 14px;
   font-size: 13px;
   cursor: pointer;
+  transition: all 0.18s ease;
 }
 
 .message-feedback-action.primary {
@@ -3041,24 +3050,50 @@
   color: #334155;
 }
 
+.message-feedback-action.icon {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #dbe3f0;
+  background: #ffffff;
+  color: #64748b;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.message-feedback-action.icon.primary:hover:not(:disabled) {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.message-feedback-action.icon.secondary:hover:not(:disabled),
+.message-feedback-action.icon.secondary.is-active {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
 .message-feedback-action:disabled {
   cursor: not-allowed;
   opacity: 0.65;
 }
 
 .message-feedback-summary {
-  margin-top: 10px;
   display: flex;
-  gap: 12px;
+  gap: 10px;
   font-size: 12px;
-  color: #475569;
+  color: #64748b;
+  margin-right: auto;
 }
 
 .message-feedback-notice {
-  margin-top: 10px;
   font-size: 12px;
   line-height: 1.6;
   color: #2563eb;
+  margin-right: auto;
 }
 
 .message-feedback-notice.is-muted {
@@ -3066,7 +3101,7 @@
 }
 
 .message-feedback-panel {
-  margin-top: 12px;
+  width: min(100%, 720px);
   padding: 12px;
   border-radius: 14px;
   background: #ffffff;

@@ -357,19 +357,49 @@
 }
 
 .feedback-composer {
+  width: 100%;
   max-width: min(100%, 760px);
-  padding-left: 4px;
+  padding-left: 0;
 }
 
-.feedback-headline {
-  margin-bottom: 8px;
-  font-size: 13px;
+.feedback-inline-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.feedback-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-right: auto;
+}
+
+.feedback-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
   color: #94a3b8;
+}
+
+.feedback-compact-notice {
+  font-size: 12px;
+  color: #cbd5e1;
+  line-height: 1.5;
 }
 
 .feedback-actions {
   display: flex;
   gap: 10px;
+}
+
+.feedback-actions.compact {
+  gap: 8px;
+  margin-left: auto;
 }
 
 .feedback-actions button,
@@ -380,15 +410,31 @@
   color: white;
 }
 
+.feedback-actions.compact button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  color: #e2e8f0;
+}
+
+.feedback-actions.compact button:hover:not(:disabled) {
+  background: rgba(51, 65, 85, 0.96);
+  border-color: rgba(147, 197, 253, 0.36);
+}
+
 .feedback-actions button.secondary,
 .feedback-submit-row button.secondary,
-.feedback-panel button.selected {
+.feedback-panel button.selected,
+.feedback-actions.compact button.secondary.active {
   background: rgba(51, 65, 85, 0.86);
   color: #e2e8f0;
 }
 
 .feedback-panel {
-  margin-top: 12px;
+  margin-top: 10px;
   padding: 14px;
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.72);

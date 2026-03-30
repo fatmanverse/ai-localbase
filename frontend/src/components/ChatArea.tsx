@@ -339,84 +339,86 @@ const MessageBubble = memo(function MessageBubble({
       ) : null}
 
       {canCollectFeedback ? (
-        <div className="message-feedback-box">
-          <div className="message-feedback-headline">这条回答是否帮你解决了问题？</div>
+        <div className={`message-feedback-box ${isFeedbackExpanded ? 'is-expanded' : ''}`.trim()}>
+          <div className="message-feedback-inline-row">
+            {(feedbackSummary?.likeCount ?? 0) > 0 || (feedbackSummary?.dislikeCount ?? 0) > 0 ? (
+              <div className="message-feedback-summary">
+                <span>👍 {feedbackSummary?.likeCount ?? 0}</span>
+                <span>👎 {feedbackSummary?.dislikeCount ?? 0}</span>
+              </div>
+            ) : null}
 
-          {(feedbackSummary?.likeCount ?? 0) > 0 || (feedbackSummary?.dislikeCount ?? 0) > 0 ? (
-            <div className="message-feedback-summary">
-              <span>👍 {feedbackSummary?.likeCount ?? 0}</span>
-              <span>👎 {feedbackSummary?.dislikeCount ?? 0}</span>
-            </div>
-          ) : null}
+            {feedbackNotice ? (
+              <div className={`message-feedback-notice ${hasSubmittedFeedback ? 'is-muted' : ''}`.trim()}>
+                {feedbackNotice}
+              </div>
+            ) : null}
 
-          {feedbackNotice ? (
-            <div className={`message-feedback-notice ${hasSubmittedFeedback ? 'is-muted' : ''}`.trim()}>
-              {feedbackNotice}
-            </div>
-          ) : null}
-
-          {!hasSubmittedFeedback ? (
-            <>
-              <div className="message-feedback-actions">
+            {!hasSubmittedFeedback ? (
+              <div className="message-feedback-actions compact">
                 <button
                   type="button"
-                  className="message-feedback-action primary"
+                  className="message-feedback-action icon primary"
                   disabled={isFeedbackSubmitting}
                   onClick={() => onSubmitLikeFeedback(message.id)}
+                  aria-label="这条回复解决了问题"
+                  title={isFeedbackSubmitting ? '提交中...' : '这条回复解决了问题'}
                 >
-                  {isFeedbackSubmitting ? '提交中...' : '👍 已解决'}
+                  👍
                 </button>
                 <button
                   type="button"
-                  className="message-feedback-action secondary"
+                  className={`message-feedback-action icon secondary ${isFeedbackExpanded ? 'is-active' : ''}`.trim()}
                   disabled={isFeedbackSubmitting}
                   onClick={() => onToggleFeedback(message.id)}
+                  aria-label="这条回复还不够准确"
+                  title="这条回复还不够准确"
                 >
-                  👎 还不够
+                  👎
                 </button>
               </div>
+            ) : null}
+          </div>
 
-              {isFeedbackExpanded ? (
-                <div className="message-feedback-panel">
-                  <div className="message-feedback-reasons">
-                    {normalChatFeedbackReasonOptions.map((reason) => (
-                      <button
-                        key={reason}
-                        type="button"
-                        className={`message-feedback-reason ${selectedFeedbackReason === reason ? 'selected' : ''}`.trim()}
-                        disabled={isFeedbackSubmitting}
-                        onClick={() => onSelectFeedbackReason(message.id, reason)}
-                      >
-                        {reason}
-                      </button>
-                    ))}
-                  </div>
-                  <textarea
-                    rows={3}
-                    value={feedbackText}
+          {!hasSubmittedFeedback && isFeedbackExpanded ? (
+            <div className="message-feedback-panel">
+              <div className="message-feedback-reasons">
+                {normalChatFeedbackReasonOptions.map((reason) => (
+                  <button
+                    key={reason}
+                    type="button"
+                    className={`message-feedback-reason ${selectedFeedbackReason === reason ? 'selected' : ''}`.trim()}
                     disabled={isFeedbackSubmitting}
-                    placeholder="如果你愿意，可以补充一下实际卡住的点，我后面会优先优化这类回答。"
-                    onChange={(event) => onFeedbackTextChange(message.id, event.target.value)}
-                  />
-                  <div className="message-feedback-submit-row">
-                    <span>选好原因后提交，我会把这类问题归到后续优化清单里。</span>
-                    <div className="message-feedback-submit-actions">
-                      <button type="button" className="message-feedback-action secondary" disabled={isFeedbackSubmitting} onClick={onCancelFeedback}>
-                        取消
-                      </button>
-                      <button
-                        type="button"
-                        className="message-feedback-action primary"
-                        disabled={isFeedbackSubmitting}
-                        onClick={() => onSubmitDislikeFeedback(message.id)}
-                      >
-                        {isFeedbackSubmitting ? '提交中...' : '提交反馈'}
-                      </button>
-                    </div>
-                  </div>
+                    onClick={() => onSelectFeedbackReason(message.id, reason)}
+                  >
+                    {reason}
+                  </button>
+                ))}
+              </div>
+              <textarea
+                rows={3}
+                value={feedbackText}
+                disabled={isFeedbackSubmitting}
+                placeholder="如果你愿意，可以补充一下实际卡住的点，我后面会优先优化这类回答。"
+                onChange={(event) => onFeedbackTextChange(message.id, event.target.value)}
+              />
+              <div className="message-feedback-submit-row">
+                <span>选好原因后提交，我会把这类问题归到后续优化清单里。</span>
+                <div className="message-feedback-submit-actions">
+                  <button type="button" className="message-feedback-action secondary" disabled={isFeedbackSubmitting} onClick={onCancelFeedback}>
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    className="message-feedback-action primary"
+                    disabled={isFeedbackSubmitting}
+                    onClick={() => onSubmitDislikeFeedback(message.id)}
+                  >
+                    {isFeedbackSubmitting ? '提交中...' : '提交反馈'}
+                  </button>
                 </div>
-              ) : null}
-            </>
+              </div>
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -497,14 +499,14 @@ const MessageList = memo(function MessageList({
       ) : (
         renderedMessages.map((message, index) => {
           const actualIndex = hiddenCount + index
-          const isStreamingPlaceholder =
-            isLoading && message.role === 'assistant' && message.id === lastMessage?.id && !message.content.trim()
+          const isReplyStreaming = isLoading && message.role === 'assistant' && message.id === lastMessage?.id
+          const isStreamingPlaceholder = isReplyStreaming && !message.content.trim()
           const previousMessage = messages[actualIndex - 1]
           const feedbackSummary = message.role === 'assistant' ? message.metadata?.feedbackSummary : undefined
           const feedbackNotice = feedbackNotices[message.id] || describeFeedbackSummary(feedbackSummary)
           const hasSubmittedFeedback = Boolean(feedbackSummary?.latestFeedbackId)
           const canCollectFeedback =
-            message.role === 'assistant' && previousMessage?.role === 'user' && !isStreamingPlaceholder && Boolean(message.content.trim())
+            message.role === 'assistant' && previousMessage?.role === 'user' && !isReplyStreaming && Boolean(message.content.trim())
 
           return (
             <MessageBubble
@@ -752,7 +754,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       await onSubmitMessageFeedback(messageId, { feedbackType: 'like' })
       setFeedbackNotices((prev) => ({
         ...prev,
-        [messageId]: '这条回答我已经记下为“已解决”，后面会优先沉淀成高质量问答。',
+        [messageId]: '已记录：这条回复解决了问题',
       }))
       setExpandedFeedbackMessageId((prev) => (prev === messageId ? null : prev))
     } catch (error) {
@@ -775,7 +777,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       })
       setFeedbackNotices((prev) => ({
         ...prev,
-        [messageId]: '问题我已经记下了，这条回答会进入知识库和问答策略的优化清单。',
+        [messageId]: '已记录：这类回复还需要继续优化',
       }))
       setExpandedFeedbackMessageId((prev) => (prev === messageId ? null : prev))
     } catch (error) {

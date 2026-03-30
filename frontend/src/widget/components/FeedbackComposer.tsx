@@ -1,19 +1,49 @@
-import { useState } from 'react'
-import { feedbackReasonOptions } from '../types'
+import { useMemo, useState } from 'react'
+import { ServiceDeskFeedbackSummary, feedbackReasonOptions } from '../types'
 
 interface FeedbackComposerProps {
   messageId: string
   disabled?: boolean
+  hidden?: boolean
+  summary?: ServiceDeskFeedbackSummary
   onLike: () => Promise<void>
   onDislike: (reason: string, feedbackText: string) => Promise<void>
 }
 
-export function FeedbackComposer({ messageId, disabled, onLike, onDislike }: FeedbackComposerProps) {
+const describeSubmittedFeedback = (summary?: ServiceDeskFeedbackSummary) => {
+  if (!summary?.latestFeedback) {
+    return ''
+  }
+
+  const [feedbackType, reason] = summary.latestFeedback.split(':')
+  if (feedbackType === 'like') {
+    return '已记录：已解决'
+  }
+  if (reason) {
+    return `已记录：${reason}`
+  }
+  if (feedbackType === 'dislike') {
+    return '已记录：待优化'
+  }
+  return ''
+}
+
+export function FeedbackComposer({
+  messageId,
+  disabled,
+  hidden,
+  summary,
+  onLike,
+  onDislike,
+}: FeedbackComposerProps) {
   const [expanded, setExpanded] = useState(false)
   const [reason, setReason] = useState<string>('没有解决问题')
   const [feedbackText, setFeedbackText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const loading = disabled || submitting
+  const hasSubmittedFeedback = Boolean(summary?.latestFeedbackId)
+  const feedbackNotice = useMemo(() => describeSubmittedFeedback(summary), [summary])
+  const hasSummaryStats = (summary?.likeCount ?? 0) > 0 || (summary?.dislikeCount ?? 0) > 0
 
   const handleLike = async () => {
     setSubmitting(true)
@@ -35,18 +65,54 @@ export function FeedbackComposer({ messageId, disabled, onLike, onDislike }: Fee
     }
   }
 
+  if (hidden) {
+    return null
+  }
+
   return (
-    <div className="feedback-composer" data-message-id={messageId}>
-      <div className="feedback-headline">这条回答是否解决了你的问题？</div>
-      <div className="feedback-actions">
-        <button type="button" disabled={loading} onClick={() => void handleLike()}>
-          👍 已解决
-        </button>
-        <button type="button" disabled={loading} className="secondary" onClick={() => setExpanded((prev) => !prev)}>
-          👎 仍未解决
-        </button>
+    <div
+      className={`feedback-composer ${expanded ? 'is-expanded' : ''} ${hasSubmittedFeedback ? 'is-submitted' : ''}`.trim()}
+      data-message-id={messageId}
+    >
+      <div className="feedback-inline-row">
+        {hasSummaryStats || feedbackNotice ? (
+          <div className="feedback-meta">
+            {hasSummaryStats ? (
+              <div className="feedback-summary">
+                <span>👍 {summary?.likeCount ?? 0}</span>
+                <span>👎 {summary?.dislikeCount ?? 0}</span>
+              </div>
+            ) : null}
+            {feedbackNotice ? <div className="feedback-compact-notice">{feedbackNotice}</div> : null}
+          </div>
+        ) : null}
+
+        {!hasSubmittedFeedback ? (
+          <div className="feedback-actions compact">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void handleLike()}
+              aria-label="这条回复解决了问题"
+              title={loading ? '提交中...' : '这条回复解决了问题'}
+            >
+              👍
+            </button>
+            <button
+              type="button"
+              disabled={loading}
+              className={`secondary ${expanded ? 'active' : ''}`.trim()}
+              onClick={() => setExpanded((prev) => !prev)}
+              aria-label="这条回复还不够准确"
+              title="这条回复还不够准确"
+            >
+              👎
+            </button>
+          </div>
+        ) : null}
       </div>
-      {expanded ? (
+
+      {!hasSubmittedFeedback && expanded ? (
         <div className="feedback-panel">
           <div className="feedback-reason-grid">
             {feedbackReasonOptions.map((option) => (
@@ -73,7 +139,7 @@ export function FeedbackComposer({ messageId, disabled, onLike, onDislike }: Fee
               取消
             </button>
             <button type="button" disabled={loading} onClick={() => void handleDislike()}>
-              提交反馈
+              {loading ? '提交中...' : '提交反馈'}
             </button>
           </div>
         </div>
