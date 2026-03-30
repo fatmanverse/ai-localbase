@@ -146,7 +146,16 @@ export function MessageList({
                     {relatedImages.map((image) => (
                       <div key={image.id} className="service-desk-related-image-card">
                         {image.publicUrl ? (
-                          <img src={image.publicUrl} alt={image.description || image.documentName || image.id} />
+                          <a
+                            href={image.publicUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="service-desk-related-image-link"
+                            title="查看原图"
+                          >
+                            <img src={image.publicUrl} alt={image.description || image.documentName || image.id} loading="lazy" />
+                            <span className="service-desk-related-image-view-tag">查看大图</span>
+                          </a>
                         ) : null}
                         <div className="service-desk-related-image-meta">
                           <strong>{image.documentName || '图片知识'}</strong>

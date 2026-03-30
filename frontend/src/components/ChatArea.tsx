@@ -313,7 +313,16 @@ const MessageBubble = memo(function MessageBubble({
             {relatedImages.map((image) => (
               <div key={image.id} className="message-related-image-card">
                 {image.publicUrl ? (
-                  <img src={image.publicUrl} alt={image.description || image.documentName || image.id} loading="lazy" />
+                  <a
+                    href={image.publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="message-related-image-link"
+                    title="查看原图"
+                  >
+                    <img src={image.publicUrl} alt={image.description || image.documentName || image.id} loading="lazy" />
+                    <span className="message-related-image-view-tag">查看大图</span>
+                  </a>
                 ) : null}
                 <div className="message-related-image-meta">
                   <strong>{image.documentName || '相关图片'}</strong>
