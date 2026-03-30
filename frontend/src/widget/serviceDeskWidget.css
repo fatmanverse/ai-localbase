@@ -139,6 +139,77 @@
   line-height: 1.8;
 }
 
+.service-desk-markdown > :first-child {
+  margin-top: 0;
+}
+
+.service-desk-markdown .md-inline-code {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 6px;
+  padding: 1px 6px;
+  color: #e2e8f0;
+  white-space: break-spaces;
+  word-break: break-word;
+}
+
+.service-desk-markdown .md-code-block {
+  margin: 12px 0;
+}
+
+.service-desk-markdown .md-link {
+  color: #93c5fd;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.service-desk-markdown .md-link:hover {
+  color: #bfdbfe;
+}
+
+.service-desk-markdown .md-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.service-desk-markdown .md-mermaid {
+  margin: 12px 0;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  overflow-x: auto;
+}
+
+.service-desk-markdown .md-mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.service-desk-markdown .md-mermaid-loading,
+.service-desk-markdown .md-mermaid-error {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.service-desk-markdown .md-mermaid-loading {
+  background: rgba(59, 130, 246, 0.14);
+  color: #bfdbfe;
+}
+
+.service-desk-markdown .md-mermaid-error {
+  background: rgba(127, 29, 29, 0.2);
+  color: #fecaca;
+}
+
+.service-desk-markdown .md-mermaid-fallback .md-code-block {
+  margin-top: 8px;
+}
+
 .service-desk-markdown p,
 .service-desk-markdown ul,
 .service-desk-markdown ol,

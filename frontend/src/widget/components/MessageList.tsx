@@ -1,5 +1,4 @@
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import MarkdownRenderer from '../../components/markdown/MarkdownRenderer'
 import { FeedbackComposer } from './FeedbackComposer'
 import { ServiceDeskMessage } from '../types'
 
@@ -59,7 +58,7 @@ export function MessageList({
               </div>
               {isAssistant ? (
                 <div className="service-desk-markdown">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                  <MarkdownRenderer content={message.content} />
                 </div>
               ) : (
                 <div className="service-desk-plain-text">{message.content}</div>
