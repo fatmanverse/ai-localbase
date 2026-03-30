@@ -378,9 +378,8 @@
   list-style: circle;
 }
 
-.service-desk-markdown ul ul,
-.service-desk-markdown ol ul {
-  list-style: circle;
+.service-desk-markdown ol ol {
+  list-style: lower-alpha;
 }
 
 .service-desk-markdown table {
@@ -402,16 +401,6 @@
 .service-desk-markdown th {
   color: #f8fafc;
   background: rgba(148, 163, 184, 0.12);
-}
-
-.service-desk-markdown tbody td:first-child {
-  font-weight: 600;
-  color: #f8fafc;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.service-desk-markdown tbody tr:hover td {
-  background: rgba(255, 255, 255, 0.03);
 }
 
 .service-desk-markdown tbody td:first-child {

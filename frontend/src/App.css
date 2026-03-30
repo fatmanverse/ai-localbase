@@ -2552,6 +2552,10 @@
   list-style: circle;
 }
 
+.message-content-markdown ol ol {
+  list-style: lower-alpha;
+}
+
 .message-content-markdown ul > li,
 .message-content-markdown ol > li {
   margin-bottom: 8px;
