@@ -69,6 +69,14 @@ const areServiceDeskMessageRowPropsEqual = (prev: ServiceDeskMessageRowProps, ne
   prev.onLike === next.onLike &&
   prev.onDislike === next.onDislike
 
+const areWidgetMessageListPropsEqual = (prev: MessageListProps, next: MessageListProps) =>
+  prev.messages === next.messages &&
+  prev.loading === next.loading &&
+  prev.emptyTitle === next.emptyTitle &&
+  prev.emptyDescription === next.emptyDescription &&
+  prev.onLike === next.onLike &&
+  prev.onDislike === next.onDislike
+
 const ServiceDeskMessageRow = memo(function ServiceDeskMessageRow({
   message,
   previousMessageRole,
@@ -270,4 +278,4 @@ export const MessageList = memo(function MessageList({
       {loading && lastMessage?.role !== 'assistant' ? <div className="service-desk-typing">正在整理答复...</div> : null}
     </div>
   )
-})
+}, areWidgetMessageListPropsEqual)

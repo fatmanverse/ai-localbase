@@ -52,3 +52,19 @@ func TestPolishAssistantResponse_RemovesSummaryLeadIn(t *testing.T) {
 		t.Fatalf("expected core sentence preserved, got %q", output)
 	}
 }
+
+
+func TestPolishAssistantResponse_RemovesGenericClosingLines(t *testing.T) {
+	input := "处理已经给到。\n\n希望以上内容对你有帮助。\n如果还有其他问题，欢迎随时提问。"
+	output := PolishAssistantResponse(input)
+
+	if strings.Contains(output, "希望以上内容对你有帮助") {
+		t.Fatalf("expected generic closing removed, got %q", output)
+	}
+	if strings.Contains(output, "欢迎随时提问") {
+		t.Fatalf("expected generic invitation removed, got %q", output)
+	}
+	if !strings.Contains(output, "处理已经给到") {
+		t.Fatalf("expected core content kept, got %q", output)
+	}
+}

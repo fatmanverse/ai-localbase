@@ -18,6 +18,10 @@ var assistantResponseLinePatterns = []struct {
 	{regexp.MustCompile(`(?m)^[ \t]*(综合来看[：:，, ]*)`), ""},
 	{regexp.MustCompile(`(?m)^[ \t]*(简单来说[：:，, ]*)`), ""},
 	{regexp.MustCompile(`(?m)^[ \t]*(作为 ?AI(?:助手|模型)?[：:，, ]*)`), ""},
+	{regexp.MustCompile(`(?m)^[ \t]*希望以上(?:内容)?对你有帮助[。！! ]*$`), ""},
+	{regexp.MustCompile(`(?m)^[ \t]*如果还有其他问题，?欢迎随时提问[。！! ]*$`), ""},
+	{regexp.MustCompile(`(?m)^[ \t]*如需进一步(?:协助|帮助)，?请继续反馈[。！! ]*$`), ""},
+	{regexp.MustCompile(`(?m)^[ \t]*如果现场还有异常，?把现象和报错补过来，我继续往下看[。！! ]*$`), "如果现场还有异常，把现象和报错补过来，我继续往下看。"},
 }
 
 var assistantResponseInlineReplacer = strings.NewReplacer(
