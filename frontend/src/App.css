@@ -3157,6 +3157,44 @@
   border-top: 1px solid #f1f5f9;
 }
 
+.app-confirm-backdrop {
+  z-index: 85;
+}
+
+.app-confirm-modal {
+  width: min(560px, 100%);
+}
+
+.app-confirm-header {
+  border-bottom: none;
+}
+
+.app-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 24px 24px;
+}
+
+.app-confirm-danger-btn {
+  padding: 9px 20px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 10px rgba(220, 38, 38, 0.28);
+  font-family: inherit;
+}
+
+.app-confirm-danger-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.36);
+}
+
 @media (max-width: 900px) {
   .chat-topbar {
     align-items: flex-start;

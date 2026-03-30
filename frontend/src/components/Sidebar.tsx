@@ -28,7 +28,7 @@ interface SidebarProps {
   onSelectConversation: (conversationId: string) => void
   onCreateConversation: () => void
   onRenameConversation: (conversationId: string, title: string) => void
-  onDeleteConversation: (conversationId: string) => void
+  onDeleteConversation: (conversation: Conversation) => void
   isSettingsOpen: boolean
   isKnowledgePanelOpen: boolean
   onToggleSettings: () => void
@@ -256,13 +256,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   }, [])
 
   const handleDeleteConversation = useCallback((conversation: Conversation) => {
-    const confirmed = window.confirm(`确定删除会话“${conversation.title}”吗？`)
     setMenuConversationId(null)
     setEditingConversationId(null)
-    if (!confirmed) {
-      return
-    }
-    onDeleteConversation(conversation.id)
+    onDeleteConversation(conversation)
   }, [onDeleteConversation])
 
   const handleCommitRename = useCallback((conversation: Conversation) => {

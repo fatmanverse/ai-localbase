@@ -655,11 +655,22 @@ const uploadKnowledgeBaseDocument = (
   })
 
 type AppNoticeTone = 'info' | 'success' | 'error'
+type AppConfirmTone = 'primary' | 'danger'
 
 interface AppNoticeState {
   id: string
   tone: AppNoticeTone
   message: string
+}
+
+interface AppConfirmState {
+  id: string
+  title: string
+  description: string
+  confirmLabel: string
+  cancelLabel?: string
+  tone: AppConfirmTone
+  onConfirm: () => void | Promise<void>
 }
 
 const startDocumentReindexTask = async (
@@ -699,6 +710,7 @@ function App() {
   const [configSaveError, setConfigSaveError] = useState<string | null>(null)
   const [configSaveSuccess, setConfigSaveSuccess] = useState<string | null>(null)
   const [appNotice, setAppNotice] = useState<AppNoticeState | null>(null)
+  const [appConfirm, setAppConfirm] = useState<AppConfirmState | null>(null)
   const [reindexingKnowledgeBaseId, setReindexingKnowledgeBaseId] = useState<string | null>(null)
   const [reindexingDocumentKeys, setReindexingDocumentKeys] = useState<Record<string, true>>({})
   const [uploadTasksByKnowledgeBase, setUploadTasksByKnowledgeBase] = useState<Record<string, UploadTask[]>>({})
@@ -717,6 +729,27 @@ function App() {
     }
     setAppNotice(null)
   }, [])
+
+  const clearAppConfirm = useCallback(() => {
+    setAppConfirm(null)
+  }, [])
+
+  const requestAppConfirm = useCallback((payload: Omit<AppConfirmState, 'id'>) => {
+    setAppConfirm({
+      id: createId(),
+      ...payload,
+    })
+  }, [])
+
+  const handleConfirmAppAction = useCallback(async () => {
+    if (!appConfirm) {
+      return
+    }
+
+    const currentConfirm = appConfirm
+    setAppConfirm(null)
+    await currentConfirm.onConfirm()
+  }, [appConfirm])
 
   const showAppNotice = useCallback((message: string, tone: AppNoticeTone = 'info') => {
     if (appNoticeTimerRef.current) {
@@ -1223,6 +1256,17 @@ function App() {
       showAppNotice(`删除会话失败：${message}`, 'error')
     }
   }
+
+  const handleRequestDeleteConversation = useCallback((conversation: Conversation) => {
+    requestAppConfirm({
+      title: '删除会话',
+      description: `确定删除会话“${conversation.title}”吗？删除后当前会话消息会一起移除。`,
+      confirmLabel: '删除会话',
+      cancelLabel: '保留会话',
+      tone: 'danger',
+      onConfirm: () => handleDeleteConversation(conversation.id),
+    })
+  }, [requestAppConfirm, handleDeleteConversation])
 
   const handleClearConversation = () => {
     if (!activeConversation) {
@@ -2007,21 +2051,9 @@ function App() {
     }
   }
 
-  const handleReindexKnowledgeBase = async (knowledgeBaseId: string) => {
+  const executeReindexKnowledgeBase = async (knowledgeBaseId: string) => {
     const targetKnowledgeBase = knowledgeBases.find((knowledgeBase) => knowledgeBase.id === knowledgeBaseId)
     if (!targetKnowledgeBase) {
-      return
-    }
-
-    if (targetKnowledgeBase.documents.length === 0) {
-      showAppNotice('当前知识库还没有文档，不需要重建索引。', 'info')
-      return
-    }
-
-    const confirmed = window.confirm(
-      `确定重建知识库“${targetKnowledgeBase.name}”的索引吗？这会使用当前 Embedding 配置重新生成全部文档向量。`,
-    )
-    if (!confirmed) {
       return
     }
 
@@ -2071,6 +2103,27 @@ function App() {
     }
   }
 
+  const handleReindexKnowledgeBase = async (knowledgeBaseId: string) => {
+    const targetKnowledgeBase = knowledgeBases.find((knowledgeBase) => knowledgeBase.id === knowledgeBaseId)
+    if (!targetKnowledgeBase) {
+      return
+    }
+
+    if (targetKnowledgeBase.documents.length === 0) {
+      showAppNotice('当前知识库还没有文档，不需要重建索引。', 'info')
+      return
+    }
+
+    requestAppConfirm({
+      title: '重建知识库索引',
+      description: `确定重建知识库“${targetKnowledgeBase.name}”的索引吗？这会使用当前 Embedding 配置重新生成全部文档向量。`,
+      confirmLabel: '确认重建',
+      cancelLabel: '暂不处理',
+      tone: 'danger',
+      onConfirm: () => executeReindexKnowledgeBase(knowledgeBaseId),
+    })
+  }
+
   const handleReindexDocument = async (knowledgeBaseId: string, documentId: string) => {
     const targetKnowledgeBase = knowledgeBases.find((knowledgeBase) => knowledgeBase.id === knowledgeBaseId)
     const targetDocument = targetKnowledgeBase?.documents.find((document) => document.id === documentId)
@@ -2078,21 +2131,23 @@ function App() {
       return
     }
 
-    const confirmed = window.confirm(
-      `确定重跑文档“${targetDocument.name}”的解析吗？这会重新读取原文件，并重跑图片提取、OCR、切片与向量入库，无需重新上传。`,
-    )
-    if (!confirmed) {
-      return
-    }
-
-    const startedCount = enqueueDocumentReindexTasks(
-      knowledgeBaseId,
-      [targetDocument],
-      selectedKnowledgeBaseId === knowledgeBaseId,
-    )
-    if (startedCount === 0) {
-      showAppNotice('这份文档已经在重跑解析中了。', 'info')
-    }
+    requestAppConfirm({
+      title: '重跑文档解析',
+      description: `确定重跑文档“${targetDocument.name}”的解析吗？这会重新读取原文件，并重跑图片提取、OCR、切片与向量入库，无需重新上传。`,
+      confirmLabel: '确认重跑',
+      cancelLabel: '暂不处理',
+      tone: 'primary',
+      onConfirm: () => {
+        const startedCount = enqueueDocumentReindexTasks(
+          knowledgeBaseId,
+          [targetDocument],
+          selectedKnowledgeBaseId === knowledgeBaseId,
+        )
+        if (startedCount === 0) {
+          showAppNotice('这份文档已经在重跑解析中了。', 'info')
+        }
+      },
+    })
   }
 
   const handleBatchReindexDocuments = async (knowledgeBaseId: string, documentIds: string[]) => {
@@ -2117,17 +2172,19 @@ function App() {
       return
     }
 
-    const confirmed = window.confirm(
-      `确定批量重跑 ${readyDocuments.length} 份文档的解析吗？这会重新读取原文件，并重跑图片提取、OCR、切片与向量入库。`,
-    )
-    if (!confirmed) {
-      return
-    }
-
-    const startedCount = enqueueDocumentReindexTasks(knowledgeBaseId, readyDocuments, false)
-    if (startedCount > 0) {
-      showAppNotice(`已加入 ${startedCount} 个重跑解析任务，可以在任务列表里查看进度。`, 'success')
-    }
+    requestAppConfirm({
+      title: '批量重跑文档解析',
+      description: `确定批量重跑 ${readyDocuments.length} 份文档的解析吗？这会重新读取原文件，并重跑图片提取、OCR、切片与向量入库。`,
+      confirmLabel: '确认批量重跑',
+      cancelLabel: '暂不处理',
+      tone: 'primary',
+      onConfirm: () => {
+        const startedCount = enqueueDocumentReindexTasks(knowledgeBaseId, readyDocuments, false)
+        if (startedCount > 0) {
+          showAppNotice(`已加入 ${startedCount} 个重跑解析任务，可以在任务列表里查看进度。`, 'success')
+        }
+      },
+    })
   }
 
 
@@ -2590,7 +2647,7 @@ function App() {
         onSelectConversation={handleSelectConversation}
         onCreateConversation={handleCreateConversation}
         onRenameConversation={handleRenameConversation}
-        onDeleteConversation={handleDeleteConversation}
+        onDeleteConversation={handleRequestDeleteConversation}
         isSettingsOpen={isSettingsOpen}
         isKnowledgePanelOpen={isKnowledgePanelOpen}
         onToggleSettings={handleToggleSettings}
@@ -2622,6 +2679,50 @@ function App() {
         onChangeConversationKnowledgeBase={handleChangeConversationKnowledgeBase}
         onSubmitMessageFeedback={handleSubmitMessageFeedback}
       />
+
+      {appConfirm ? (
+        <div
+          className="settings-modal-backdrop app-confirm-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="app-confirm-title"
+          onClick={clearAppConfirm}
+        >
+          <div className="settings-modal app-confirm-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="settings-modal-header app-confirm-header">
+              <div>
+                <h3 id="app-confirm-title">{appConfirm.title}</h3>
+                <p>{appConfirm.description}</p>
+              </div>
+              <button
+                type="button"
+                className="settings-close-btn"
+                onClick={clearAppConfirm}
+              >
+                取消
+              </button>
+            </div>
+            <div className="app-confirm-actions">
+              <button
+                type="button"
+                className="kb-cancel-btn"
+                onClick={clearAppConfirm}
+              >
+                {appConfirm.cancelLabel || '取消'}
+              </button>
+              <button
+                type="button"
+                className={appConfirm.tone === 'danger' ? 'app-confirm-danger-btn' : 'kb-confirm-btn'}
+                onClick={() => {
+                  void handleConfirmAppAction()
+                }}
+              >
+                {appConfirm.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {isCreateConversationModalOpen && (
         <div
