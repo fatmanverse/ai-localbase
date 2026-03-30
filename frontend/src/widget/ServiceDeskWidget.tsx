@@ -151,7 +151,7 @@ export function ServiceDeskWidget({
         setBootstrapError(null)
         await ensureConversation()
       } catch (error) {
-        setBootstrapError(error instanceof Error ? error.message : '初始化工单机器人失败')
+        setBootstrapError('页面暂时没连上服务，请稍后刷新或联系管理员。')
       }
     }
 
@@ -199,7 +199,7 @@ export function ServiceDeskWidget({
           message.id === optimisticAssistant.id
             ? {
                 ...message,
-                content: error instanceof Error ? `机器人暂时无法回答：${error.message}` : '机器人暂时无法回答，请稍后重试。',
+                content: '这边刚才没拿到稳定结果，请稍后再发一次；如果连续失败，再把现象和报错一起发我。',
               }
             : message,
         ),
@@ -251,7 +251,7 @@ export function ServiceDeskWidget({
     })
 
     await refreshConversation(currentConversation.id)
-    setFeedbackNotice(payload.feedbackType === 'like' ? '已记录“已解决”反馈，可用于沉淀 FAQ 候选。' : '已记录问题反馈，将进入知识库 / FAQ 优化队列。')
+    setFeedbackNotice(payload.feedbackType === 'like' ? '收到，这条答复我先标记为已解决。' : '收到，这个问题我这边记下了，后面会继续优化。')
   }, [apiBaseUrl, context, refreshConversation])
 
   const handleLikeFeedback = useCallback((message: ServiceDeskMessage) => submitFeedback(message, { feedbackType: 'like' }), [submitFeedback])

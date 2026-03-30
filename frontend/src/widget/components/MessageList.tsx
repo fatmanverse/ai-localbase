@@ -106,7 +106,7 @@ const ServiceDeskMessageRow = memo(function ServiceDeskMessageRow({
 
         {isAssistant && relatedImages.length > 0 ? (
           <div className="service-desk-related-images">
-            <div className="service-desk-related-images-title">相关图片知识</div>
+            <div className="service-desk-related-images-title">相关图片</div>
             <div className="service-desk-related-image-grid">
               {relatedImages.map((image) => (
                 <div key={image.id} className="service-desk-related-image-card">
@@ -231,9 +231,9 @@ export const MessageList = memo(function MessageList({
   if (messages.length === 0) {
     return (
       <div className="service-desk-empty-state">
-        <h3>{emptyTitle ?? '欢迎使用工单机器人'}</h3>
+        <h3>{emptyTitle ?? '请先描述你遇到的问题'}</h3>
         <p>
-          {emptyDescription ?? '你可以直接描述故障现象、影响范围、已尝试操作，机器人会结合知识库给出处理建议。'}
+          {emptyDescription ?? '可以直接说明故障现象、影响范围、报错内容和已经做过的处理，我这边会按资料继续帮你往下排查。'}
         </p>
       </div>
     )
@@ -246,7 +246,7 @@ export const MessageList = memo(function MessageList({
           <button type="button" className="service-desk-message-window-load-more" onClick={handleLoadMore}>
             查看更早的 {Math.min(hiddenCount, WIDGET_MESSAGE_LOAD_MORE_STEP)} 条消息
           </button>
-          <span>当前已折叠 {hiddenCount} 条较早消息，减少长会话首屏负担。</span>
+          <span>已先折叠 {hiddenCount} 条较早消息，需要时再展开查看即可。</span>
         </div>
       ) : null}
       {renderedMessages.map((message, index) => {

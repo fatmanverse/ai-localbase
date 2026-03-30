@@ -26,10 +26,10 @@ const (
 	recommendedContextMessageLimit   = 12
 	recommendedEmbeddingProvider     = "ollama"
 	recommendedEmbeddingModel        = "nomic-embed-text"
-	defaultWelcomeMessageTemplate    = "你好，我是 AI LocalBase 助手。{knowledgeBaseHint}"
-	defaultSuggestedPromptOne        = "请总结当前知识库的核心观点"
-	defaultSuggestedPromptTwo        = "请列出这个知识库中最关键的结论"
-	defaultSuggestedPromptThree      = "如果基于当前资料开始实现，下一步建议是什么？"
+	defaultWelcomeMessageTemplate    = "你好，这边协助你处理当前问题。{knowledgeBaseHint}"
+	defaultSuggestedPromptOne        = "先帮我梳理这份资料里最关键的结论"
+	defaultSuggestedPromptTwo        = "如果现在开始处理，第一步建议先做什么？"
+	defaultSuggestedPromptThree      = "结合当前资料，下一步最稳妥的处理顺序是什么？"
 	legacyDefaultChatModel           = "qwen3.5:0.8b"
 	legacyDefaultChatTemperature     = 0.7
 	legacyDefaultContextMessageLimit = 12

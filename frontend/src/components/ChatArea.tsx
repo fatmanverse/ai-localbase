@@ -133,7 +133,7 @@ const resolveFeedbackNoticeTone = (notice: string, hasSubmittedFeedback: boolean
     return 'info'
   }
 
-  if (notice.startsWith('反馈暂时没有记上')) {
+  if (notice.includes('还没记上')) {
     return 'error'
   }
 
@@ -155,13 +155,13 @@ const describeFeedbackSummary = (summary?: MessageFeedbackSummary): string => {
 
   const [feedbackType, reason] = summary.latestFeedback.split(':')
   if (feedbackType === 'like') {
-    return '已记录：这条回答解决了问题'
+    return '已记录：这条答复已解决当前问题'
   }
   if (reason) {
     return `已记录：${reason}`
   }
   if (feedbackType === 'dislike') {
-    return '已记录：这条回答还没有解决问题'
+    return '已记录：这条答复还需要继续跟进'
   }
   return ''
 }
@@ -276,7 +276,7 @@ const ChatTopBar = memo(function ChatTopBar({
 const WelcomeState = memo(function WelcomeState({ welcomeMessage, conversationDocument }: WelcomeStateProps) {
   return (
     <div className="welcome-message">
-      <h2>欢迎使用 AI LocalBase</h2>
+      <h2>请先描述你遇到的问题</h2>
       <p>{welcomeMessage}</p>
       {conversationDocument ? <p>当前文档范围：{conversationDocument.name}</p> : null}
     </div>
@@ -541,7 +541,7 @@ const MessageList = memo(function MessageList({
           <button type="button" className="message-window-load-more" onClick={handleLoadMore}>
             查看更早的 {Math.min(hiddenCount, CHAT_MESSAGE_LOAD_MORE_STEP)} 条消息
           </button>
-          <span className="message-window-hint">当前已折叠 {hiddenCount} 条较早消息，避免长会话一次性渲染过重。</span>
+          <span className="message-window-hint">已先折叠 {hiddenCount} 条较早消息，需要时再展开查看即可。</span>
         </div>
       ) : null}
 
@@ -812,13 +812,13 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       await onSubmitMessageFeedback(messageId, { feedbackType: 'like' })
       setFeedbackNotices((prev) => ({
         ...prev,
-        [messageId]: '已记录：这条回复已解决当前问题',
+        [messageId]: '已记录：这条答复已解决当前问题',
       }))
       setExpandedFeedbackMessageId((prev) => (prev === messageId ? null : prev))
     } catch (error) {
       setFeedbackNotices((prev) => ({
         ...prev,
-        [messageId]: '反馈暂时没有记上，请稍后再试。',
+        [messageId]: '这次反馈还没记上，请稍后再试。',
       }))
     } finally {
       setFeedbackSubmittingMessageId(null)
@@ -838,13 +838,13 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       })
       setFeedbackNotices((prev) => ({
         ...prev,
-        [messageId]: '已记录：这类回复还需要继续优化',
+        [messageId]: '已记录：这条答复还需要继续跟进',
       }))
       setExpandedFeedbackMessageId((prev) => (prev === messageId ? null : prev))
     } catch (error) {
       setFeedbackNotices((prev) => ({
         ...prev,
-        [messageId]: '反馈暂时没有记上，请稍后再试。',
+        [messageId]: '这次反馈还没记上，请稍后再试。',
       }))
     } finally {
       setFeedbackSubmittingMessageId(null)

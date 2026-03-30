@@ -984,7 +984,7 @@ const UISettingsSection = memo(function UISettingsSection({
           hint={
             <>
               支持变量 <code>{'{knowledgeBaseHint}'}</code> 和 <code>{'{knowledgeBaseName}'}</code>。例如：
-              <code>你好，我是 AI LocalBase 助手。{'{knowledgeBaseHint}'}</code>
+              <code>你好，这边协助你处理当前问题。{'{knowledgeBaseHint}'}</code>
             </>
           }
         />

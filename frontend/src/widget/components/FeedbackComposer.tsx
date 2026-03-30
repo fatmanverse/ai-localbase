@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ServiceDeskFeedbackSummary, feedbackReasonOptions } from '../types'
 
 interface FeedbackComposerProps {
@@ -17,7 +17,7 @@ const resolveNoticeTone = (notice: string, hasSubmittedFeedback: boolean): 'info
     return 'info'
   }
 
-  if (notice.startsWith('反馈暂时没有记上')) {
+  if (notice.includes('还没记上')) {
     return 'error'
   }
 
@@ -39,13 +39,13 @@ const describeSubmittedFeedback = (summary?: ServiceDeskFeedbackSummary) => {
 
   const [feedbackType, reason] = summary.latestFeedback.split(':')
   if (feedbackType === 'like') {
-    return '已记录：已解决'
+    return '已记录：这条答复已解决当前问题'
   }
   if (reason) {
     return `已记录：${reason}`
   }
   if (feedbackType === 'dislike') {
-    return '已记录：待优化'
+    return '已记录：这条答复还需要继续跟进'
   }
   return ''
 }
@@ -84,7 +84,7 @@ export function FeedbackComposer({
     try {
       await onLike()
     } catch {
-      setLocalNotice('反馈暂时没有记上，请稍后再试。')
+      setLocalNotice('这次反馈还没记上，请稍后再试。')
     } finally {
       setSubmitting(false)
     }
@@ -98,7 +98,7 @@ export function FeedbackComposer({
       setExpanded(false)
       setFeedbackText('')
     } catch {
-      setLocalNotice('反馈暂时没有记上，请稍后再试。')
+      setLocalNotice('这次反馈还没记上，请稍后再试。')
     } finally {
       setSubmitting(false)
     }

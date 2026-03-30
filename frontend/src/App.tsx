@@ -192,11 +192,11 @@ interface ConversationMessageFeedbackResponse {
 
 const API_BASE_PATH = ''
 
-export const DEFAULT_WELCOME_MESSAGE_TEMPLATE = '你好，我是 AI LocalBase 助手。{knowledgeBaseHint}'
+export const DEFAULT_WELCOME_MESSAGE_TEMPLATE = '你好，这边协助你处理当前问题。{knowledgeBaseHint}'
 export const DEFAULT_SUGGESTED_PROMPTS = [
-  '请总结当前知识库的核心观点',
-  '请列出这个知识库中最关键的结论',
-  '如果基于当前资料开始实现，下一步建议是什么？',
+  '先帮我梳理这份资料里最关键的结论',
+  '如果现在开始处理，第一步建议先做什么？',
+  '结合当前资料，下一步最稳妥的处理顺序是什么？',
 ]
 
 export const recommendedConfig: AppConfig = {
@@ -452,8 +452,8 @@ const normalizeConversation = (conversation: BackendConversation): Conversation 
 
 const resolveKnowledgeBaseHint = (knowledgeBaseName?: string | null) =>
   knowledgeBaseName?.trim()
-    ? `当前会话已固定绑定知识库「${knowledgeBaseName.trim()}」，你可以直接开始提问。`
-    : '请先新建会话并选择知识库后再提问。'
+    ? `当前会话已关联知识库「${knowledgeBaseName.trim()}」，可以直接提问。`
+    : '请先新建会话并选择要使用的知识库。'
 
 const buildWelcomeMessage = (welcomeMessageTemplate?: string, knowledgeBaseName?: string | null) => {
   const normalizedTemplate = welcomeMessageTemplate?.trim() || DEFAULT_WELCOME_MESSAGE_TEMPLATE
