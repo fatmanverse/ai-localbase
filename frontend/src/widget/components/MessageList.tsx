@@ -218,7 +218,7 @@ export const MessageList = memo(function MessageList({
     conversationKey,
     itemCount: messages.length,
     lastItemId: lastMessage?.id,
-    lastItemContentSignature,
+    lastMessageContentSignature,
     streaming: Boolean(loading && lastMessage?.role === 'assistant'),
   })
 
