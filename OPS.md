@@ -189,6 +189,14 @@ REF=main AUTO_STASH=1 bash upgrade.sh
 bash scripts/linux/release.sh v1.0.1 registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
 ```
 
+如果服务器始终拉 `latest`，则打包机推荐直接执行：
+
+```bash
+export REGISTRY_PREFIX=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
+export RELEASE_TAG=$(date +%Y%m%d%H%M%S)
+REGISTRY_PREFIX=${REGISTRY_PREFIX} TAG=${RELEASE_TAG} PUSH_LATEST=1 UPDATE_COMPOSE_IMAGE=0 bash scripts/linux/build_and_push.sh
+```
+
 默认会完成：
 
 - backend / frontend 镜像构建与推送
@@ -255,6 +263,24 @@ bash scripts/linux/upgrade-by-image.sh <REGISTRY_PREFIX> <TAG>
 - `${REGISTRY_PREFIX}/ai-localbase-frontend:${TAG}`
 
 拼成完整镜像地址，再调用 `upgrade.sh`。
+
+### 6.3 无 git 的 standalone latest 部署 / 升级
+
+服务器如果不保留仓库代码，只想下载单独脚本直接部署 / 升级，可执行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fatmanverse/ai-localbase/main/scripts/linux/deploy-latest.sh -o deploy-latest.sh
+chmod +x deploy-latest.sh
+PULL_QDRANT=0 bash deploy-latest.sh /data/ai-localbase registry.cn-zhangjiakou.aliyuncs.com/ai_localbase latest
+```
+
+特点：
+
+- 不依赖 `.git`
+- 可在空目录首次部署
+- 已存在则直接升级
+- 保留 `backend/data` 与 `qdrant_storage`
+- 默认拉取 `latest`
 
 ### 升级完成后建议立刻执行
 

@@ -571,6 +571,14 @@ TAG=$(git rev-parse --short HEAD) \
 bash scripts/linux/build_and_push.sh
 ```
 
+每次发版都刷新 `latest`（推荐用于服务器始终拉最新）：
+
+```bash
+export REGISTRY_PREFIX=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
+export RELEASE_TAG=$(date +%Y%m%d%H%M%S)
+REGISTRY_PREFIX=${REGISTRY_PREFIX} TAG=${RELEASE_TAG} PUSH_LATEST=1 UPDATE_COMPOSE_IMAGE=0 bash scripts/linux/build_and_push.sh
+```
+
 一键发布（构建推送 backend/frontend、可选同步 qdrant、可选打 git tag）：
 
 ```bash
@@ -581,6 +589,14 @@ bash scripts/linux/release.sh v1.0.1 registry.cn-zhangjiakou.aliyuncs.com/ai_loc
 
 ```bash
 PUSH_LATEST=1 bash scripts/linux/release.sh v1.0.1 registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
+```
+
+如果服务器不依赖 git，只想下载单独脚本直接部署 / 升级 latest：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fatmanverse/ai-localbase/main/scripts/linux/deploy-latest.sh -o deploy-latest.sh
+chmod +x deploy-latest.sh
+PULL_QDRANT=0 bash deploy-latest.sh /data/ai-localbase registry.cn-zhangjiakou.aliyuncs.com/ai_localbase latest
 ```
 
 更完整的部署说明见：[`DEPLOY_LINUX.md`](./DEPLOY_LINUX.md)

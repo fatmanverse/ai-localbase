@@ -113,6 +113,29 @@ bash scripts/linux/release.sh v1.0.1 registry.cn-zhangjiakou.aliyuncs.com/ai_loc
 PUSH_LATEST=1 bash scripts/linux/release.sh v1.0.1 registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
 ```
 
+### 每次都推 latest（最简流程）
+```bash
+export REGISTRY_PREFIX=registry.cn-zhangjiakou.aliyuncs.com/ai_localbase
+export RELEASE_TAG=$(date +%Y%m%d%H%M%S)
+REGISTRY_PREFIX=${REGISTRY_PREFIX} TAG=${RELEASE_TAG} PUSH_LATEST=1 UPDATE_COMPOSE_IMAGE=0 bash scripts/linux/build_and_push.sh
+```
+
+这样会同时推：
+
+- `${REGISTRY_PREFIX}/ai-localbase-backend:${RELEASE_TAG}`
+- `${REGISTRY_PREFIX}/ai-localbase-frontend:${RELEASE_TAG}`
+- `${REGISTRY_PREFIX}/ai-localbase-backend:latest`
+- `${REGISTRY_PREFIX}/ai-localbase-frontend:latest`
+
+### 服务器不依赖 git，直接下载脚本部署 / 升级 latest
+```bash
+curl -fsSL https://raw.githubusercontent.com/fatmanverse/ai-localbase/main/scripts/linux/deploy-latest.sh -o deploy-latest.sh
+chmod +x deploy-latest.sh
+PULL_QDRANT=0 bash deploy-latest.sh /data/ai-localbase registry.cn-zhangjiakou.aliyuncs.com/ai_localbase latest
+```
+
+如果服务器不能直接访问 GitHub，可在打包机下载后通过 `scp` 传到服务器再执行。
+
 ---
 
 ### CentOS 7 / EL7 说明
