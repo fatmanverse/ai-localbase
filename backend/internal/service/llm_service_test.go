@@ -95,7 +95,7 @@ func TestLLMServiceChatReturnsFallbackWhenAllCandidatesFail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("chat fallback: %v", err)
 	}
-	if len(resp.Choices) == 0 || !strings.Contains(resp.Choices[0].Message.Content, "AI 模型调用失败") {
+	if len(resp.Choices) == 0 || !strings.Contains(resp.Choices[0].Message.Content, "当前回复服务暂时不可用") {
 		t.Fatalf("expected fallback message, got %#v", resp.Choices)
 	}
 	if resp.Metadata["degraded"] != true {

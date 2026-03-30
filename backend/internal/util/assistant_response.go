@@ -13,6 +13,7 @@ var assistantResponseLinePatterns = []struct {
 	{regexp.MustCompile(`(?m)^[ \t]*(基于(?:当前|现有|以上)?(?:资料|文档|信息|内容|上下文)[：:，, ]*)`), ""},
 	{regexp.MustCompile(`(?m)^[ \t]*(结合(?:当前|现有|以上)?(?:资料|文档|信息|内容|上下文)[：:，, ]*)`), ""},
 	{regexp.MustCompile(`(?m)^[ \t]*(从资料来看[：:，, ]*)`), ""},
+	{regexp.MustCompile(`(?m)^[ \t]*(?:下面|以下)(?:是|给出)?(?:分析|判断|说明|处理建议|处理步骤|排查步骤)[：:，, ]*$`), ""},
 	{regexp.MustCompile(`(?m)^[ \t]*(总的来说[：:，, ]*)`), ""},
 	{regexp.MustCompile(`(?m)^[ \t]*(总体来看[：:，, ]*)`), ""},
 	{regexp.MustCompile(`(?m)^[ \t]*(综合来看[：:，, ]*)`), ""},

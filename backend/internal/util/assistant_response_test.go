@@ -53,6 +53,18 @@ func TestPolishAssistantResponse_RemovesSummaryLeadIn(t *testing.T) {
 	}
 }
 
+func TestPolishAssistantResponse_RemovesGenericLeadLine(t *testing.T) {
+	input := "下面是分析：\n1. 先确认服务状态。\n2. 再核对配置项。"
+	output := PolishAssistantResponse(input)
+
+	if strings.Contains(output, "下面是分析") {
+		t.Fatalf("expected generic lead line removed, got %q", output)
+	}
+	if !strings.Contains(output, "1. 先确认服务状态") {
+		t.Fatalf("expected steps preserved, got %q", output)
+	}
+}
+
 
 func TestPolishAssistantResponse_RemovesGenericClosingLines(t *testing.T) {
 	input := "处理已经给到。\n\n希望以上内容对你有帮助。\n如果还有其他问题，欢迎随时提问。"

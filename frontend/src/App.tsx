@@ -428,6 +428,7 @@ const normalizeKnowledgeBase = (knowledgeBase: BackendKnowledgeBase): KnowledgeB
 const isDegradedFallbackContent = (content: string): boolean => {
   const normalized = content.trim()
   return (
+    normalized.startsWith('⚠️ 当前回复服务暂时不可用') ||
     normalized.startsWith('⚠️ AI 模型调用失败') ||
     normalized.startsWith('⚠ 当前回答为降级回复') ||
     normalized.includes('模型或检索链路出现异常')

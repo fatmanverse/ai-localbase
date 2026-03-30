@@ -638,13 +638,13 @@ func buildModelFallbackMessage(req model.ChatCompletionRequest, attempted []mode
 		}
 	}
 	if len(modelNames) == 0 {
-		return "⚠️ AI 模型调用失败\n\n请在设置中配置正确的 Chat 模型。"
+		return "⚠️ 当前回复服务暂时不可用\n\n请先检查聊天模型配置是否填写正确。"
 	}
 	if len(modelNames) == 1 {
 		modelName := modelNames[0]
-		return fmt.Sprintf("⚠️ AI 模型调用失败\n\n请检查模型 **%s** 是否可用，或在设置中补充备用模型。", modelName)
+		return fmt.Sprintf("⚠️ 当前回复服务暂时不可用\n\n我这边已经尝试连接 **%s**，但暂时没有拿到可用响应。请检查这个模型或补充备用模型。", modelName)
 	}
-	return fmt.Sprintf("⚠️ AI 模型调用失败\n\n已依次尝试以下模型：**%s**。请检查这些模型或对应接口是否可用。", strings.Join(modelNames, " / "))
+	return fmt.Sprintf("⚠️ 当前回复服务暂时不可用\n\n我这边已经依次尝试以下模型：**%s**。这几个入口现在都没有返回可用结果，请检查模型状态或接口连通性。", strings.Join(modelNames, " / "))
 }
 
 func firstAssistantContentFromResponse(response model.ChatCompletionResponse) string {
