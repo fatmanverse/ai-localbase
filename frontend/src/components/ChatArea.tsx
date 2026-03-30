@@ -376,46 +376,153 @@ function normalizeSummarySections(content: string): string {
   return normalized
 }
 
-function fixMarkdown(content: string): string {
-  let fixed = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-  fixed = normalizeMermaidSection(fixed)
-  fixed = normalizeStepSections(fixed)
-  fixed = normalizeSummarySections(fixed)
-  fixed = normalizePainSolutionSection(fixed)
-  fixed = normalizeDeliverableSection(fixed)
+const MARKDOWN_NORMALIZATION_CACHE_LIMIT = 200
+const markdownNormalizationCache = new Map<string, string>()
 
+interface MarkdownSegment {
+  type: 'text' | 'code'
+  value: string
+}
+
+function rememberNormalizedMarkdown(content: string, normalized: string): string {
+  if (markdownNormalizationCache.has(content)) {
+    markdownNormalizationCache.delete(content)
+  }
+  markdownNormalizationCache.set(content, normalized)
+
+  if (markdownNormalizationCache.size > MARKDOWN_NORMALIZATION_CACHE_LIMIT) {
+    const oldestKey = markdownNormalizationCache.keys().next().value
+    if (oldestKey) {
+      markdownNormalizationCache.delete(oldestKey)
+    }
+  }
+
+  return normalized
+}
+
+function shouldNormalizeMarkdownContent(content: string): boolean {
+  const trimmed = content.trim()
+  if (!trimmed) {
+    return false
+  }
+
+  return /```mermaid/i.test(trimmed) ||
+    /<br\s*\/?>/i.test(trimmed) ||
+    /<\|im_start\|>|<\|im_end\|>|<\|endoftext\|>|\|endoftext\|>/.test(trimmed) ||
+    /<\/?(think|assistant|user|system)>/i.test(trimmed) ||
+    /(^|\n)#{1,6}[^\s#]/m.test(trimmed) ||
+    /(^|\n)\d+[.)、]\S/m.test(trimmed) ||
+    /(^|\n)[^\n]*\|[^\n]*\|/m.test(trimmed) ||
+    /[├└│]/.test(trimmed) ||
+    /[✅☑️✔🟩🟦🔹🔸•📌✨📍🛠️📦🚀🎯💡🔥⭐👉🔧📝📣⚠️❗❓]/.test(trimmed) ||
+    /(实施路线图（简化版）|实施路径|实施步骤|步骤规划|第\d+步|MVP 核心功能验证|模块架构深化|接口与前端交互设计|UI 与交互优化|测试与迭代优化)/.test(trimmed) ||
+    /(当前知识库的核心观点总结如下|最关键的结论总结如下|核心观点总结如下|核心结论如下|结论总结|关键决策点|下一步行动|下一步建议)/.test(trimmed) ||
+    /(模块\s*\|\s*交付物\s*\|\s*基础功能|阶段\s*\|\s*任务\s*\|\s*优先级|问题\s*\|\s*解决方案)/.test(trimmed)
+}
+
+function splitMarkdownByCodeFences(content: string): MarkdownSegment[] {
+  const segments: MarkdownSegment[] = []
+  const fencePattern = /```[\s\S]*?```/g
+  let lastIndex = 0
+
+  for (const match of content.matchAll(fencePattern)) {
+    const block = match[0]
+    const start = match.index ?? 0
+
+    if (start > lastIndex) {
+      segments.push({
+        type: 'text',
+        value: content.slice(lastIndex, start),
+      })
+    }
+
+    segments.push({
+      type: 'code',
+      value: block,
+    })
+
+    lastIndex = start + block.length
+  }
+
+  if (lastIndex < content.length) {
+    segments.push({
+      type: 'text',
+      value: content.slice(lastIndex),
+    })
+  }
+
+  return segments
+}
+
+function cleanupModelArtifacts(content: string): string {
+  let fixed = content
   fixed = fixed.replace(/<br\s*\/?>/gi, '\n')
   fixed = fixed.replace(/<\|im_start\|>.*?(?=\n|$)/g, '')
   fixed = fixed.replace(/<\|im_end\|>/g, '')
   fixed = fixed.replace(/<\|endoftext\|>/g, '')
   fixed = fixed.replace(/\|endoftext\|>/g, '')
-  fixed = fixed.replace(/<\/?think>/g, '')
   fixed = fixed.replace(/<think>[\s\S]*?<\/think>/g, '')
+  fixed = fixed.replace(/<\/?think>/g, '')
   fixed = fixed.replace(/<\/?assistant>/g, '')
   fixed = fixed.replace(/<\/?user>/g, '')
   fixed = fixed.replace(/<\/?system>/g, '')
+  return fixed
+}
 
-  fixed = fixed.replace(/([^\n])(#{1,6})/g, '$1\n\n$2')
+function normalizeTextSegment(content: string): string {
+  let fixed = cleanupModelArtifacts(content.replace(/\r\n/g, '\n').replace(/\r/g, '\n'))
+
+  if (!fixed.trim()) {
+    return ''
+  }
+
+  if (/(实施路线图（简化版）|实施路径|实施步骤|步骤规划|第\d+步|MVP 核心功能验证|模块架构深化|接口与前端交互设计|UI 与交互优化|测试与迭代优化)/.test(fixed)) {
+    fixed = normalizeStepSections(fixed)
+  }
+
+  if (/(当前知识库的核心观点总结如下|最关键的结论总结如下|核心观点总结如下|核心结论如下|结论总结|关键决策点|下一步行动|下一步建议)/.test(fixed)) {
+    fixed = normalizeSummarySections(fixed)
+  }
+
+  if (/问题\s*\|\s*解决方案/.test(fixed)) {
+    fixed = normalizePainSolutionSection(fixed)
+  }
+
+  if (/(模块\s*\|\s*交付物\s*\|\s*基础功能|阶段\s*\|\s*任务\s*\|\s*优先级)/.test(fixed)) {
+    fixed = normalizeDeliverableSection(fixed)
+  }
+
+  fixed = fixed.replace(/([^\n])(#{1,6})(?=[^\s#])/g, '$1\n\n$2')
   fixed = fixed.replace(/^(#{1,6})([^\s#])/gm, '$1 $2')
 
-  fixed = fixed.replace(/\|\s*[-:]+[-| :]*\|/g, (match) => `\n${match}\n`)
-  fixed = fixed.replace(/([^\n])(\|[^\n]+\|)/g, '$1\n$2')
-  fixed = fixed.replace(/(\|[^\n]+\|)([^\n])/g, '$1\n$2')
+  if (/\|/.test(fixed)) {
+    fixed = fixed.replace(/\|\s*[-:]+[-| :]*\|/g, (match) => `\n${match}\n`)
+    fixed = fixed.replace(/([^\n])(\|[^\n]+\|)/g, '$1\n$2')
+    fixed = fixed.replace(/(\|[^\n]+\|)([^\n])/g, '$1\n$2')
+  }
 
-  fixed = fixed.replace(
-    /(^|\n)((?:[^\n]*[├└│].*(?:\n|$))+)/g,
-    (_, prefix, treeBlock: string) => `${prefix}\n\n\
-${treeBlock.trimEnd()}\n\
-`,
-  )
+  if (/[├└│]/.test(fixed)) {
+    fixed = fixed.replace(
+      /(^|\n)((?:[^\n]*[├└│].*(?:\n|$))+)/g,
+      (_, prefix, treeBlock: string) => `${prefix}\n\n${treeBlock.trimEnd()}\n`,
+    )
+  }
 
-  fixed = fixed.replace(/([^\n])\s+(\d+[.)、]\s*)/g, '$1\n$2')
-  fixed = fixed.replace(/([^\n])\s+(第[一二三四五六七八九十]+阶段[:：])/g, '$1\n\n$2')
-  fixed = fixed.replace(/([^\n])\s+([-*+])\s+/g, '$1\n$2 ')
-  fixed = fixed.replace(/([^\n])\s+-\s+(?=[^\n：:]+[：:])/g, '$1\n- ')
+  if (/\d+[.)、]/.test(fixed) || /第[一二三四五六七八九十]+阶段[:：]/.test(fixed)) {
+    fixed = fixed.replace(/([^\n])\s+(\d+[.)、]\s*)/g, '$1\n$2')
+    fixed = fixed.replace(/([^\n])\s+(第[一二三四五六七八九十]+阶段[:：])/g, '$1\n\n$2')
+    fixed = fixed.replace(/-\s*(\d+[.)、])/g, '$1')
+  }
 
-  fixed = fixed.replace(/[✅☑️✔🟩🟦🔹🔸•📌✨📍🛠️📦🚀🎯💡🔥⭐👉🔧📝📣⚠️❗❓]/g, '')
-  fixed = fixed.replace(/-\s*(\d+[.)、])/g, '$1')
+  if (/\s+[-*+]\s+/.test(fixed) || /\n-\s+(?=[^\n：:]+[：:])/.test(fixed)) {
+    fixed = fixed.replace(/([^\n])\s+([-*+])\s+/g, '$1\n$2 ')
+    fixed = fixed.replace(/([^\n])\s+-\s+(?=[^\n：:]+[：:])/g, '$1\n- ')
+  }
+
+  if (/[✅☑️✔🟩🟦🔹🔸•📌✨📍🛠️📦🚀🎯💡🔥⭐👉🔧📝📣⚠️❗❓]/.test(fixed)) {
+    fixed = fixed.replace(/[✅☑️✔🟩🟦🔹🔸•📌✨📍🛠️📦🚀🎯💡🔥⭐👉🔧📝📣⚠️❗❓]/g, '')
+  }
+
   fixed = fixed.replace(/([^\n])\s+(总结|结论|建议|风险|下一步|关键任务|阶段功能目标|理由|备注|关键依赖)[:：]/g, '$1\n\n$2：')
   fixed = fixed.replace(/\s+(---|———+|───+)\s+/g, '\n\n---\n\n')
   fixed = fixed.replace(/([^\n])\s*(---)\s*([\u4e00-\u9fa5A-Za-z0-9])/g, '$1\n\n$2\n\n$3')
@@ -427,20 +534,60 @@ ${treeBlock.trimEnd()}\n\
 
   fixed = fixed.replace(/^[ \t]*:[-]{3,}[ \t]*$/gm, '---')
   fixed = fixed.replace(/^[ \t]*\|?[ :-]{3,}\|?[ \t]*$/gm, '---')
-  fixed = fixed
-    .split('\n')
-    .map((line) => normalizePseudoStructuredLine(line))
-    .filter(Boolean)
-    .join('\n')
+
+  if (/\|/.test(fixed)) {
+    fixed = fixed
+      .split('\n')
+      .map((line) => normalizePseudoStructuredLine(line))
+      .filter(Boolean)
+      .join('\n')
+  }
+
   fixed = renumberOrderedListBlocks(fixed)
   fixed = fixed.replace(/([：:])\s*[-*]\s+/g, '$1 ')
   fixed = fixed.replace(/\n{3,}/g, '\n\n')
   fixed = fixed.replace(/[ \t]+\n/g, '\n')
+
   return fixed.trim()
 }
 
+function normalizeCodeFenceSegment(content: string): string {
+  const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+  if (!normalized) {
+    return ''
+  }
+
+  if (/^```mermaid/i.test(normalized)) {
+    return normalizeMermaidSection(normalized)
+  }
+
+  return normalized
+}
+
+function fixMarkdown(content: string): string {
+  const cached = markdownNormalizationCache.get(content)
+  if (cached !== undefined) {
+    return cached
+  }
+
+  const normalizedInput = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  if (!shouldNormalizeMarkdownContent(normalizedInput)) {
+    return rememberNormalizedMarkdown(content, normalizedInput.trim())
+  }
+
+  const segments = splitMarkdownByCodeFences(normalizedInput)
+  const normalized = (segments.length > 0 ? segments : [{ type: 'text', value: normalizedInput }])
+    .map((segment) => (segment.type === 'code' ? normalizeCodeFenceSegment(segment.value) : normalizeTextSegment(segment.value)))
+    .filter(Boolean)
+    .join('\n\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+  return rememberNormalizedMarkdown(content, normalized)
+}
 
 let mermaidModulePromise: Promise<typeof import('mermaid')> | null = null
+let mermaidInitialized = false
 
 const loadMermaid = async () => {
   if (!mermaidModulePromise) {
@@ -469,11 +616,14 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
     const renderChart = async () => {
       try {
         const mermaid = await loadMermaid()
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: 'loose',
-          theme: 'default',
-        })
+        if (!mermaidInitialized) {
+          mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'loose',
+            theme: 'default',
+          })
+          mermaidInitialized = true
+        }
         const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`
         const { svg: renderedSvg } = await mermaid.render(id, chart)
 
