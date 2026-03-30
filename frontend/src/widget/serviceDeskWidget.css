@@ -134,13 +134,19 @@
   color: rgba(255, 255, 255, 0.8);
 }
 
+.service-desk-markdown {
+  color: #e2e8f0;
+  line-height: 1.8;
+}
+
 .service-desk-markdown p,
 .service-desk-markdown ul,
 .service-desk-markdown ol,
 .service-desk-markdown blockquote,
 .service-desk-markdown h2,
 .service-desk-markdown h3,
-.service-desk-markdown h4 {
+.service-desk-markdown h4,
+.service-desk-markdown table {
   margin: 0 0 10px;
 }
 
@@ -148,6 +154,71 @@
 .service-desk-markdown h3,
 .service-desk-markdown h4 {
   color: #f8fafc;
+}
+
+.service-desk-markdown h2 {
+  padding: 8px 10px;
+  border-left: 3px solid rgba(148, 163, 184, 0.8);
+  background: rgba(148, 163, 184, 0.12);
+  border-radius: 8px;
+}
+
+.service-desk-markdown strong {
+  color: #ffffff;
+}
+
+.service-desk-markdown code {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 6px;
+  padding: 1px 6px;
+  color: #e2e8f0;
+}
+
+.service-desk-markdown pre {
+  background: rgba(2, 6, 23, 0.9);
+  border-radius: 10px;
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+
+.service-desk-markdown pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.service-desk-markdown ul,
+.service-desk-markdown ol {
+  padding-left: 20px;
+}
+
+.service-desk-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.service-desk-markdown th,
+.service-desk-markdown td {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.service-desk-markdown th {
+  color: #f8fafc;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.service-desk-markdown blockquote {
+  padding: 10px 12px;
+  border-left: 3px solid rgba(148, 163, 184, 0.8);
+  background: rgba(148, 163, 184, 0.08);
+  border-radius: 8px;
 }
 
 .service-desk-plain-text {

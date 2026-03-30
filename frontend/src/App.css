@@ -2288,83 +2288,65 @@
 
 /* ── 基础排版 ── */
 .message-content-markdown {
-  line-height: 1.75;
+  line-height: 1.8;
   font-size: 14px;
-  color: #1e293b;
+  color: #334155;
   word-break: break-word;
 }
 
+.message-content-markdown > :first-child {
+  margin-top: 0;
+}
+
 .message-content-markdown p {
-  margin: 0 0 8px;
-  line-height: 1.7;
+  margin: 0 0 10px;
+  line-height: 1.8;
 }
 
 .message-content-markdown p:last-child {
   margin-bottom: 0;
 }
 
-/* ── 标题层级（整体缩小） ── */
-/* 兼容模型偶尔输出 h1 的情况，避免标题过大 */
-.message-content-markdown h1 {
-  font-size: 1.1em;
-  font-weight: 700;
-  color: #1e293b;
-  border-left: 4px solid #818cf8;
-  background: linear-gradient(to right, rgba(99, 102, 241, 0.08), transparent);
-  padding: 5px 0 5px 12px;
-  margin: 14px 0 8px;
-  border-radius: 0 8px 8px 0;
-}
-
-.message-content-markdown h1:first-child {
-  margin-top: 0;
-}
-
-/* h2：主标题 */
+/* ── 标题层级：收敛成正式文档风格 ── */
+.message-content-markdown h1,
 .message-content-markdown h2 {
-  font-size: 1.02em;
+  font-size: 1em;
   font-weight: 700;
-  color: #1e293b;
-  border-left: 4px solid #6366f1;
-  background: linear-gradient(to right, rgba(99, 102, 241, 0.08), transparent);
-  padding: 5px 0 5px 12px;
-  margin: 14px 0 6px;
-  border-radius: 0 8px 8px 0;
-  letter-spacing: 0;
+  color: #0f172a;
+  border-left: 3px solid #94a3b8;
+  background: #f8fafc;
+  padding: 8px 12px;
+  margin: 16px 0 10px;
+  border-radius: 8px;
 }
 
-/* h2 首个不加顶部间距 */
+.message-content-markdown h1:first-child,
 .message-content-markdown h2:first-child {
   margin-top: 0;
 }
 
-/* h3：小节 */
 .message-content-markdown h3 {
   font-size: 0.96em;
-  font-weight: 650;
-  color: #4f46e5;
-  border-left: 3px solid #a5b4fc;
-  padding-left: 8px;
-  margin: 10px 0 4px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 14px 0 8px;
 }
 
-/* h4+：细分标题 */
 .message-content-markdown h4,
 .message-content-markdown h5,
 .message-content-markdown h6 {
-  font-size: 0.88em;
+  font-size: 0.9em;
   font-weight: 600;
-  color: #4b5563;
-  margin: 8px 0 4px;
+  color: #475569;
+  margin: 10px 0 6px;
 }
 
-/* ── 强调 ── */
+/* ── 强调：减少花哨高亮 ── */
 .message-content-markdown strong {
   font-weight: 700;
-  color: #4338ca;
-  background: rgba(99, 102, 241, 0.08);
-  padding: 1px 4px;
-  border-radius: 3px;
+  color: #0f172a;
+  background: transparent;
+  padding: 0;
 }
 
 .message-content-markdown em {
@@ -2372,85 +2354,76 @@
   color: #64748b;
 }
 
-/* ── 列表：去除装饰性图标，保留朴素文档感 ── */
+/* ── 列表：恢复标准企业文档风格 ── */
 .message-content-markdown ul {
-  list-style: none;
-  padding-left: 0;
-  margin: 8px 0 12px;
-}
-
-.message-content-markdown ul > li {
-  margin-bottom: 8px;
-  line-height: 1.8;
-}
-
-.message-content-markdown ul > li::before {
-  content: none;
-}
-
-/* ── 有序列表：使用普通数字，不使用圆形编号图标 ── */
-.message-content-markdown ol {
-  list-style: decimal;
+  list-style: disc;
   padding-left: 22px;
-  margin: 8px 0 12px;
+  margin: 8px 0 14px;
 }
 
+.message-content-markdown ul > li,
 .message-content-markdown ol > li {
-  padding-left: 0;
   margin-bottom: 8px;
   line-height: 1.8;
+  color: #334155;
 }
 
+.message-content-markdown ul > li::before,
 .message-content-markdown ol > li::before {
   content: none;
 }
 
+.message-content-markdown ol {
+  list-style: decimal;
+  padding-left: 22px;
+  margin: 8px 0 14px;
+}
+
 .message-content-markdown li::marker {
   color: #64748b;
-  font-weight: 500;
+  font-weight: 600;
 }
 
-/* 嵌套列表缩进 */
 .message-content-markdown li > ul,
 .message-content-markdown li > ol {
-  margin: 4px 0 4px 4px;
+  margin: 6px 0 6px 4px;
 }
 
-/* ── 引用块：渐变背景 + 彩色边框 ── */
+/* ── 引用块：简洁提示风格 ── */
 .message-content-markdown blockquote {
-  margin: 8px 0;
-  padding: 10px 16px;
-  border-left: 4px solid #818cf8;
-  background: linear-gradient(to right, #f5f3ff, #faf5ff);
-  border-radius: 0 10px 10px 0;
-  color: #374151;
-  font-style: normal;
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-left: 3px solid #cbd5e1;
+  background: #f8fafc;
+  border-radius: 8px;
+  color: #475569;
 }
 
 .message-content-markdown blockquote p {
   margin: 0;
-  font-style: italic;
 }
 
-/* ── 行内代码 ── */
+/* ── 行内代码：弱化 token 感，保留专业性 ── */
 .md-inline-code {
-  background: #f1f5f9;
+  background: #f8fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 4px;
+  border-radius: 6px;
   padding: 1px 6px;
   font-family: 'SF Mono', 'Fira Code', 'Roboto Mono', monospace;
   font-size: 0.88em;
-  color: #dc2626;
+  color: #334155;
+  white-space: break-spaces;
+  word-break: break-word;
 }
 
 /* ── 代码块 ── */
 .md-code-block {
   margin: 12px 0;
-  background: #1e293b;
+  background: #0f172a;
   border-radius: 10px;
   overflow-x: auto;
   max-width: 100%;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  box-shadow: none;
 }
 
 .md-code-block code {
@@ -2459,20 +2432,20 @@
   padding: 14px 18px;
   font-family: 'SF Mono', 'Fira Code', 'Roboto Mono', monospace;
   font-size: 13px;
-  line-height: 1.65;
+  line-height: 1.7;
   color: #e2e8f0;
   white-space: pre;
 }
 
 /* ── 链接 ── */
 .md-link {
-  color: #6366f1;
+  color: #2563eb;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .md-link:hover {
-  color: #4338ca;
+  color: #1d4ed8;
 }
 
 .md-table-wrap {
@@ -2481,34 +2454,36 @@
   margin: 12px 0;
 }
 
-/* ── 表格 ── */
+/* ── 表格：正式说明文风格 ── */
 .message-content-markdown table {
   width: 100%;
-  min-width: max-content;
+  min-width: 520px;
   border-collapse: collapse;
   margin: 0;
   font-size: 13px;
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 0 0 1px #e2e8f0;
+  background: #ffffff;
 }
 
 .message-content-markdown th {
-  background: linear-gradient(135deg, #f1f5f9, #eef2ff);
-  padding: 9px 13px;
+  background: #f8fafc;
+  padding: 10px 12px;
   text-align: left;
   font-weight: 700;
-  color: #1e293b;
-  border-bottom: 2px solid #e2e8f0;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: #0f172a;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .message-content-markdown td {
-  padding: 8px 13px;
+  padding: 10px 12px;
   border-bottom: 1px solid #f1f5f9;
-  color: #374151;
+  color: #334155;
+  vertical-align: top;
 }
 
 .message-content-markdown tr:last-child td {
@@ -2516,7 +2491,7 @@
 }
 
 .message-content-markdown tr:nth-child(even) td {
-  background: #fafbff;
+  background: #fcfcfd;
 }
 
 .md-mermaid {
@@ -2543,8 +2518,8 @@
 }
 
 .md-mermaid-loading {
-  background: #eef2ff;
-  color: #4338ca;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .md-mermaid-error {
@@ -2559,8 +2534,8 @@
 /* ── 分隔线 ── */
 .message-content-markdown hr {
   border: none;
-  border-top: 1.5px solid #e2e8f0;
-  margin: 16px 0;
+  border-top: 1px solid #e2e8f0;
+  margin: 18px 0;
 }
 
 /* =====================
