@@ -38,8 +38,10 @@ export function MessageList({
 }: MessageListProps) {
   const conversationKey = useMemo(() => messages[0]?.conversationId ?? 'empty', [messages])
   const [visibleCount, setVisibleCount] = useState(() => Math.min(messages.length, WIDGET_MESSAGE_WINDOW_SIZE))
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const previousConversationKeyRef = useRef(conversationKey)
   const previousMessageLengthRef = useRef(messages.length)
+  const copyTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     const previousConversationKey = previousConversationKeyRef.current
@@ -69,6 +71,29 @@ export function MessageList({
   const handleLoadMore = useCallback(() => {
     setVisibleCount((prev) => Math.min(messages.length, prev + WIDGET_MESSAGE_LOAD_MORE_STEP))
   }, [messages.length])
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        window.clearTimeout(copyTimerRef.current)
+      }
+    }
+  }, [])
+
+  const handleCopy = useCallback(async (messageId: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopiedMessageId(messageId)
+      if (copyTimerRef.current) {
+        window.clearTimeout(copyTimerRef.current)
+      }
+      copyTimerRef.current = window.setTimeout(() => {
+        setCopiedMessageId((current) => (current === messageId ? null : current))
+      }, 1600)
+    } catch {
+      // 静默失败，避免打断当前问答流程
+    }
+  }, [])
 
   if (messages.length === 0) {
     return (
@@ -134,20 +159,15 @@ export function MessageList({
                 </div>
               ) : null}
 
-              {isAssistant && summary ? (
-                <div className="service-desk-feedback-summary">
-                  <span>👍 {summary.likeCount}</span>
-                  <span>👎 {summary.dislikeCount}</span>
-                  {summary.status ? <span className={`status-${summary.status}`}>{summary.status}</span> : null}
-                </div>
-              ) : null}
             </div>
             {isAssistant ? (
               <FeedbackComposer
                 messageId={message.id}
                 hidden={!canCollectFeedback}
                 disabled={isReplyStreaming}
+                copied={copiedMessageId === message.id}
                 summary={summary}
+                onCopy={() => void handleCopy(message.id, message.content)}
                 onLike={() => onLike(message)}
                 onDislike={(reason, feedbackText) => onDislike(message, reason, feedbackText)}
               />

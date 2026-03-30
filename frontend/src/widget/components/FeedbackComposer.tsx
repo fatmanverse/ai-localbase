@@ -5,7 +5,9 @@ interface FeedbackComposerProps {
   messageId: string
   disabled?: boolean
   hidden?: boolean
+  copied?: boolean
   summary?: ServiceDeskFeedbackSummary
+  onCopy?: () => void
   onLike: () => Promise<void>
   onDislike: (reason: string, feedbackText: string) => Promise<void>
 }
@@ -32,7 +34,9 @@ export function FeedbackComposer({
   messageId,
   disabled,
   hidden,
+  copied,
   summary,
+  onCopy,
   onLike,
   onDislike,
 }: FeedbackComposerProps) {
@@ -87,29 +91,43 @@ export function FeedbackComposer({
           </div>
         ) : null}
 
-        {!hasSubmittedFeedback ? (
-          <div className="feedback-actions compact">
+        <div className="feedback-actions compact">
+          {!hasSubmittedFeedback ? (
+            <>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void handleLike()}
+                aria-label="这条回复解决了问题"
+                title={loading ? '提交中...' : '这条回复解决了问题'}
+              >
+                👍
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                className={`secondary ${expanded ? 'active' : ''}`.trim()}
+                onClick={() => setExpanded((prev) => !prev)}
+                aria-label="这条回复还不够准确"
+                title="这条回复还不够准确"
+              >
+                👎
+              </button>
+            </>
+          ) : null}
+          {onCopy ? (
             <button
               type="button"
               disabled={loading}
-              onClick={() => void handleLike()}
-              aria-label="这条回复解决了问题"
-              title={loading ? '提交中...' : '这条回复解决了问题'}
+              className="ghost"
+              onClick={onCopy}
+              aria-label="复制消息"
+              title={copied ? '已复制' : '复制消息'}
             >
-              👍
+              {copied ? '✓' : '⧉'}
             </button>
-            <button
-              type="button"
-              disabled={loading}
-              className={`secondary ${expanded ? 'active' : ''}`.trim()}
-              onClick={() => setExpanded((prev) => !prev)}
-              aria-label="这条回复还不够准确"
-              title="这条回复还不够准确"
-            >
-              👎
-            </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
 
       {!hasSubmittedFeedback && expanded ? (

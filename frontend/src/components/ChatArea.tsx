@@ -285,18 +285,6 @@ const MessageBubble = memo(function MessageBubble({
 
   return (
     <div className={`message ${message.role}`}>
-      {!isStreamingPlaceholder && hasMessageContent ? (
-        <button
-          type="button"
-          className="message-copy-btn"
-          onClick={() => onCopyMessage(message.id, message.content)}
-          aria-label="复制消息"
-          title={copied ? '已复制' : '复制消息'}
-        >
-          {copied ? '✓' : '⧉'}
-        </button>
-      ) : null}
-
       <div className={`message-content ${isStreamingPlaceholder ? 'message-content-thinking' : ''} ${message.role === 'assistant' ? 'message-content-markdown' : ''}`.trim()}>
         {degradedMetadata ? (
           <div className="message-degraded-banner" role="status" aria-live="polite">
@@ -338,92 +326,106 @@ const MessageBubble = memo(function MessageBubble({
         </div>
       ) : null}
 
-      {canCollectFeedback ? (
-        <div className={`message-feedback-box ${isFeedbackExpanded ? 'is-expanded' : ''}`.trim()}>
-          <div className="message-feedback-inline-row">
-            {(feedbackSummary?.likeCount ?? 0) > 0 || (feedbackSummary?.dislikeCount ?? 0) > 0 ? (
-              <div className="message-feedback-summary">
-                <span>👍 {feedbackSummary?.likeCount ?? 0}</span>
-                <span>👎 {feedbackSummary?.dislikeCount ?? 0}</span>
-              </div>
-            ) : null}
+      <div className="message-tail">
+        <div className="message-time">{formatTime(message.timestamp)}</div>
 
-            {feedbackNotice ? (
-              <div className={`message-feedback-notice ${hasSubmittedFeedback ? 'is-muted' : ''}`.trim()}>
-                {feedbackNotice}
-              </div>
-            ) : null}
+        {canCollectFeedback ? (
+          <div className={`message-feedback-box ${isFeedbackExpanded ? 'is-expanded' : ''}`.trim()}>
+            <div className="message-feedback-inline-row">
+              {(feedbackSummary?.likeCount ?? 0) > 0 || (feedbackSummary?.dislikeCount ?? 0) > 0 ? (
+                <div className="message-feedback-summary">
+                  <span>👍 {feedbackSummary?.likeCount ?? 0}</span>
+                  <span>👎 {feedbackSummary?.dislikeCount ?? 0}</span>
+                </div>
+              ) : null}
 
-            {!hasSubmittedFeedback ? (
-              <div className="message-feedback-actions compact">
-                <button
-                  type="button"
-                  className="message-feedback-action icon primary"
+              {feedbackNotice ? (
+                <div className={`message-feedback-notice ${hasSubmittedFeedback ? 'is-muted' : ''}`.trim()}>
+                  {feedbackNotice}
+                </div>
+              ) : null}
+
+              {!hasSubmittedFeedback ? (
+                <div className="message-feedback-actions compact">
+                  <button
+                    type="button"
+                    className="message-feedback-action icon primary"
+                    disabled={isFeedbackSubmitting}
+                    onClick={() => onSubmitLikeFeedback(message.id)}
+                    aria-label="这条回复解决了问题"
+                    title={isFeedbackSubmitting ? '提交中...' : '这条回复解决了问题'}
+                  >
+                    👍
+                  </button>
+                  <button
+                    type="button"
+                    className={`message-feedback-action icon secondary ${isFeedbackExpanded ? 'is-active' : ''}`.trim()}
+                    disabled={isFeedbackSubmitting}
+                    onClick={() => onToggleFeedback(message.id)}
+                    aria-label="这条回复还不够准确"
+                    title="这条回复还不够准确"
+                  >
+                    👎
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            {!hasSubmittedFeedback && isFeedbackExpanded ? (
+              <div className="message-feedback-panel">
+                <div className="message-feedback-reasons">
+                  {normalChatFeedbackReasonOptions.map((reason) => (
+                    <button
+                      key={reason}
+                      type="button"
+                      className={`message-feedback-reason ${selectedFeedbackReason === reason ? 'selected' : ''}`.trim()}
+                      disabled={isFeedbackSubmitting}
+                      onClick={() => onSelectFeedbackReason(message.id, reason)}
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  rows={3}
+                  value={feedbackText}
                   disabled={isFeedbackSubmitting}
-                  onClick={() => onSubmitLikeFeedback(message.id)}
-                  aria-label="这条回复解决了问题"
-                  title={isFeedbackSubmitting ? '提交中...' : '这条回复解决了问题'}
-                >
-                  👍
-                </button>
-                <button
-                  type="button"
-                  className={`message-feedback-action icon secondary ${isFeedbackExpanded ? 'is-active' : ''}`.trim()}
-                  disabled={isFeedbackSubmitting}
-                  onClick={() => onToggleFeedback(message.id)}
-                  aria-label="这条回复还不够准确"
-                  title="这条回复还不够准确"
-                >
-                  👎
-                </button>
+                  placeholder="如果你愿意，可以补充一下实际卡住的点，我后面会优先优化这类回答。"
+                  onChange={(event) => onFeedbackTextChange(message.id, event.target.value)}
+                />
+                <div className="message-feedback-submit-row">
+                  <span>选好原因后提交，我会把这类问题归到后续优化清单里。</span>
+                  <div className="message-feedback-submit-actions">
+                    <button type="button" className="message-feedback-action secondary" disabled={isFeedbackSubmitting} onClick={onCancelFeedback}>
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      className="message-feedback-action primary"
+                      disabled={isFeedbackSubmitting}
+                      onClick={() => onSubmitDislikeFeedback(message.id)}
+                    >
+                      {isFeedbackSubmitting ? '提交中...' : '提交反馈'}
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : null}
           </div>
+        ) : null}
 
-          {!hasSubmittedFeedback && isFeedbackExpanded ? (
-            <div className="message-feedback-panel">
-              <div className="message-feedback-reasons">
-                {normalChatFeedbackReasonOptions.map((reason) => (
-                  <button
-                    key={reason}
-                    type="button"
-                    className={`message-feedback-reason ${selectedFeedbackReason === reason ? 'selected' : ''}`.trim()}
-                    disabled={isFeedbackSubmitting}
-                    onClick={() => onSelectFeedbackReason(message.id, reason)}
-                  >
-                    {reason}
-                  </button>
-                ))}
-              </div>
-              <textarea
-                rows={3}
-                value={feedbackText}
-                disabled={isFeedbackSubmitting}
-                placeholder="如果你愿意，可以补充一下实际卡住的点，我后面会优先优化这类回答。"
-                onChange={(event) => onFeedbackTextChange(message.id, event.target.value)}
-              />
-              <div className="message-feedback-submit-row">
-                <span>选好原因后提交，我会把这类问题归到后续优化清单里。</span>
-                <div className="message-feedback-submit-actions">
-                  <button type="button" className="message-feedback-action secondary" disabled={isFeedbackSubmitting} onClick={onCancelFeedback}>
-                    取消
-                  </button>
-                  <button
-                    type="button"
-                    className="message-feedback-action primary"
-                    disabled={isFeedbackSubmitting}
-                    onClick={() => onSubmitDislikeFeedback(message.id)}
-                  >
-                    {isFeedbackSubmitting ? '提交中...' : '提交反馈'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="message-time">{formatTime(message.timestamp)}</div>
+        {!isStreamingPlaceholder && hasMessageContent ? (
+          <button
+            type="button"
+            className="message-tail-icon-btn"
+            onClick={() => onCopyMessage(message.id, message.content)}
+            aria-label="复制消息"
+            title={copied ? '已复制' : '复制消息'}
+          >
+            {copied ? '✓' : '⧉'}
+          </button>
+        ) : null}
+      </div>
     </div>
   )
 }, areMessageBubblePropsEqual)

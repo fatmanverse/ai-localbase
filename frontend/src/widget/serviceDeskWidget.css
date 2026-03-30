@@ -433,6 +433,14 @@
   color: #e2e8f0;
 }
 
+.feedback-actions.compact button.ghost {
+  background: rgba(15, 23, 42, 0.76);
+}
+
+.feedback-actions.compact button.ghost:hover:not(:disabled) {
+  background: rgba(30, 41, 59, 0.96);
+}
+
 .feedback-panel {
   margin-top: 10px;
   padding: 14px;

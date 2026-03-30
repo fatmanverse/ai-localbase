@@ -1892,21 +1892,39 @@
   40% { transform: scale(1); opacity: 1; }
 }
 
-.message-time {
-  font-size: 11px;
-  color: #cbd5e1;
-  padding: 0 4px;
+.message-tail {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.message-copy-btn {
-  position: absolute;
-  right: 8px;
-  top: 8px;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: rgba(255, 255, 255, 0.92);
+.message.assistant .message-tail {
+  justify-content: flex-start;
+}
+
+.message.user .message-tail {
+  justify-content: flex-end;
+}
+
+.message-time {
+  font-size: 11px;
+  color: #94a3b8;
+  padding: 6px 4px 0;
+  white-space: nowrap;
+}
+
+.message.user .message-time {
+  color: rgba(99, 102, 241, 0.72);
+}
+
+.message-tail-icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid #dbe3f0;
+  background: #ffffff;
   color: #64748b;
   font-size: 14px;
   line-height: 1;
@@ -1914,21 +1932,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
-  transform: translateY(-2px);
-  pointer-events: none;
-  transition: opacity 0.18s ease, transform 0.18s ease, background 0.18s ease;
+  transition: all 0.18s ease;
 }
 
-.message:hover .message-copy-btn,
-.message-copy-btn:focus-visible {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-}
-
-.message-copy-btn:hover {
+.message-tail-icon-btn:hover,
+.message-tail-icon-btn:focus-visible {
   background: #eef2ff;
+  border-color: #c7d2fe;
   color: #4338ca;
 }
 
@@ -3000,8 +3010,8 @@
 }
 
 .message-feedback-box {
-  margin-top: 8px;
-  width: 100%;
+  flex: 1 1 220px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -3009,6 +3019,10 @@
   contain: layout paint style;
   content-visibility: auto;
   contain-intrinsic-size: 120px;
+}
+
+.message-feedback-box.is-expanded {
+  flex-basis: 100%;
 }
 
 .message-feedback-inline-row {
