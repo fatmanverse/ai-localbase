@@ -110,6 +110,8 @@ interface ChatComposerProps {
   onSubmit: () => void
 }
 
+type ChatRelatedImages = NonNullable<NonNullable<Conversation['messages'][number]['metadata']>['relatedImages']>
+
 const normalChatFeedbackReasonOptions = [
   '答非所问',
   '内容不准确',
@@ -166,13 +168,20 @@ const describeFeedbackSummary = (summary?: MessageFeedbackSummary): string => {
   return ''
 }
 
-const formatTime = (value: string) =>
-  new Date(value).toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+const chatTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  hour: '2-digit',
+  minute: '2-digit',
+})
 
-const buildRelatedImagesSignature = (images: NonNullable<Conversation['messages'][number]['metadata']>['relatedImages'] | undefined) =>
+const formatTime = (value: string) => {
+  try {
+    return chatTimeFormatter.format(new Date(value))
+  } catch {
+    return value
+  }
+}
+
+const buildRelatedImagesSignature = (images: ChatRelatedImages | undefined) =>
   (images ?? [])
     .map((image) => `${image.id}|${image.publicUrl ?? ''}|${image.classification ?? ''}|${image.description ?? ''}`)
     .join(';')
@@ -319,6 +328,46 @@ const WelcomeState = memo(function WelcomeState({ welcomeMessage, conversationDo
   )
 })
 
+const areRelatedImagesEqual = (
+  prev: ChatRelatedImages | undefined,
+  next: ChatRelatedImages | undefined,
+) => buildRelatedImagesSignature(prev) === buildRelatedImagesSignature(next)
+
+const RelatedImagesBlock = memo(function RelatedImagesBlock({
+  images,
+}: {
+  images: ChatRelatedImages
+}) {
+  return (
+    <div className="message-related-images">
+      <div className="message-related-images-title">相关图片</div>
+      <div className="message-related-image-grid">
+        {images.map((image) => (
+          <div key={image.id} className="message-related-image-card">
+            {image.publicUrl ? (
+              <a
+                href={image.publicUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="message-related-image-link"
+                title="查看原图"
+              >
+                <img src={image.publicUrl} alt={image.description || image.documentName || image.id} loading="lazy" decoding="async" fetchPriority="low" />
+                <span className="message-related-image-view-tag">查看大图</span>
+              </a>
+            ) : null}
+            <div className="message-related-image-meta">
+              <strong>{image.documentName || '相关图片'}</strong>
+              {image.classification ? <span>{image.classification}</span> : null}
+              {image.description ? <p>{image.description}</p> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}, (prev, next) => areRelatedImagesEqual(prev.images, next.images))
+
 const MessageBubble = memo(function MessageBubble({
   message,
   isStreamingPlaceholder,
@@ -356,7 +405,7 @@ const MessageBubble = memo(function MessageBubble({
         ) : null}
 
         {isStreamingPlaceholder ? (
-          <div className="thinking-indicator" aria-label="AI 正在思考">
+          <div className="thinking-indicator" aria-label="正在整理答复">
             <span className="thinking-dot" />
             <span className="thinking-dot" />
             <span className="thinking-dot" />
@@ -372,34 +421,7 @@ const MessageBubble = memo(function MessageBubble({
         )}
       </div>
 
-      {message.role === 'assistant' && relatedImages.length > 0 ? (
-        <div className="message-related-images">
-          <div className="message-related-images-title">相关图片</div>
-          <div className="message-related-image-grid">
-            {relatedImages.map((image) => (
-              <div key={image.id} className="message-related-image-card">
-                {image.publicUrl ? (
-                  <a
-                    href={image.publicUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="message-related-image-link"
-                    title="查看原图"
-                  >
-                    <img src={image.publicUrl} alt={image.description || image.documentName || image.id} loading="lazy" decoding="async" fetchPriority="low" />
-                    <span className="message-related-image-view-tag">查看大图</span>
-                  </a>
-                ) : null}
-                <div className="message-related-image-meta">
-                  <strong>{image.documentName || '相关图片'}</strong>
-                  {image.classification ? <span>{image.classification}</span> : null}
-                  {image.description ? <p>{image.description}</p> : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
+      {message.role === 'assistant' && relatedImages.length > 0 ? <RelatedImagesBlock images={relatedImages} /> : null}
 
       <div className="message-tail">
         <div className="message-time">{formatTime(message.timestamp)}</div>

@@ -26,14 +26,16 @@ interface ServiceDeskMessageRowProps {
   onDislike: (message: ServiceDeskMessage, reason: string, feedbackText: string) => Promise<void>
 }
 
+const widgetTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  hour: '2-digit',
+  minute: '2-digit',
+  month: '2-digit',
+  day: '2-digit',
+})
+
 const formatTime = (value: string) => {
   try {
-    return new Intl.DateTimeFormat('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date(value))
+    return widgetTimeFormatter.format(new Date(value))
   } catch {
     return value
   }
@@ -77,6 +79,44 @@ const areWidgetMessageListPropsEqual = (prev: MessageListProps, next: MessageLis
   prev.onLike === next.onLike &&
   prev.onDislike === next.onDislike
 
+const areRelatedImagesEqual = (prev: ServiceDeskImageReference[] | undefined, next: ServiceDeskImageReference[] | undefined) =>
+  buildRelatedImagesSignature(prev) === buildRelatedImagesSignature(next)
+
+const ServiceDeskRelatedImagesBlock = memo(function ServiceDeskRelatedImagesBlock({
+  images,
+}: {
+  images: ServiceDeskImageReference[]
+}) {
+  return (
+    <div className="service-desk-related-images">
+      <div className="service-desk-related-images-title">相关图片</div>
+      <div className="service-desk-related-image-grid">
+        {images.map((image) => (
+          <div key={image.id} className="service-desk-related-image-card">
+            {image.publicUrl ? (
+              <a
+                href={image.publicUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="service-desk-related-image-link"
+                title="查看原图"
+              >
+                <img src={image.publicUrl} alt={image.description || image.documentName || image.id} loading="lazy" decoding="async" fetchPriority="low" />
+                <span className="service-desk-related-image-view-tag">查看大图</span>
+              </a>
+            ) : null}
+            <div className="service-desk-related-image-meta">
+              <strong>{image.documentName || '图片知识'}</strong>
+              {image.classification ? <span>{image.classification}</span> : null}
+              {image.description ? <p>{image.description}</p> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}, (prev, next) => areRelatedImagesEqual(prev.images, next.images))
+
 const ServiceDeskMessageRow = memo(function ServiceDeskMessageRow({
   message,
   previousMessageRole,
@@ -112,34 +152,7 @@ const ServiceDeskMessageRow = memo(function ServiceDeskMessageRow({
           <div className="service-desk-plain-text">{message.content}</div>
         )}
 
-        {isAssistant && relatedImages.length > 0 ? (
-          <div className="service-desk-related-images">
-            <div className="service-desk-related-images-title">相关图片</div>
-            <div className="service-desk-related-image-grid">
-              {relatedImages.map((image) => (
-                <div key={image.id} className="service-desk-related-image-card">
-                  {image.publicUrl ? (
-                    <a
-                      href={image.publicUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="service-desk-related-image-link"
-                      title="查看原图"
-                    >
-                      <img src={image.publicUrl} alt={image.description || image.documentName || image.id} loading="lazy" decoding="async" fetchPriority="low" />
-                      <span className="service-desk-related-image-view-tag">查看大图</span>
-                    </a>
-                  ) : null}
-                  <div className="service-desk-related-image-meta">
-                    <strong>{image.documentName || '图片知识'}</strong>
-                    {image.classification ? <span>{image.classification}</span> : null}
-                    {image.description ? <p>{image.description}</p> : null}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
+        {isAssistant && relatedImages.length > 0 ? <ServiceDeskRelatedImagesBlock images={relatedImages} /> : null}
       </div>
       {isAssistant ? (
         <FeedbackComposer
