@@ -51,6 +51,14 @@ interface UISettingsSectionProps {
   onSuggestedPromptsChange: (value: string) => void
 }
 
+type SettingsSectionKey = 'chat' | 'embedding' | 'ui'
+
+interface SettingsSectionOption {
+  key: SettingsSectionKey
+  title: string
+  description: string
+}
+
 interface SettingsFooterProps {
   saveError: string | null
   saveSuccess: string | null
@@ -297,6 +305,12 @@ const defaultEmbeddingCandidatesPlaceholder = [
   'bge-m3',
   'openai-compatible | https://api.example.com/v1 | text-embedding-3-small | sk-***',
 ].join('\n')
+
+const settingsSectionOptions: SettingsSectionOption[] = [
+  { key: 'chat', title: '聊天模型', description: '聊天提供方、模型参数、熔断与备用模型' },
+  { key: 'embedding', title: 'Embedding 模型', description: '向量模型、熔断与备用向量模型' },
+  { key: 'ui', title: '界面文案', description: '欢迎语、默认问题建议与对外展示文案' },
+]
 
 interface FieldContainerProps {
   label: ReactNode
@@ -873,6 +887,35 @@ const UISettingsSection = memo(function UISettingsSection({
   )
 })
 
+const SettingsSectionSwitcher = memo(function SettingsSectionSwitcher({
+  activeSection,
+  onChange,
+}: {
+  activeSection: SettingsSectionKey
+  onChange: (section: SettingsSectionKey) => void
+}) {
+  return (
+    <div className="settings-section-switcher" role="tablist" aria-label="设置分区导航">
+      {settingsSectionOptions.map((item) => {
+        const isActive = item.key === activeSection
+        return (
+          <button
+            key={item.key}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            className={`settings-section-switcher-item ${isActive ? 'active' : ''}`.trim()}
+            onClick={() => onChange(item.key)}
+          >
+            <strong>{item.title}</strong>
+            <span>{item.description}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+})
+
 const SettingsFooter = memo(function SettingsFooter({
   saveError,
   saveSuccess,
@@ -940,6 +983,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [suggestedPromptsText, setSuggestedPromptsText] = useState(() =>
     formatPromptLines(config.ui?.suggestedPrompts),
   )
+  const [activeSection, setActiveSection] = useState<SettingsSectionKey>('chat')
 
   const recommendedDraft = useMemo(() => createRecommendedConfig(), [])
 
@@ -1083,6 +1127,57 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setSuggestedPromptsText(formatPromptLines(nextConfig.ui?.suggestedPrompts))
   }, [])
 
+  const renderedSection = useMemo(() => {
+    switch (activeSection) {
+      case 'embedding':
+        return (
+          <EmbeddingSettingsSection
+            embeddingConfig={draftConfig.embedding}
+            embeddingCandidatesText={embeddingCandidatesText}
+            onEmbeddingConfigChange={handleEmbeddingConfigChange}
+            onEmbeddingCircuitBreakerChange={handleEmbeddingCircuitBreakerChange}
+            onEmbeddingCandidatesTextChange={setEmbeddingCandidatesText}
+          />
+        )
+      case 'ui':
+        return (
+          <UISettingsSection
+            welcomeMessageTemplate={draftConfig.ui?.welcomeMessageTemplate ?? ''}
+            suggestedPromptsText={suggestedPromptsText}
+            onWelcomeMessageTemplateChange={handleWelcomeMessageTemplateChange}
+            onSuggestedPromptsChange={handleSuggestedPromptsChange}
+          />
+        )
+      case 'chat':
+      default:
+        return (
+          <ChatSettingsSection
+            chatConfig={draftConfig.chat}
+            chatCandidatesText={chatCandidatesText}
+            onChatConfigChange={handleChatConfigChange}
+            onChatCircuitBreakerChange={handleChatCircuitBreakerChange}
+            onChatCandidatesTextChange={setChatCandidatesText}
+          />
+        )
+    }
+  }, [
+    activeSection,
+    chatCandidatesText,
+    draftConfig.chat,
+    draftConfig.embedding,
+    draftConfig.ui,
+    embeddingCandidatesText,
+    handleChatCircuitBreakerChange,
+    handleChatConfigChange,
+    handleEmbeddingCircuitBreakerChange,
+    handleEmbeddingConfigChange,
+    handleSuggestedPromptsChange,
+    handleWelcomeMessageTemplateChange,
+    suggestedPromptsText,
+  ])
+
+  const activeSectionMeta = settingsSectionOptions.find((item) => item.key === activeSection) ?? settingsSectionOptions[0]
+
   return (
     <div className="settings-modal-backdrop" onClick={onClose}>
       <div className="settings-modal settings-modal-single" onClick={(event) => event.stopPropagation()}>
@@ -1097,28 +1192,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
 
         <div className="settings-modal-scroll">
-          <ChatSettingsSection
-            chatConfig={draftConfig.chat}
-            chatCandidatesText={chatCandidatesText}
-            onChatConfigChange={handleChatConfigChange}
-            onChatCircuitBreakerChange={handleChatCircuitBreakerChange}
-            onChatCandidatesTextChange={setChatCandidatesText}
-          />
+          <SettingsSectionSwitcher activeSection={activeSection} onChange={setActiveSection} />
 
-          <EmbeddingSettingsSection
-            embeddingConfig={draftConfig.embedding}
-            embeddingCandidatesText={embeddingCandidatesText}
-            onEmbeddingConfigChange={handleEmbeddingConfigChange}
-            onEmbeddingCircuitBreakerChange={handleEmbeddingCircuitBreakerChange}
-            onEmbeddingCandidatesTextChange={setEmbeddingCandidatesText}
-          />
+          <div className="settings-section-meta">
+            <strong>{activeSectionMeta.title}</strong>
+            <span>{activeSectionMeta.description}</span>
+          </div>
 
-          <UISettingsSection
-            welcomeMessageTemplate={draftConfig.ui?.welcomeMessageTemplate ?? ''}
-            suggestedPromptsText={suggestedPromptsText}
-            onWelcomeMessageTemplateChange={handleWelcomeMessageTemplateChange}
-            onSuggestedPromptsChange={handleSuggestedPromptsChange}
-          />
+          {renderedSection}
 
           <SettingsFooter
             saveError={saveError}
