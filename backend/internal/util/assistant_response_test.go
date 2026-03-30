@@ -37,3 +37,18 @@ func TestPolishAssistantResponse_PreservesCodeFence(t *testing.T) {
 		t.Fatalf("expected plain text prefix removed, got %q", output)
 	}
 }
+
+func TestPolishAssistantResponse_RemovesSummaryLeadIn(t *testing.T) {
+	input := "总的来说，这个问题已经可以先定位到配置项缺失。\n\n简单来说，先补配置再重试。"
+	output := PolishAssistantResponse(input)
+
+	if strings.Contains(output, "总的来说") {
+		t.Fatalf("expected summary lead-in removed, got %q", output)
+	}
+	if strings.Contains(output, "简单来说") {
+		t.Fatalf("expected simplified lead-in removed, got %q", output)
+	}
+	if !strings.Contains(output, "这个问题已经可以先定位到配置项缺失") {
+		t.Fatalf("expected core sentence preserved, got %q", output)
+	}
+}

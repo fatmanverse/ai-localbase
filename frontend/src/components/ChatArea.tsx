@@ -208,6 +208,42 @@ const areMessageBubblePropsEqual = (prev: MessageBubbleProps, next: MessageBubbl
   prev.feedbackText === next.feedbackText &&
   prev.canCollectFeedback === next.canCollectFeedback
 
+const isMessageScopedMapEqual = (
+  prevMap: Record<string, string>,
+  nextMap: Record<string, string>,
+  messageIds: string[],
+) => {
+  for (const messageId of messageIds) {
+    if ((prevMap[messageId] ?? '') !== (nextMap[messageId] ?? '')) {
+      return false
+    }
+  }
+  return true
+}
+
+const areMessageListPropsEqual = (prev: MessageListProps, next: MessageListProps) => {
+  if (prev.conversationId !== next.conversationId) return false
+  if (prev.messages !== next.messages) return false
+  if (prev.isLoading !== next.isLoading) return false
+  if (prev.copiedMessageId !== next.copiedMessageId) return false
+  if (prev.expandedFeedbackMessageId !== next.expandedFeedbackMessageId) return false
+  if (prev.feedbackSubmittingMessageId !== next.feedbackSubmittingMessageId) return false
+  if (prev.welcomeMessage !== next.welcomeMessage) return false
+  if (prev.conversationDocument !== next.conversationDocument) return false
+  if (prev.onCopyMessage !== next.onCopyMessage) return false
+  if (prev.onSubmitLikeFeedback !== next.onSubmitLikeFeedback) return false
+  if (prev.onToggleFeedback !== next.onToggleFeedback) return false
+  if (prev.onSelectFeedbackReason !== next.onSelectFeedbackReason) return false
+  if (prev.onFeedbackTextChange !== next.onFeedbackTextChange) return false
+  if (prev.onCancelFeedback !== next.onCancelFeedback) return false
+  if (prev.onSubmitDislikeFeedback !== next.onSubmitDislikeFeedback) return false
+
+  const messageIds = next.messages.map((message) => message.id)
+  return isMessageScopedMapEqual(prev.feedbackReasons, next.feedbackReasons, messageIds) &&
+    isMessageScopedMapEqual(prev.feedbackTexts, next.feedbackTexts, messageIds) &&
+    isMessageScopedMapEqual(prev.feedbackNotices, next.feedbackNotices, messageIds)
+}
+
 const ChatTopBar = memo(function ChatTopBar({
   title,
   updatedAt,
@@ -224,7 +260,7 @@ const ChatTopBar = memo(function ChatTopBar({
   return (
     <div className="chat-topbar">
       <div className="chat-topbar-left">
-        <span className="chat-topbar-title">AI Assistant</span>
+        <span className="chat-topbar-title">问题处理支持</span>
         <span className="chat-topbar-sep">·</span>
         <span className="chat-topbar-hint">{title}</span>
         <span className="chat-topbar-sep">·</span>
@@ -589,13 +625,13 @@ const MessageList = memo(function MessageList({
 
       {isLoading && lastMessage?.role !== 'assistant' ? (
         <div className="message assistant loading">
-          <div className="message-content">AI 正在生成回答...</div>
+          <div className="message-content">正在整理答复...</div>
         </div>
       ) : null}
 
     </div>
   )
-})
+}, areMessageListPropsEqual)
 
 const PromptList = memo(function PromptList({ prompts, canAsk, onPromptClick }: PromptListProps) {
   return (

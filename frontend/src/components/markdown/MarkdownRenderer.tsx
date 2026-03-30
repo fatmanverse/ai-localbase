@@ -375,6 +375,20 @@ function normalizeSummarySections(content: string): string {
   return normalized
 }
 
+function normalizeSupportSections(content: string): string {
+  let normalized = content
+
+  normalized = normalized.replace(
+    /(^|\n)(先说结论|结论先说|处理判断|处理建议|处理步骤|排查步骤|原因判断|补充说明|是否已解决)\s*[:：]?\s*/g,
+    '$1### $2\n\n',
+  )
+  normalized = normalized.replace(/(^|\n)(已解决|仍未解决|还没解决|需要继续处理)\s*[:：]?\s*/g, '$1- $2')
+  normalized = normalized.replace(/([^\n])(###\s)/g, '$1\n\n$2')
+  normalized = normalized.replace(/([^\n])(\n-\s*(已解决|仍未解决|还没解决|需要继续处理))/g, '$1\n\n$2')
+
+  return normalized
+}
+
 const MARKDOWN_NORMALIZATION_CACHE_LIMIT = 200
 const markdownNormalizationCache = new Map<string, string>()
 
@@ -599,6 +613,7 @@ function shouldNormalizeMarkdownContent(content: string): boolean {
     /[├└│]/.test(trimmed) ||
     /[✅☑️✔🟩🟦🔹🔸•📌✨📍🛠️📦🚀🎯💡🔥⭐👉🔧📝📣⚠️❗❓]/.test(trimmed) ||
     /(实施路线图（简化版）|实施路径|实施步骤|步骤规划|第\d+步|MVP 核心功能验证|模块架构深化|接口与前端交互设计|UI 与交互优化|测试与迭代优化)/.test(trimmed) ||
+    /(先说结论|结论先说|处理判断|处理建议|处理步骤|排查步骤|原因判断|补充说明|是否已解决)/.test(trimmed) ||
     /(当前知识库的核心观点总结如下|最关键的结论总结如下|核心观点总结如下|核心结论如下|结论总结|关键决策点|下一步行动|下一步建议)/.test(trimmed) ||
     /(模块\s*\|\s*交付物\s*\|\s*基础功能|阶段\s*\|\s*任务\s*\|\s*优先级|问题\s*\|\s*解决方案)/.test(trimmed)
 }
@@ -665,6 +680,10 @@ function normalizeTextSegment(content: string): string {
 
   if (/(当前知识库的核心观点总结如下|最关键的结论总结如下|核心观点总结如下|核心结论如下|结论总结|关键决策点|下一步行动|下一步建议)/.test(fixed)) {
     fixed = normalizeSummarySections(fixed)
+  }
+
+  if (/(先说结论|结论先说|处理判断|处理建议|处理步骤|排查步骤|原因判断|补充说明|是否已解决)/.test(fixed)) {
+    fixed = normalizeSupportSections(fixed)
   }
 
   if (/问题\s*\|\s*解决方案/.test(fixed)) {
