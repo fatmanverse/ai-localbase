@@ -94,6 +94,40 @@
   gap: 18px;
 }
 
+
+.service-desk-message-window-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px dashed rgba(148, 163, 184, 0.28);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.22);
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.service-desk-message-window-load-more {
+  appearance: none;
+  border: 1px solid rgba(147, 197, 253, 0.36);
+  background: rgba(30, 41, 59, 0.72);
+  color: #dbeafe;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.service-desk-message-window-load-more:hover {
+  border-color: rgba(147, 197, 253, 0.56);
+  background: rgba(37, 99, 235, 0.18);
+}
+
 .service-desk-message {
   display: flex;
   flex-direction: column;

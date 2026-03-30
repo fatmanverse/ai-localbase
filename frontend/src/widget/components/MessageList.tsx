@@ -1,6 +1,10 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import MarkdownRenderer from '../../components/markdown/MarkdownRenderer'
 import { FeedbackComposer } from './FeedbackComposer'
 import { ServiceDeskMessage } from '../types'
+
+const WIDGET_MESSAGE_WINDOW_SIZE = 40
+const WIDGET_MESSAGE_LOAD_MORE_STEP = 30
 
 interface MessageListProps {
   messages: ServiceDeskMessage[]
@@ -32,6 +36,39 @@ export function MessageList({
   onLike,
   onDislike,
 }: MessageListProps) {
+  const conversationKey = useMemo(() => messages[0]?.conversationId ?? 'empty', [messages])
+  const [visibleCount, setVisibleCount] = useState(() => Math.min(messages.length, WIDGET_MESSAGE_WINDOW_SIZE))
+  const previousConversationKeyRef = useRef(conversationKey)
+  const previousMessageLengthRef = useRef(messages.length)
+
+  useEffect(() => {
+    const previousConversationKey = previousConversationKeyRef.current
+    const previousMessageLength = previousMessageLengthRef.current
+
+    if (previousConversationKey !== conversationKey) {
+      setVisibleCount(Math.min(messages.length, WIDGET_MESSAGE_WINDOW_SIZE))
+    } else {
+      setVisibleCount((prev) => {
+        if (messages.length <= WIDGET_MESSAGE_WINDOW_SIZE) {
+          return messages.length
+        }
+        if (prev >= previousMessageLength) {
+          return messages.length
+        }
+        return prev
+      })
+    }
+
+    previousConversationKeyRef.current = conversationKey
+    previousMessageLengthRef.current = messages.length
+  }, [conversationKey, messages.length])
+
+  const hiddenCount = Math.max(0, messages.length - visibleCount)
+  const renderedMessages = hiddenCount > 0 ? messages.slice(-visibleCount) : messages
+  const handleLoadMore = useCallback(() => {
+    setVisibleCount((prev) => Math.min(messages.length, prev + WIDGET_MESSAGE_LOAD_MORE_STEP))
+  }, [messages.length])
+
   if (messages.length === 0) {
     return (
       <div className="service-desk-empty-state">
@@ -45,7 +82,15 @@ export function MessageList({
 
   return (
     <div className="service-desk-message-list">
-      {messages.map((message) => {
+      {hiddenCount > 0 ? (
+        <div className="service-desk-message-window-banner">
+          <button type="button" className="service-desk-message-window-load-more" onClick={handleLoadMore}>
+            查看更早的 {Math.min(hiddenCount, WIDGET_MESSAGE_LOAD_MORE_STEP)} 条消息
+          </button>
+          <span>当前已折叠 {hiddenCount} 条较早消息，减少长会话首屏负担。</span>
+        </div>
+      ) : null}
+      {renderedMessages.map((message) => {
         const isAssistant = message.role === 'assistant'
         const relatedImages = message.trace?.relatedImages ?? []
         const summary = message.feedbackSummary

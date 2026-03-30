@@ -70,6 +70,7 @@ interface MessageBubbleProps {
 }
 
 interface MessageListProps {
+  conversationId: string
   messages: Conversation['messages']
   isLoading: boolean
   copiedMessageId: string | null
@@ -121,6 +122,9 @@ const normalChatFeedbackReasonOptions = [
   '图片信息过时',
   '其他',
 ]
+
+const CHAT_MESSAGE_WINDOW_SIZE = 60
+const CHAT_MESSAGE_LOAD_MORE_STEP = 40
 
 const describeFeedbackSummary = (summary?: MessageFeedbackSummary): string => {
   if (!summary?.latestFeedback) {
@@ -423,6 +427,7 @@ const MessageBubble = memo(function MessageBubble({
 }, areMessageBubblePropsEqual)
 
 const MessageList = memo(function MessageList({
+  conversationId,
   messages,
   isLoading,
   copiedMessageId,
@@ -443,16 +448,58 @@ const MessageList = memo(function MessageList({
   conversationDocument,
 }: MessageListProps) {
   const lastMessage = messages.at(-1)
+  const [visibleCount, setVisibleCount] = useState(() => Math.min(messages.length, CHAT_MESSAGE_WINDOW_SIZE))
+  const previousConversationIdRef = useRef(conversationId)
+  const previousMessageLengthRef = useRef(messages.length)
+
+  useEffect(() => {
+    const previousConversationId = previousConversationIdRef.current
+    const previousMessageLength = previousMessageLengthRef.current
+
+    if (previousConversationId !== conversationId) {
+      setVisibleCount(Math.min(messages.length, CHAT_MESSAGE_WINDOW_SIZE))
+    } else {
+      setVisibleCount((prev) => {
+        if (messages.length <= CHAT_MESSAGE_WINDOW_SIZE) {
+          return messages.length
+        }
+        if (prev >= previousMessageLength) {
+          return messages.length
+        }
+        return prev
+      })
+    }
+
+    previousConversationIdRef.current = conversationId
+    previousMessageLengthRef.current = messages.length
+  }, [conversationId, messages.length])
+
+  const hiddenCount = Math.max(0, messages.length - visibleCount)
+  const renderedMessages = hiddenCount > 0 ? messages.slice(-visibleCount) : messages
+
+  const handleLoadMore = useCallback(() => {
+    setVisibleCount((prev) => Math.min(messages.length, prev + CHAT_MESSAGE_LOAD_MORE_STEP))
+  }, [messages.length])
 
   return (
     <div className="messages-container">
+      {hiddenCount > 0 ? (
+        <div className="message-window-banner">
+          <button type="button" className="message-window-load-more" onClick={handleLoadMore}>
+            查看更早的 {Math.min(hiddenCount, CHAT_MESSAGE_LOAD_MORE_STEP)} 条消息
+          </button>
+          <span className="message-window-hint">当前已折叠 {hiddenCount} 条较早消息，避免长会话一次性渲染过重。</span>
+        </div>
+      ) : null}
+
       {messages.length === 0 ? (
         <WelcomeState welcomeMessage={welcomeMessage} conversationDocument={conversationDocument} />
       ) : (
-        messages.map((message, index) => {
+        renderedMessages.map((message, index) => {
+          const actualIndex = hiddenCount + index
           const isStreamingPlaceholder =
             isLoading && message.role === 'assistant' && message.id === lastMessage?.id && !message.content.trim()
-          const previousMessage = messages[index - 1]
+          const previousMessage = messages[actualIndex - 1]
           const feedbackSummary = message.role === 'assistant' ? message.metadata?.feedbackSummary : undefined
           const feedbackNotice = feedbackNotices[message.id] || describeFeedbackSummary(feedbackSummary)
           const hasSubmittedFeedback = Boolean(feedbackSummary?.latestFeedbackId)
@@ -755,6 +802,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       />
 
       <MessageList
+        conversationId={activeConversation.id}
         messages={activeConversation.messages}
         isLoading={isLoading}
         copiedMessageId={copiedMessageId}

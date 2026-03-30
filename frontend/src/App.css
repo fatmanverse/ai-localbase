@@ -1660,6 +1660,43 @@
   contain: layout paint;
 }
 
+
+.message-window-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.message-window-load-more {
+  appearance: none;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #4338ca;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.message-window-load-more:hover {
+  border-color: #818cf8;
+  background: #e0e7ff;
+}
+
+.message-window-hint {
+  font-size: 12px;
+  color: #64748b;
+  text-align: center;
+  line-height: 1.6;
+}
+
 .welcome-message {
   display: flex;
   flex-direction: column;
