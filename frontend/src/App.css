@@ -1931,8 +1931,8 @@
   width: 28px;
   height: 28px;
   border-radius: 999px;
-  border: 1px solid #dbe3f0;
-  background: #ffffff;
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  background: rgba(255, 255, 255, 0.82);
   color: #64748b;
   font-size: 14px;
   line-height: 1;
@@ -1940,7 +1940,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  box-shadow: none;
+  backdrop-filter: blur(6px);
   transition: all 0.18s ease;
 }
 
@@ -3299,10 +3300,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #dbe3f0;
-  background: #ffffff;
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  background: rgba(255, 255, 255, 0.84);
   color: #64748b;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  box-shadow: none;
+  backdrop-filter: blur(6px);
 }
 
 .message-feedback-action.icon.primary:hover:not(:disabled) {
@@ -3353,6 +3355,18 @@
 
 .message-feedback-notice.is-muted {
   color: #64748b;
+}
+
+.message-feedback-notice.is-success {
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+  color: #047857;
+}
+
+.message-feedback-notice.is-error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
 }
 
 .message-feedback-panel {

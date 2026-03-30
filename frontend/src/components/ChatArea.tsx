@@ -56,6 +56,7 @@ interface MessageBubbleProps {
   isReplyStreaming: boolean
   copied: boolean
   feedbackNotice: string
+  feedbackNoticeTone: 'info' | 'success' | 'error' | 'muted'
   hasSubmittedFeedback: boolean
   isFeedbackExpanded: boolean
   isFeedbackSubmitting: boolean
@@ -127,6 +128,26 @@ const normalChatFeedbackReasonOptions = [
 const CHAT_MESSAGE_WINDOW_SIZE = 60
 const CHAT_MESSAGE_LOAD_MORE_STEP = 40
 
+const resolveFeedbackNoticeTone = (notice: string, hasSubmittedFeedback: boolean): 'info' | 'success' | 'error' | 'muted' => {
+  if (!notice) {
+    return 'info'
+  }
+
+  if (notice.startsWith('反馈暂时没有记上')) {
+    return 'error'
+  }
+
+  if (hasSubmittedFeedback) {
+    return 'muted'
+  }
+
+  if (notice.startsWith('已记录')) {
+    return 'success'
+  }
+
+  return 'info'
+}
+
 const describeFeedbackSummary = (summary?: MessageFeedbackSummary): string => {
   if (!summary?.latestFeedback) {
     return ''
@@ -179,6 +200,7 @@ const areMessageBubblePropsEqual = (prev: MessageBubbleProps, next: MessageBubbl
   prev.isReplyStreaming === next.isReplyStreaming &&
   prev.copied === next.copied &&
   prev.feedbackNotice === next.feedbackNotice &&
+  prev.feedbackNoticeTone === next.feedbackNoticeTone &&
   prev.hasSubmittedFeedback === next.hasSubmittedFeedback &&
   prev.isFeedbackExpanded === next.isFeedbackExpanded &&
   prev.isFeedbackSubmitting === next.isFeedbackSubmitting &&
@@ -267,6 +289,7 @@ const MessageBubble = memo(function MessageBubble({
   isReplyStreaming,
   copied,
   feedbackNotice,
+  feedbackNoticeTone,
   hasSubmittedFeedback,
   isFeedbackExpanded,
   isFeedbackSubmitting,
@@ -356,7 +379,7 @@ const MessageBubble = memo(function MessageBubble({
               ) : null}
 
               {feedbackNotice ? (
-                <div className={`message-feedback-notice ${hasSubmittedFeedback ? 'is-muted' : ''}`.trim()}>
+                <div className={`message-feedback-notice ${feedbackNoticeTone === 'muted' ? 'is-muted' : ''} ${feedbackNoticeTone === 'success' ? 'is-success' : ''} ${feedbackNoticeTone === 'error' ? 'is-error' : ''}`.trim()}>
                   {feedbackNotice}
                 </div>
               ) : null}
@@ -533,6 +556,7 @@ const MessageList = memo(function MessageList({
           const feedbackSummary = message.role === 'assistant' ? message.metadata?.feedbackSummary : undefined
           const feedbackNotice = feedbackNotices[message.id] || describeFeedbackSummary(feedbackSummary)
           const hasSubmittedFeedback = Boolean(feedbackSummary?.latestFeedbackId)
+          const feedbackNoticeTone = resolveFeedbackNoticeTone(feedbackNotice, hasSubmittedFeedback)
           const canCollectFeedback =
             message.role === 'assistant' && previousMessage?.role === 'user' && !isReplyStreaming && Boolean(message.content.trim())
 
@@ -544,6 +568,7 @@ const MessageList = memo(function MessageList({
               isReplyStreaming={isReplyStreaming}
               copied={copiedMessageId === message.id}
               feedbackNotice={feedbackNotice}
+              feedbackNoticeTone={feedbackNoticeTone}
               hasSubmittedFeedback={hasSubmittedFeedback}
               isFeedbackExpanded={expandedFeedbackMessageId === message.id}
               isFeedbackSubmitting={feedbackSubmittingMessageId === message.id}
@@ -787,11 +812,14 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       await onSubmitMessageFeedback(messageId, { feedbackType: 'like' })
       setFeedbackNotices((prev) => ({
         ...prev,
-        [messageId]: '已记录：这条回复解决了问题',
+        [messageId]: '已记录：这条回复已解决当前问题',
       }))
       setExpandedFeedbackMessageId((prev) => (prev === messageId ? null : prev))
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : '提交反馈失败，请稍后重试。')
+      setFeedbackNotices((prev) => ({
+        ...prev,
+        [messageId]: '反馈暂时没有记上，请稍后再试。',
+      }))
     } finally {
       setFeedbackSubmittingMessageId(null)
     }
@@ -814,7 +842,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       }))
       setExpandedFeedbackMessageId((prev) => (prev === messageId ? null : prev))
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : '提交反馈失败，请稍后重试。')
+      setFeedbackNotices((prev) => ({
+        ...prev,
+        [messageId]: '反馈暂时没有记上，请稍后再试。',
+      }))
     } finally {
       setFeedbackSubmittingMessageId(null)
     }

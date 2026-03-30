@@ -12,6 +12,26 @@ interface FeedbackComposerProps {
   onDislike: (reason: string, feedbackText: string) => Promise<void>
 }
 
+const resolveNoticeTone = (notice: string, hasSubmittedFeedback: boolean): 'info' | 'success' | 'error' | 'muted' => {
+  if (!notice) {
+    return 'info'
+  }
+
+  if (notice.startsWith('反馈暂时没有记上')) {
+    return 'error'
+  }
+
+  if (hasSubmittedFeedback) {
+    return 'muted'
+  }
+
+  if (notice.startsWith('已记录')) {
+    return 'success'
+  }
+
+  return 'info'
+}
+
 const describeSubmittedFeedback = (summary?: ServiceDeskFeedbackSummary) => {
   if (!summary?.latestFeedback) {
     return ''
@@ -44,15 +64,27 @@ export function FeedbackComposer({
   const [reason, setReason] = useState<string>('没有解决问题')
   const [feedbackText, setFeedbackText] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [localNotice, setLocalNotice] = useState<string | null>(null)
   const loading = disabled || submitting
   const hasSubmittedFeedback = Boolean(summary?.latestFeedbackId)
-  const feedbackNotice = useMemo(() => describeSubmittedFeedback(summary), [summary])
+  const summaryNotice = useMemo(() => describeSubmittedFeedback(summary), [summary])
+  const feedbackNotice = localNotice ?? summaryNotice
+  const noticeTone = resolveNoticeTone(feedbackNotice, hasSubmittedFeedback)
   const hasSummaryStats = (summary?.likeCount ?? 0) > 0 || (summary?.dislikeCount ?? 0) > 0
+
+  useEffect(() => {
+    if (hasSubmittedFeedback) {
+      setLocalNotice(null)
+    }
+  }, [hasSubmittedFeedback])
 
   const handleLike = async () => {
     setSubmitting(true)
+    setLocalNotice(null)
     try {
       await onLike()
+    } catch {
+      setLocalNotice('反馈暂时没有记上，请稍后再试。')
     } finally {
       setSubmitting(false)
     }
@@ -60,10 +92,13 @@ export function FeedbackComposer({
 
   const handleDislike = async () => {
     setSubmitting(true)
+    setLocalNotice(null)
     try {
       await onDislike(reason, feedbackText)
       setExpanded(false)
       setFeedbackText('')
+    } catch {
+      setLocalNotice('反馈暂时没有记上，请稍后再试。')
     } finally {
       setSubmitting(false)
     }
@@ -87,7 +122,7 @@ export function FeedbackComposer({
                 <span>👎 {summary?.dislikeCount ?? 0}</span>
               </div>
             ) : null}
-            {feedbackNotice ? <div className="feedback-compact-notice">{feedbackNotice}</div> : null}
+            {feedbackNotice ? <div className={`feedback-compact-notice ${noticeTone === 'muted' ? 'is-muted' : ''} ${noticeTone === 'success' ? 'is-success' : ''} ${noticeTone === 'error' ? 'is-error' : ''}`.trim()}>{feedbackNotice}</div> : null}
           </div>
         ) : null}
 
