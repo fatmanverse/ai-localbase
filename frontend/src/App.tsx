@@ -399,13 +399,6 @@ interface ReindexKnowledgeBaseResponse {
   message: string
   knowledgeBase: BackendKnowledgeBase
 }
-
-interface ReindexDocumentResponse {
-  message: string
-  knowledgeBaseId: string
-  document: BackendDocumentItem
-}
-
 const normalizeDocument = (document: BackendDocumentItem): DocumentItem => ({
   id: document.id,
   name: document.name,

@@ -228,6 +228,28 @@ const serializeCandidateConfigs = (items: ModelEndpointConfig[] | undefined) =>
 const serializePromptList = (items: string[] | undefined) =>
   (items ?? []).map((item) => item.trim()).filter(Boolean).join('\n')
 
+const getCandidateTextSignature = (value: string) => {
+  const cached = candidateSignatureCache.get(value)
+  if (cached) {
+    return rememberCacheValue(candidateSignatureCache, value, cached)
+  }
+
+  return rememberCacheValue(
+    candidateSignatureCache,
+    value,
+    serializeCandidateConfigs(parseCandidateLines(value)),
+  )
+}
+
+const getPromptTextSignature = (value: string) => {
+  const cached = promptSignatureCache.get(value)
+  if (cached) {
+    return rememberCacheValue(promptSignatureCache, value, cached)
+  }
+
+  return rememberCacheValue(promptSignatureCache, value, serializePromptList(parsePromptLines(value)))
+}
+
 const buildConfigComparisonSignature = (config: AppConfig) =>
   JSON.stringify({
     chat: {

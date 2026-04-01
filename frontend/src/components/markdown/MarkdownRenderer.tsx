@@ -469,7 +469,6 @@ interface MarkdownCodeBlockProps {
   codeContent: string
   language: string
   label: string
-  children: React.ReactNode
   props: Record<string, unknown>
 }
 
@@ -478,7 +477,6 @@ const MarkdownCodeBlock = memo(function MarkdownCodeBlock({
   codeContent,
   language,
   label,
-  children,
   props,
 }: MarkdownCodeBlockProps) {
   const lines = useMemo(() => codeContent.split(/\r?\n/), [codeContent])
@@ -1043,9 +1041,7 @@ const markdownComponents = {
         language={language}
         label={label}
         props={props}
-      >
-        {children}
-      </MarkdownCodeBlock>
+      />
     )
   },
   a({ href, children, ...props }: any) {

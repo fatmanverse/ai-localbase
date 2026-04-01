@@ -1,6 +1,11 @@
 import { memo, useEffect, useState } from 'react'
 import MarkdownRenderer from './MarkdownRenderer'
 
+type IdleCapableWindow = Window & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number
+  cancelIdleCallback?: (id: number) => void
+}
+
 interface DeferredMarkdownRendererProps {
   content: string
   fallbackClassName?: string
@@ -51,23 +56,23 @@ export default memo(function DeferredMarkdownRenderer({
       }
     }
 
-    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-      idleId = (window as Window & {
-        requestIdleCallback: (callback: () => void, options?: { timeout: number }) => number
-      }).requestIdleCallback(markReady, { timeout: 180 })
-    } else if (typeof window !== 'undefined') {
-      timeoutId = window.setTimeout(markReady, 32)
+    const browserWindow = typeof window === 'undefined' ? null : (window as IdleCapableWindow)
+
+    if (browserWindow?.requestIdleCallback) {
+      idleId = browserWindow.requestIdleCallback(markReady, { timeout: 180 })
+    } else if (browserWindow) {
+      timeoutId = browserWindow.setTimeout(markReady, 32)
     } else {
       setIsReady(true)
     }
 
     return () => {
       cancelled = true
-      if (idleId !== null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
-        ;(window as Window & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(idleId)
+      if (idleId !== null && browserWindow?.cancelIdleCallback) {
+        browserWindow.cancelIdleCallback(idleId)
       }
-      if (timeoutId !== null && typeof window !== 'undefined') {
-        window.clearTimeout(timeoutId)
+      if (timeoutId !== null && browserWindow) {
+        browserWindow.clearTimeout(timeoutId)
       }
     }
   }, [content, shouldDefer])

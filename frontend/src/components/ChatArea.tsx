@@ -584,7 +584,7 @@ const MessageList = memo(function MessageList({
     conversationKey: conversationId,
     itemCount: messages.length,
     lastItemId: lastMessage?.id,
-    lastMessageContentSignature,
+    lastItemContentSignature: lastMessageContentSignature,
     streaming: Boolean(isLoading && lastMessage?.role === 'assistant'),
   })
 
