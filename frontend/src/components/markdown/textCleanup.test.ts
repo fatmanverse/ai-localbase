@@ -36,6 +36,18 @@ describe('normalizeCJKPunctuationLineBreaks', () => {
     )
   })
 
+  it('不处理波浪线围栏代码块内部内容', () => {
+    expect(normalizeCJKPunctuationLineBreaks('~~~\n第一行，\n第二行\n~~~')).toBe(
+      '~~~\n第一行，\n第二行\n~~~',
+    )
+  })
+
+  it('不处理不带首尾竖线的 markdown 表格', () => {
+    expect(normalizeCJKPunctuationLineBreaks('列 1 | 列 2\n--- | ---\n值一，\n值二')).toBe(
+      '列 1 | 列 2\n--- | ---\n值一，\n值二',
+    )
+  })
+
   it('合并行首中文标点到上一行', () => {
     expect(normalizeCJKPunctuationLineBreaks('访问视图\n，避免遗漏权限')).toBe(
       '访问视图，避免遗漏权限',
@@ -55,6 +67,22 @@ describe('normalizeCJKPunctuationLineBreaks', () => {
   it('不跨空行合并', () => {
     expect(normalizeCJKPunctuationLineBreaks('这是第一行，\n\n继续说明')).toBe(
       '这是第一行，\n\n继续说明',
+    )
+  })
+
+  it('不合并 url 结构行后的短文本', () => {
+    expect(normalizeCJKPunctuationLineBreaks('https://example.com/docs\n详情')).toBe(
+      'https://example.com/docs\n详情',
+    )
+  })
+
+  it('不合并路径结构行后的短文本', () => {
+    expect(normalizeCJKPunctuationLineBreaks('/var/log/app\n继续查看')).toBe('/var/log/app\n继续查看')
+  })
+
+  it('不合并对象名结构行后的短文本', () => {
+    expect(normalizeCJKPunctuationLineBreaks('schema.table_name\n说明')).toBe(
+      'schema.table_name\n说明',
     )
   })
 })
