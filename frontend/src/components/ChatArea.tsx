@@ -359,6 +359,7 @@ const RelatedImagesBlock = memo(function RelatedImagesBlock({
             <div className="message-related-image-meta">
               <strong>{image.documentName || '相关图片'}</strong>
               {image.classification ? <span>{image.classification}</span> : null}
+              {image.focusHint ? <div className="message-related-image-focus-hint">建议先看：{image.focusHint}</div> : null}
               {image.description ? <p>{image.description}</p> : null}
             </div>
           </div>
@@ -391,6 +392,7 @@ const MessageBubble = memo(function MessageBubble({
 }: MessageBubbleProps) {
   const degradedMetadata = message.role === 'assistant' && message.metadata?.degraded ? message.metadata : null
   const relatedImages = message.role === 'assistant' ? message.metadata?.relatedImages ?? [] : []
+  const hasInlineRelatedImages = message.role === 'assistant' && /\[image:\s*img-[a-zA-Z0-9_-]+\s*\]/.test(message.content)
   const feedbackSummary = message.role === 'assistant' ? message.metadata?.feedbackSummary : undefined
   const hasMessageContent = Boolean(message.content.trim())
 
@@ -414,14 +416,20 @@ const MessageBubble = memo(function MessageBubble({
           isReplyStreaming ? (
             <div className="message-streaming-text">{message.content}</div>
           ) : (
-            <DeferredMarkdownRenderer content={message.content} fallbackClassName="message-streaming-text message-deferred-markdown" />
+            <DeferredMarkdownRenderer
+              content={message.content}
+              relatedImages={relatedImages}
+              fallbackClassName="message-streaming-text message-deferred-markdown"
+            />
           )
         ) : (
           message.content
         )}
       </div>
 
-      {message.role === 'assistant' && relatedImages.length > 0 ? <RelatedImagesBlock images={relatedImages} /> : null}
+      {message.role === 'assistant' && relatedImages.length > 0 && !hasInlineRelatedImages ? (
+        <RelatedImagesBlock images={relatedImages} />
+      ) : null}
 
       <div className="message-tail">
         <div className="message-time">{formatTime(message.timestamp)}</div>

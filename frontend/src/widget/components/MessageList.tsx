@@ -108,6 +108,7 @@ const ServiceDeskRelatedImagesBlock = memo(function ServiceDeskRelatedImagesBloc
             <div className="service-desk-related-image-meta">
               <strong>{image.documentName || '图片知识'}</strong>
               {image.classification ? <span>{image.classification}</span> : null}
+              {image.focusHint ? <div className="service-desk-related-image-focus-hint">建议先看：{image.focusHint}</div> : null}
               {image.description ? <p>{image.description}</p> : null}
             </div>
           </div>

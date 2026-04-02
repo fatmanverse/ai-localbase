@@ -2,6 +2,75 @@ import React, { memo, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+
+type MarkdownRelatedImage = {
+  id: string
+  documentName?: string
+  classification?: string
+  description?: string
+  focusHint?: string
+  publicUrl?: string
+}
+
+interface MarkdownRendererProps {
+  content: string
+  relatedImages?: MarkdownRelatedImage[]
+}
+
+const INLINE_IMAGE_ALT_PREFIX = 'inline-image:'
+const INLINE_IMAGE_PLACEHOLDER_REGEXP = /\[image:\s*(img-[a-zA-Z0-9_-]+)\s*\]/g
+
+
+function buildInlineImageOrderMap(content: string): Map<string, number> {
+  const orderMap = new Map<string, number>()
+  let matched: RegExpExecArray | null
+  let order = 1
+  const regexp = new RegExp(INLINE_IMAGE_PLACEHOLDER_REGEXP)
+  while ((matched = regexp.exec(content)) !== null) {
+    const imageId = matched[1]
+    if (!orderMap.has(imageId)) {
+      orderMap.set(imageId, order)
+      order += 1
+    }
+  }
+  return orderMap
+}
+
+function hasInlineImageChild(node: React.ReactNode): boolean {
+  if (!node) {
+    return false
+  }
+  const items = React.Children.toArray(node)
+  for (const item of items) {
+    if (!React.isValidElement(item)) {
+      continue
+    }
+    const className = typeof item.props.className === 'string' ? item.props.className : ''
+    if (className.includes('md-inline-image-block')) {
+      return true
+    }
+    if (hasInlineImageChild(item.props.children)) {
+      return true
+    }
+  }
+  return false
+}
+
+function injectInlineImageMarkdown(content: string, relatedImages?: MarkdownRelatedImage[]): string {
+  if (!relatedImages || relatedImages.length === 0) {
+    return content
+  }
+
+  const imageById = new Map(relatedImages.map((image) => [image.id, image]))
+  return content.replace(INLINE_IMAGE_PLACEHOLDER_REGEXP, (raw, imageId: string) => {
+    const image = imageById.get(imageId)
+    if (!image?.publicUrl) {
+      return raw
+    }
+    return `\n\n![${INLINE_IMAGE_ALT_PREFIX}${imageId}](${image.publicUrl})\n\n`
+  })
+}
+
 /**
  * 修复 LLM 输出的 Markdown 格式问题：
  * 1. `##标题` → `## 标题`（标题符号后缺空格）
@@ -1014,50 +1083,125 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
   return <div className="md-mermaid" dangerouslySetInnerHTML={{ __html: svg }} />
 }
 
-const markdownComponents = {
-  code({ className, children, ...props }: any) {
-    const codeContent = String(children).replace(/\n$/, '')
-    const language = normalizeCodeLanguage(className, codeContent)
-    const isInline = !className && language === 'text'
+const MarkdownRenderer = memo(function MarkdownRenderer({ content, relatedImages }: MarkdownRendererProps) {
+  const relatedImageMap = useMemo(
+    () => new Map((relatedImages ?? []).map((image) => [image.id, image])),
+    [relatedImages],
+  )
+  const inlineImageOrderMap = useMemo(() => buildInlineImageOrderMap(content), [content])
+  const markdownComponents = useMemo(() => ({
+    code({ className, children, ...props }: any) {
+      const codeContent = String(children).replace(/\n$/, '')
+      const language = normalizeCodeLanguage(className, codeContent)
+      const isInline = !className && language === 'text'
 
-    if (!isInline && className?.includes('language-mermaid')) {
-      return <MermaidDiagram chart={codeContent} />
-    }
+      if (!isInline && className?.includes('language-mermaid')) {
+        return <MermaidDiagram chart={codeContent} />
+      }
 
-    if (isInline) {
+      if (isInline) {
+        return (
+          <code className="md-inline-code" {...props}>
+            {children}
+          </code>
+        )
+      }
+
+      const label = resolveCodeBlockLabel(language)
+
       return (
-        <code className="md-inline-code" {...props}>
-          {children}
-        </code>
+        <MarkdownCodeBlock
+          className={className}
+          codeContent={codeContent}
+          language={language}
+          label={label}
+          props={props}
+        />
       )
-    }
+    },
+    a({ href, children, ...props }: any) {
+      return (
+        <a href={href} target="_blank" rel="noopener noreferrer" className="md-link" {...props}>
+          {children}
+        </a>
+      )
+    },
+    img({ src, alt, ...props }: any) {
+      const altText = String(alt ?? '')
+      if (altText.startsWith(INLINE_IMAGE_ALT_PREFIX)) {
+        const imageId = altText.slice(INLINE_IMAGE_ALT_PREFIX.length)
+        const image = relatedImageMap.get(imageId)
+        if (image?.publicUrl) {
+          const imageOrder = inlineImageOrderMap.get(imageId)
+          return (
+            <figure className="md-inline-image-block">
+              <div className="md-inline-image-grid">
+                <div className="message-related-image-card md-inline-image-card">
+                  {image.focusHint ? <div className="md-inline-image-focus-hint">建议先看：{image.focusHint}</div> : null}
+                  <a
+                    href={image.publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="message-related-image-link md-inline-image-link"
+                    title={imageOrder ? `查看图 ${imageOrder} 原图` : '查看原图'}
+                    data-figure-label={imageOrder ? `图 ${imageOrder}` : '图片'}
+                  >
+                    <img
+                      src={image.publicUrl}
+                      alt={image.description || image.documentName || image.id}
+                      loading="lazy"
+                      decoding="async"
+                      fetchPriority="low"
+                    />
+                    <span className="message-related-image-view-tag">查看大图</span>
+                  </a>
+                  <div className="message-related-image-meta md-inline-image-meta">
+                    <div className="md-inline-image-heading">
+                      <strong>{image.documentName || '相关图片'}</strong>
+                      {imageOrder ? <em>{`图 ${imageOrder}`}</em> : null}
+                    </div>
+                    {image.classification ? <span>{image.classification}</span> : null}
+                    {image.description ? (
+                      <details className="md-inline-image-details">
+                        <summary>查看图示说明</summary>
+                        <p>{image.description}</p>
+                      </details>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+              <figcaption className="md-inline-image-caption">
+                <span className="md-inline-image-caption-primary">
+                  {imageOrder ? `图 ${imageOrder}` : '图片'}{image.classification ? ` · ${image.classification}` : ''}
+                </span>
+                {image.documentName ? <span className="md-inline-image-caption-secondary">{image.documentName}</span> : null}
+              </figcaption>
+            </figure>
+          )
+        }
+      }
 
-    const label = resolveCodeBlockLabel(language)
-
-    return (
-      <MarkdownCodeBlock
-        className={className}
-        codeContent={codeContent}
-        language={language}
-        label={label}
-        props={props}
-      />
-    )
-  },
-  a({ href, children, ...props }: any) {
-    return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="md-link" {...props}>
-        {children}
-      </a>
-    )
-  },
-  table({ children, ...props }: any) {
-    return <MarkdownTable props={props}>{children}</MarkdownTable>
-  },
-}
-
-const MarkdownRenderer = memo(function MarkdownRenderer({ content }: { content: string }) {
-  const normalizedContent = useMemo(() => fixMarkdown(content), [content])
+      return <img src={src} alt={alt} loading="lazy" decoding="async" {...props} />
+    },
+    ol({ children, ...props }: any) {
+      return <ol className="md-step-list" {...props}>{children}</ol>
+    },
+    li({ children, ...props }: any) {
+      const hasImage = hasInlineImageChild(children)
+      return (
+        <li className={`md-step-item ${hasImage ? 'has-image' : ''}`.trim()} {...props}>
+          {children}
+        </li>
+      )
+    },
+    table({ children, ...props }: any) {
+      return <MarkdownTable props={props}>{children}</MarkdownTable>
+    },
+  }), [inlineImageOrderMap, relatedImageMap])
+  const normalizedContent = useMemo(
+    () => fixMarkdown(injectInlineImageMarkdown(content, relatedImages)),
+    [content, relatedImages],
+  )
   const shouldCollapse = useMemo(() => shouldCollapseMarkdownContent(normalizedContent), [normalizedContent])
   const previewContent = useMemo(
     () => (shouldCollapse ? buildMarkdownPreview(normalizedContent) : normalizedContent),

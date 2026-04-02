@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -355,6 +356,7 @@ func (h *AppHandler) ChatCompletions(c *gin.Context) {
 
 	if assistantMessage := firstAssistantChoice(&response); assistantMessage != nil {
 		assistantMessage.Content = util.PolishAssistantResponse(assistantMessage.Content)
+		assistantMessage.Content = ensureInlineImageResponse(assistantMessage.Content, latestUserQuestion(req.Messages), relatedImages)
 		savedConversation, saveErr := h.appService.SaveConversation(model.SaveConversationRequest{
 			ID:              req.ConversationID,
 			Title:           "",
@@ -422,6 +424,7 @@ func (h *AppHandler) ChatCompletionsStream(c *gin.Context) {
 	}
 
 	fullAssistantContent := util.PolishAssistantResponse(assistantContent.String())
+	fullAssistantContent = ensureInlineImageResponse(fullAssistantContent, latestUserQuestion(req.Messages), relatedImages)
 	savedConversation, saveErr := h.appService.SaveConversation(model.SaveConversationRequest{
 		ID:              req.ConversationID,
 		Title:           "",
@@ -458,6 +461,7 @@ func (h *AppHandler) prepareChatRequest(req model.ChatCompletionRequest) (model.
 	}
 
 	allSources := append(retrievalSources, sources...)
+	relatedImages := h.appService.ResolveRelatedImages(allSources)
 	contextParts := make([]string, 0, 2)
 	if strings.TrimSpace(retrievalContext) != "" {
 		contextParts = append(contextParts, "检索命中的文档片段：\n"+retrievalContext)
@@ -535,6 +539,24 @@ func (h *AppHandler) prepareChatRequest(req model.ChatCompletionRequest) (model.
 			)
 		}
 
+		if len(relatedImages) > 0 && !isDiagramRequest {
+			promptSections = append(promptSections,
+				"",
+				"### 图片引用规则",
+				"- 当上下文里已经命中图片时，优先把最关键的图片直接插入回答正文，而不是只做文字描述",
+				"- 插图必须单独占一行，严格使用占位格式 `[image:图片ID]`，不要改写成别的格式，不要加反引号",
+				"- 只允许引用下面“可用图片”列表中出现的图片 ID；如果没有合适图片，就不要输出占位符",
+				"- 一般每次回答插入 1 到 3 张最关键的图，优先插在对应步骤、说明或结论后面",
+				"- 插图前后保留空行，并在图片前先用一句话说明“先看这张图的哪个位置/这张图说明什么”",
+				"- 如果用户明确问截图、界面位置、按钮、流程图、表格图，必须至少插入 1 张最相关图片；除非下面列表里没有合适图片",
+				"- 如果答案里已经引用了图片，就不要把所有图片都堆在最后；应把图片插到对应说明旁边",
+				"- 多图场景优先按 1. 2. 3. 步骤组织回答，并尽量在对应步骤后紧跟图片占位符",
+				"",
+				"### 可用图片",
+				buildAvailableImagePromptLines(relatedImages),
+			)
+		}
+
 		promptSections = append(promptSections,
 			"",
 			"## 内容规范",
@@ -560,7 +582,233 @@ func (h *AppHandler) prepareChatRequest(req model.ChatCompletionRequest) (model.
 		}}, preparedReq.Messages...)
 	}
 
-	return preparedReq, allSources, h.appService.ResolveRelatedImages(allSources), nil
+	return preparedReq, allSources, relatedImages, nil
+}
+
+func latestUserQuestion(messages []model.ChatMessage) string {
+	for index := len(messages) - 1; index >= 0; index-- {
+		if strings.EqualFold(strings.TrimSpace(messages[index].Role), "user") {
+			return strings.TrimSpace(messages[index].Content)
+		}
+	}
+	return ""
+}
+
+func ensureInlineImageResponse(content, query string, relatedImages []model.ServiceDeskImageReference) string {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" || len(relatedImages) == 0 {
+		return content
+	}
+	if strings.Contains(trimmed, "[image:") {
+		return content
+	}
+	if !util.IsImageIntentQuery(query) {
+		return content
+	}
+
+	selectedImages := pickTopInlineImages(query, relatedImages, maxInlineImageFallbackCount(query))
+	if len(selectedImages) == 0 {
+		return content
+	}
+
+	referenceSection := buildInlineImageReferenceSection(query, selectedImages)
+	return strings.TrimSpace(referenceSection + "\n\n" + trimmed)
+}
+
+func pickTopInlineImages(query string, images []model.ServiceDeskImageReference, limit int) []model.ServiceDeskImageReference {
+	if len(images) == 0 || limit <= 0 {
+		return nil
+	}
+	trimmedQuery := strings.TrimSpace(strings.ToLower(query))
+	type rankedImage struct {
+		image model.ServiceDeskImageReference
+		score float64
+	}
+	ranked := make([]rankedImage, 0, len(images))
+	for _, image := range images {
+		signal := strings.ToLower(strings.Join([]string{image.DocumentName, image.Classification, image.Description}, " "))
+		score := 0.0
+		if trimmedQuery != "" {
+			for _, token := range strings.Fields(trimmedQuery) {
+				if token != "" && strings.Contains(signal, token) {
+					score += 1
+				}
+			}
+		}
+		if containsAny(signal, "按钮", "设置", "菜单", "界面", "截图", "page", "click", "save") {
+			score += 0.8
+		}
+		if containsAny(signal, "流程图", "架构图", "workflow", "diagram") {
+			score += 0.6
+		}
+		if containsAny(signal, "表格", "table") {
+			score += 0.4
+		}
+		ranked = append(ranked, rankedImage{image: image, score: score})
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		return ranked[i].score > ranked[j].score
+	})
+	if limit > len(ranked) {
+		limit = len(ranked)
+	}
+	picked := make([]model.ServiceDeskImageReference, 0, limit)
+	for _, item := range ranked[:limit] {
+		picked = append(picked, item.image)
+	}
+	return picked
+}
+
+func maxInlineImageFallbackCount(query string) int {
+	if strings.Contains(query, "流程图") || strings.Contains(query, "架构图") || strings.Contains(query, "步骤") || strings.Contains(query, "流程") {
+		return 3
+	}
+	if strings.Contains(query, "对比") || strings.Contains(query, "区别") || strings.Contains(query, "表格") {
+		return 2
+	}
+	return 1
+}
+
+func buildInlineImageReferenceSection(query string, images []model.ServiceDeskImageReference) string {
+	if len(images) == 0 {
+		return ""
+	}
+	if len(images) == 1 {
+		image := images[0]
+		prefix := buildInlineImageLeadText(query, image)
+		return strings.TrimSpace(prefix + "\n\n[image:" + image.ID + "]\n\n" + buildFigureReferenceSentence(1, image))
+	}
+
+	lines := []string{"### 关键图示", ""}
+	for index, image := range images {
+		lines = append(lines,
+			fmt.Sprintf("%d. %s", index+1, buildInlineImageStepLeadText(query, image, index)),
+			"",
+			fmt.Sprintf("[image:%s]", image.ID),
+			"",
+			buildFigureReferenceSentence(index+1, image),
+			"",
+		)
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func buildInlineImageStepLeadText(query string, image model.ServiceDeskImageReference, index int) string {
+	switch {
+	case strings.Contains(query, "流程图") || strings.Contains(query, "架构图"):
+		if index == 0 {
+			return "先看图 1，后面的路径说明以图 1 为主"
+		}
+		if hint := extractPreferredImageHint(image); hint != "" {
+			return fmt.Sprintf("再看图 %d 的%s，后面的补充说明对应图 %d", index+1, hint, index+1)
+		}
+		return fmt.Sprintf("再看图 %d，后面的补充说明对应图 %d", index+1, index+1)
+	case strings.Contains(query, "表格"):
+		if index == 0 {
+			return "先看图 1，后面的字段解释以图 1 为准"
+		}
+		if hint := extractPreferredImageHint(image); hint != "" {
+			return fmt.Sprintf("再看图 %d 的%s，后面的明细核对对应图 %d", index+1, hint, index+1)
+		}
+		return fmt.Sprintf("再看图 %d，后面的明细核对对应图 %d", index+1, index+1)
+	case strings.Contains(query, "按钮") || strings.Contains(query, "点哪里") || strings.Contains(query, "在哪"):
+		if index == 0 {
+			return "先看图 1，后面的操作说明先按图 1 的入口来看"
+		}
+		if hint := extractPreferredImageHint(image); hint != "" {
+			return fmt.Sprintf("再看图 %d 的%s，下一步位置见图 %d", index+1, hint, index+1)
+		}
+		return fmt.Sprintf("再看图 %d，下一步位置见图 %d", index+1, index+1)
+	default:
+		if name := strings.TrimSpace(image.DocumentName); name != "" {
+			return fmt.Sprintf("参考图片：%s", name)
+		}
+		return fmt.Sprintf("参考第 %d 张图", index+1)
+	}
+}
+
+func buildInlineImageLeadText(query string, image model.ServiceDeskImageReference) string {
+	classification := strings.TrimSpace(image.Classification)
+	switch {
+	case strings.Contains(query, "按钮") || strings.Contains(query, "点哪里") || strings.Contains(query, "在哪"):
+		if hint := extractPreferredImageHint(image); hint != "" {
+			return fmt.Sprintf("先看图 1 的%s，后面的处理可直接按图示操作：", hint)
+		}
+		return "先看图 1 里对应的位置，后面的处理可直接按图示操作："
+	case strings.Contains(query, "流程图") || strings.Contains(query, "架构图"):
+		if hint := extractPreferredImageHint(image); hint != "" {
+			return fmt.Sprintf("先看图 1 的%s，后面的说明会按图 1 的流程/结构展开：", hint)
+		}
+		return "先看图 1，后面的说明会按图 1 的流程/结构展开："
+	case strings.Contains(query, "表格"):
+		if hint := extractPreferredImageHint(image); hint != "" {
+			return fmt.Sprintf("先看图 1 的%s，后面的字段说明以图 1 为准：", hint)
+		}
+		return "先看图 1，后面的字段说明以图 1 为准："
+	case classification != "":
+		if hint := extractPreferredImageHint(image); hint != "" {
+			return fmt.Sprintf("先看图 1 的%s，下面的说明会结合图 1 来看：", hint)
+		}
+		return "先看图 1，下面的说明会结合图 1 来看："
+	default:
+		return "先看图 1，下面的说明会结合图 1 来看："
+	}
+}
+
+func extractPreferredImageHint(image model.ServiceDeskImageReference) string {
+	if hint := strings.TrimSpace(image.FocusHint); hint != "" {
+		return hint
+	}
+	return extractImageRegionHint(image)
+}
+
+func extractImageRegionHint(image model.ServiceDeskImageReference) string {
+	signal := strings.Join([]string{image.Description, image.DocumentName, image.Classification}, " ")
+	hints := []string{"右上角", "右下角", "左上角", "左下角", "顶部", "底部", "中间区域", "左侧区域", "右侧区域", "顶部导航", "侧边栏", "按钮区域", "操作区"}
+	for _, hint := range hints {
+		if strings.Contains(signal, hint) {
+			return hint
+		}
+	}
+	return ""
+}
+
+func buildFigureReferenceSentence(figureNumber int, image model.ServiceDeskImageReference) string {
+	if hint := extractPreferredImageHint(image); hint != "" {
+		return fmt.Sprintf("如图 %d 所示，先看%s，再按后面的说明继续处理。", figureNumber, hint)
+	}
+	return fmt.Sprintf("如图 %d 所示，先按这张图确认对应位置或结构。", figureNumber)
+}
+
+func containsAny(value string, items ...string) bool {
+	for _, item := range items {
+		if strings.Contains(value, strings.ToLower(item)) {
+			return true
+		}
+	}
+	return false
+}
+
+func buildAvailableImagePromptLines(images []model.ServiceDeskImageReference) string {
+	if len(images) == 0 {
+		return "- 当前没有可直接插入回答的图片"
+	}
+
+	lines := make([]string, 0, len(images))
+	for _, image := range images {
+		parts := []string{fmt.Sprintf("- %s", image.ID)}
+		if name := strings.TrimSpace(image.DocumentName); name != "" {
+			parts = append(parts, fmt.Sprintf("文档=%s", name))
+		}
+		if classification := strings.TrimSpace(image.Classification); classification != "" {
+			parts = append(parts, fmt.Sprintf("类型=%s", classification))
+		}
+		if description := strings.TrimSpace(image.Description); description != "" {
+			parts = append(parts, fmt.Sprintf("说明=%s", description))
+		}
+		lines = append(lines, strings.Join(parts, "；"))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (h *AppHandler) handleUpload(c *gin.Context, candidateKnowledgeBaseID string) {

@@ -34,6 +34,7 @@ type ServiceDeskImageReference struct {
 	DocumentName   string `json:"documentName,omitempty"`
 	Classification string `json:"classification,omitempty"`
 	Description    string `json:"description,omitempty"`
+	FocusHint      string `json:"focusHint,omitempty"`
 	PublicURL      string `json:"publicUrl,omitempty"`
 }
 

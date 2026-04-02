@@ -3532,3 +3532,234 @@
   display: flex;
   gap: 8px;
 }
+
+
+.md-inline-image-block {
+  margin: 16px 0 18px;
+}
+
+.md-inline-image-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.md-inline-image-card {
+  max-width: 720px;
+  width: 100%;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+  min-height: auto;
+}
+
+.md-inline-image-link {
+  aspect-ratio: 16 / 9;
+  background: #f8fafc;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.md-inline-image-meta {
+  gap: 4px;
+  padding: 8px 2px 0;
+}
+
+.md-inline-image-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.md-inline-image-heading em {
+  font-style: normal;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.md-inline-image-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .md-inline-image-card {
+    max-width: 100%;
+  }
+}
+
+
+.md-step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 0;
+  margin-left: 0;
+  list-style: none;
+  counter-reset: md-step-counter;
+}
+
+.md-step-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0 8px 34px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  counter-increment: md-step-counter;
+}
+
+.md-step-item::before {
+  content: counter(md-step-counter) ".";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  display: inline-block;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.md-step-item.has-image {
+  padding-bottom: 10px;
+  background: transparent;
+}
+
+.md-step-item.has-image .md-inline-image-block {
+  margin-top: 2px;
+  margin-bottom: 4px;
+}
+
+.md-step-item > p:first-child {
+  margin-top: 0;
+}
+
+.md-step-item > p:last-child {
+  margin-bottom: 0;
+}
+
+
+.md-inline-image-meta {
+  gap: 6px;
+}
+
+.md-inline-image-meta span {
+  background: transparent;
+  color: #94a3b8;
+  border: none;
+  padding: 0;
+}
+
+.md-inline-image-details {
+  display: block;
+}
+
+.md-inline-image-details summary {
+  list-style: none;
+  cursor: pointer;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.md-inline-image-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.md-inline-image-details summary::after {
+  content: '展开';
+  margin-left: 6px;
+  color: #cbd5e1;
+  font-weight: 400;
+}
+
+.md-inline-image-details[open] summary::after {
+  content: '收起';
+}
+
+.md-inline-image-details p {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.md-inline-image-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.md-inline-image-caption-primary {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.md-inline-image-caption-secondary {
+  color: #cbd5e1;
+}
+
+
+.md-inline-image-link::before {
+  content: attr(data-figure-label);
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(203, 213, 225, 0.55);
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  backdrop-filter: blur(3px);
+}
+
+
+.md-inline-image-focus-hint,
+.message-related-image-focus-hint,
+.service-desk-related-image-focus-hint {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.md-inline-image-focus-hint {
+  margin: 0 0 8px;
+}

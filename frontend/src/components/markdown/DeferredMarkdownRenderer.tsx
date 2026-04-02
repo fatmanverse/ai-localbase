@@ -9,6 +9,14 @@ type IdleCapableWindow = Window & {
 interface DeferredMarkdownRendererProps {
   content: string
   fallbackClassName?: string
+  relatedImages?: Array<{
+    id: string
+    documentName?: string
+    classification?: string
+    description?: string
+    focusHint?: string
+    publicUrl?: string
+  }>
 }
 
 const HEAVY_MARKDOWN_CHAR_THRESHOLD = 1400
@@ -34,6 +42,7 @@ const shouldDeferMarkdownRender = (content: string) => {
 export default memo(function DeferredMarkdownRenderer({
   content,
   fallbackClassName = '',
+  relatedImages,
 }: DeferredMarkdownRendererProps) {
   const shouldDefer = shouldDeferMarkdownRender(content)
   const [isReady, setIsReady] = useState(!shouldDefer)
@@ -81,5 +90,5 @@ export default memo(function DeferredMarkdownRenderer({
     return <div className={fallbackClassName}>{content}</div>
   }
 
-  return <MarkdownRenderer content={content} />
+  return <MarkdownRenderer content={content} relatedImages={relatedImages} />
 })

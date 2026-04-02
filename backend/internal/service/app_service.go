@@ -1525,6 +1525,7 @@ func (s *AppService) ResolveRelatedImages(rawSources []map[string]string) []mode
 				Classification: string(image.Classification),
 				Description:    image.Description,
 				PublicURL:      image.PublicURL,
+				FocusHint:      extractImageFocusHint(image),
 			})
 		}
 	}
@@ -1540,6 +1541,50 @@ func (s *AppService) findDocumentLocked(documentID string) (model.Document, bool
 		}
 	}
 	return model.Document{}, false
+}
+
+func extractImageFocusHint(image model.DocumentImageAsset) string {
+	signal := strings.Join([]string{image.Description, image.ContextBefore, image.ContextAfter, image.AltText}, " ")
+	regionHints := []string{"右上角", "右下角", "左上角", "左下角", "顶部导航", "顶部", "底部", "中间区域", "左侧区域", "右侧区域", "侧边栏", "按钮区域", "操作区"}
+	objectHints := []string{"保存按钮", "提交按钮", "确认按钮", "登录按钮", "搜索框", "筛选区", "导航菜单", "审批节点", "流程节点", "表格区域", "列表区域", "表单区域", "入口按钮", "操作入口"}
+
+	matchedRegion := ""
+	for _, hint := range regionHints {
+		if strings.Contains(signal, hint) {
+			matchedRegion = hint
+			break
+		}
+	}
+	matchedObject := ""
+	for _, hint := range objectHints {
+		if strings.Contains(signal, hint) {
+			matchedObject = hint
+			break
+		}
+	}
+
+	switch {
+	case matchedRegion != "" && matchedObject != "":
+		return matchedRegion + matchedObject
+	case matchedRegion != "":
+		if matchedRegion == "操作区" || matchedRegion == "按钮区域" || matchedRegion == "侧边栏" || matchedRegion == "顶部导航" {
+			return matchedRegion
+		}
+		return matchedRegion + "区域"
+	case matchedObject != "":
+		return matchedObject
+	default:
+		if strings.Contains(signal, "按钮") {
+			return "按钮位置"
+		}
+		if strings.Contains(signal, "菜单") {
+			return "菜单区域"
+		}
+		if strings.Contains(signal, "流程") {
+			return "流程节点区域"
+		}
+		return ""
+	}
 }
 
 func includedDocumentImageIDs(document model.Document) []string {

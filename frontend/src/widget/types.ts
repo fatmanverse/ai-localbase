@@ -32,6 +32,7 @@ export interface ServiceDeskImageReference {
   documentName?: string
   classification?: string
   description?: string
+  focusHint?: string
   publicUrl?: string
 }
 
