@@ -200,7 +200,7 @@
 }
 
 .service-desk-markdown .md-render-shell > :not(.md-table-shell):not(.md-table-wrap):not(.md-code-shell):not(.md-code-block):not(.md-mermaid):not(.md-mermaid-loading):not(.md-mermaid-fallback):not(.md-render-actions) {
-  max-width: 72ch;
+  max-width: min(100%, 88ch);
 }
 
 .service-desk-markdown .md-inline-code {
@@ -209,8 +209,9 @@
   border-radius: 6px;
   padding: 1px 6px;
   color: #e2e8f0;
-  white-space: break-spaces;
-  word-break: break-word;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
 .service-desk-markdown .md-code-shell {

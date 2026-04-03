@@ -2562,7 +2562,7 @@
 }
 
 .message.assistant .message-content-markdown .md-render-shell > :not(.md-table-shell):not(.md-table-wrap):not(.md-code-shell):not(.md-code-block):not(.md-mermaid):not(.md-mermaid-loading):not(.md-mermaid-fallback):not(.md-render-actions) {
-  max-width: 74ch;
+  max-width: min(100%, 92ch);
 }
 
 .message-content-markdown p {
@@ -2688,8 +2688,9 @@
   font-family: 'SF Mono', 'Fira Code', 'Roboto Mono', monospace;
   font-size: 0.88em;
   color: #334155;
-  white-space: break-spaces;
-  word-break: break-word;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
 /* ── 代码块 ── */

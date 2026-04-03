@@ -80,6 +80,8 @@ function injectInlineImageMarkdown(content: string, relatedImages?: MarkdownRela
  * 4. 将目录树/路径结构包裹成代码块，避免半渲染
  * 5. 针对 Ollama 常见的“中文段落 + checklist + 分隔线粘连”做额外修复
  */
+const MARKDOWN_TABLE_DIVIDER = /^\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$|^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/
+
 function looksLikePseudoTableHeader(cell: string): boolean {
   const trimmed = cell.trim()
   if (!trimmed || trimmed.length > 18) {
@@ -87,6 +89,67 @@ function looksLikePseudoTableHeader(cell: string): boolean {
   }
 
   return !/[，。；：:,.!?()（）\[\]]/.test(trimmed)
+}
+
+function hasMarkdownTableLikeBlock(content: string): boolean {
+  const lines = content.split('\n')
+  let consecutivePipeRows = 0
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim()
+    const nextLine = lines[index + 1]?.trim() ?? ''
+    const pipeCount = (line.match(/\|/g) ?? []).length
+
+    if (pipeCount >= 2 && MARKDOWN_TABLE_DIVIDER.test(nextLine)) {
+      return true
+    }
+
+    if (/^\|.*\|$/.test(line) && pipeCount >= 2) {
+      consecutivePipeRows += 1
+      if (consecutivePipeRows >= 2) {
+        return true
+      }
+      continue
+    }
+
+    if (line) {
+      consecutivePipeRows = 0
+    }
+  }
+
+  return false
+}
+
+function shouldNormalizePseudoStructuredPipeLine(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed) {
+    return false
+  }
+
+  if (/^[|:\-\s]+$/.test(trimmed) || MARKDOWN_TABLE_DIVIDER.test(trimmed)) {
+    return true
+  }
+
+  if (/[，。；：！？!?]/.test(trimmed)) {
+    return false
+  }
+
+  const pipeCount = (trimmed.match(/\|/g) ?? []).length
+  if (pipeCount < 3 || /^\|.*\|$/.test(trimmed)) {
+    return false
+  }
+
+  const cells = trimmed
+    .split('|')
+    .map((cell) => cell.trim())
+    .filter(Boolean)
+    .filter((cell) => !/^:?-{3,}:?$/.test(cell))
+
+  if (cells.length < 2 || cells.some((cell) => cell.length > 18)) {
+    return false
+  }
+
+  return cells.every((cell) => looksLikePseudoTableHeader(cell))
 }
 
 function renumberOrderedListBlocks(content: string): string {
@@ -125,8 +188,12 @@ function normalizePseudoStructuredLine(line: string): string {
     return ''
   }
 
-  if (/^[|:\-\s]+$/.test(trimmed)) {
+  if (/^[|:\-\s]+$/.test(trimmed) || MARKDOWN_TABLE_DIVIDER.test(trimmed)) {
     return ''
+  }
+
+  if (!shouldNormalizePseudoStructuredPipeLine(line)) {
+    return line
   }
 
   const pipeCount = (trimmed.match(/\|/g) ?? []).length
@@ -677,7 +744,7 @@ function shouldNormalizeMarkdownContent(content: string): boolean {
     /<\/?(think|assistant|user|system)>/i.test(trimmed) ||
     /(^|\n)#{1,6}[^\s#]/m.test(trimmed) ||
     /(^|\n)\d+[.)、]\S/m.test(trimmed) ||
-    /(^|\n)[^\n]*\|[^\n]*\|/m.test(trimmed) ||
+    hasMarkdownTableLikeBlock(trimmed) ||
     /[├└│]/.test(trimmed) ||
     /[✅☑️✔🟩🟦🔹🔸•📌✨📍🛠️📦🚀🎯💡🔥⭐👉🔧📝📣⚠️❗❓]/.test(trimmed) ||
     /(实施路线图（简化版）|实施路径|实施步骤|步骤规划|第\d+步|MVP 核心功能验证|模块架构深化|接口与前端交互设计|UI 与交互优化|测试与迭代优化)/.test(trimmed) ||
@@ -765,7 +832,7 @@ function normalizeTextSegment(content: string): string {
   fixed = fixed.replace(/([^\n])(#{1,6})(?=[^\s#])/g, '$1\n\n$2')
   fixed = fixed.replace(/^(#{1,6})([^\s#])/gm, '$1 $2')
 
-  if (/\|/.test(fixed)) {
+  if (hasMarkdownTableLikeBlock(fixed)) {
     fixed = fixed.replace(/\|\s*[-:]+[-| :]*\|/g, (match) => `\n${match}\n`)
     fixed = fixed.replace(/([^\n])(\|[^\n]+\|)/g, '$1\n$2')
     fixed = fixed.replace(/(\|[^\n]+\|)([^\n])/g, '$1\n$2')
@@ -803,9 +870,11 @@ function normalizeTextSegment(content: string): string {
   fixed = fixed.replace(/([.!?])([A-Za-z\u4e00-\u9fa5])/g, '$1 $2')
 
   fixed = fixed.replace(/^[ \t]*:[-]{3,}[ \t]*$/gm, '---')
-  fixed = fixed.replace(/^[ \t]*\|?[ :-]{3,}\|?[ \t]*$/gm, '---')
+  if (!hasMarkdownTableLikeBlock(fixed)) {
+    fixed = fixed.replace(/^[ \t]*\|?[ :-]{3,}\|?[ \t]*$/gm, '---')
+  }
 
-  if (/\|/.test(fixed)) {
+  if (/\|/.test(fixed) && !hasMarkdownTableLikeBlock(fixed)) {
     fixed = fixed
       .split('\n')
       .map((line) => normalizePseudoStructuredLine(line))

@@ -152,22 +152,36 @@ function looksLikeInlineCodeContextTextLine(line: string): boolean {
   return true
 }
 
+function extractInlineCodeTrailingText(line: string): string {
+  const trimmed = line.trim()
+  const matches = [...trimmed.matchAll(/`[^`\n]+`/g)]
+
+  if (matches.length === 0) {
+    return trimmed
+  }
+
+  const lastMatch = matches[matches.length - 1]
+  return trimmed.slice((lastMatch.index ?? 0) + lastMatch[0].length).trim()
+}
+
 function shouldMergeInlineCodeIntoPreviousLine(line: string): boolean {
   const trimmed = line.trim()
+  const inlineCodeTrailingText = extractInlineCodeTrailingText(trimmed)
+  const mergeContext = trimmed.includes('`') ? inlineCodeTrailingText : trimmed
 
-  if (!looksLikeInlineCodeContextTextLine(trimmed)) {
+  if (!mergeContext || !looksLikeInlineCodeContextTextLine(mergeContext)) {
     return false
   }
 
-  if (HARD_SENTENCE_END.test(trimmed) || /[:：]$/.test(trimmed)) {
+  if (HARD_SENTENCE_END.test(mergeContext) || /[:：]$/.test(mergeContext)) {
     return false
   }
 
-  if (/[（(、，]$/.test(trimmed)) {
+  if (/[（(、，]$/.test(mergeContext)) {
     return true
   }
 
-  return trimmed.length <= 28 || /(?:含|如|例如|包括|方案是|替代方案是|全部\s*\d+\s*个|视图|角色|错误码|报错|返回)$/.test(trimmed)
+  return mergeContext.length <= 28 || /(?:含|如|例如|包括|方案是|替代方案是|全部\s*\d+\s*个|视图|角色|错误码|报错|返回|授权|授予|改用|使用|跳过|选择|访问|查看)$/.test(mergeContext)
 }
 
 function shouldMergeInlineCodeWithNextLine(line: string): boolean {
@@ -248,6 +262,10 @@ function normalizeParagraphLines(lines: string[]): string[] {
       if (mergedIntoPrevious) {
         continue
       }
+
+      normalized.push(trimmed)
+      mergedDanglingPunctuation = false
+      continue
     }
 
     if (

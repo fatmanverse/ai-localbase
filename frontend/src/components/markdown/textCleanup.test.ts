@@ -86,6 +86,12 @@ describe('normalizeCJKPunctuationLineBreaks', () => {
     )
   })
 
+  it('去掉普通正文中单行代码的多余缩进', () => {
+    expect(
+      normalizeCJKPunctuationLineBreaks('应改用\n    `EXECUTE_CATALOG_ROLE`\n或逐个授权\n    `V_$*`\n视图'),
+    ).toBe('应改用 `EXECUTE_CATALOG_ROLE` 或逐个授权 `V_$*` 视图')
+  })
+
   it('恢复被独立反引号拆开的单行代码', () => {
     expect(normalizeCJKPunctuationLineBreaks('`\nV_$LOG\n`')).toBe('`V_$LOG`')
   })
