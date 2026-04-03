@@ -1257,16 +1257,29 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, relatedImages
 
       return <img src={src} alt={alt} loading="lazy" decoding="async" {...props} />
     },
-    ol({ children, ...props }: any) {
-      return <ol className="md-step-list" {...props}>{children}</ol>
+    ol({ children, node: _node, className, ...props }: any) {
+      const enhancedChildren = React.Children.map(children, (child) => {
+        if (!React.isValidElement(child)) {
+          return child
+        }
+
+        const childProps = child.props as { children?: React.ReactNode; className?: string }
+        const hasImage = hasInlineImageChild(childProps.children)
+        const childClassName = typeof childProps.className === 'string' ? childProps.className : ''
+
+        return React.cloneElement(child, {
+          className: `md-step-item ${hasImage ? 'has-image' : ''} ${childClassName}`.trim(),
+        })
+      })
+
+      const listClassName = typeof className === 'string' && className.trim()
+        ? `md-step-list ${className}`
+        : 'md-step-list'
+
+      return <ol className={listClassName} {...props}>{enhancedChildren}</ol>
     },
-    li({ children, ...props }: any) {
-      const hasImage = hasInlineImageChild(children)
-      return (
-        <li className={`md-step-item ${hasImage ? 'has-image' : ''}`.trim()} {...props}>
-          {children}
-        </li>
-      )
+    li({ children, node: _node, ...props }: any) {
+      return <li {...props}>{children}</li>
     },
     table({ children, ...props }: any) {
       return <MarkdownTable props={props}>{children}</MarkdownTable>
