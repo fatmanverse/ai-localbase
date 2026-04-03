@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DeferredMarkdownRenderer from '../../components/markdown/DeferredMarkdownRenderer'
+import { normalizeCJKPunctuationLineBreaks } from '../../components/markdown/textCleanup'
 import { usePinnedAutoScroll } from '../../hooks/usePinnedAutoScroll'
 import { FeedbackComposer } from './FeedbackComposer'
 import { ServiceDeskImageReference, ServiceDeskMessage } from '../types'
@@ -142,7 +143,7 @@ const ServiceDeskMessageRow = memo(function ServiceDeskMessageRow({
         {isAssistant ? (
           isReplyStreaming ? (
             <div className={`service-desk-streaming-text ${message.content.trim() ? '' : 'is-empty'}`.trim()}>
-              {message.content.trim() ? message.content : '正在整理答复...'}
+              {message.content.trim() ? normalizeCJKPunctuationLineBreaks(message.content) : '正在整理答复...'}
             </div>
           ) : (
             <div className="service-desk-markdown">

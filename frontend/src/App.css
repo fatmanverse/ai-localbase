@@ -2532,7 +2532,9 @@
 /* ── 基础排版 ── */
 .message-streaming-text {
   white-space: pre-wrap;
-  word-break: break-word;
+  word-break: normal;
+  overflow-wrap: break-word;
+  line-break: auto;
   line-height: 1.8;
   color: #334155;
 }
@@ -2550,7 +2552,9 @@
   line-height: 1.8;
   font-size: 14px;
   color: #334155;
-  word-break: break-word;
+  word-break: normal;
+  overflow-wrap: break-word;
+  line-break: auto;
 }
 
 .message-content-markdown > :first-child {

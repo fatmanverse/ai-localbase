@@ -1,6 +1,7 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { normalizeCJKPunctuationLineBreaks } from './textCleanup'
 
 
 type MarkdownRelatedImage = {
@@ -735,7 +736,7 @@ function cleanupModelArtifacts(content: string): string {
 }
 
 function normalizeTextSegment(content: string): string {
-  let fixed = cleanupModelArtifacts(content.replace(/\r\n/g, '\n').replace(/\r/g, '\n'))
+  let fixed = normalizeCJKPunctuationLineBreaks(cleanupModelArtifacts(content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')))
 
   if (!fixed.trim()) {
     return ''
@@ -839,7 +840,7 @@ function fixMarkdown(content: string): string {
     return cached
   }
 
-  const normalizedInput = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const normalizedInput = normalizeCJKPunctuationLineBreaks(content.replace(/\r\n/g, '\n').replace(/\r/g, '\n'))
   if (!shouldNormalizeMarkdownContent(normalizedInput)) {
     return rememberNormalizedMarkdown(content, normalizedInput.trim())
   }

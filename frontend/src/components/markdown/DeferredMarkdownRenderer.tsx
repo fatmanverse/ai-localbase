@@ -1,5 +1,6 @@
 import { memo, useEffect, useState } from 'react'
 import MarkdownRenderer from './MarkdownRenderer'
+import { normalizeCJKPunctuationLineBreaks } from './textCleanup'
 
 type IdleCapableWindow = Window & {
   requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number
@@ -44,7 +45,8 @@ export default memo(function DeferredMarkdownRenderer({
   fallbackClassName = '',
   relatedImages,
 }: DeferredMarkdownRendererProps) {
-  const shouldDefer = shouldDeferMarkdownRender(content)
+  const normalizedContent = normalizeCJKPunctuationLineBreaks(content)
+  const shouldDefer = shouldDeferMarkdownRender(normalizedContent)
   const [isReady, setIsReady] = useState(!shouldDefer)
 
   useEffect(() => {
@@ -84,11 +86,11 @@ export default memo(function DeferredMarkdownRenderer({
         browserWindow.clearTimeout(timeoutId)
       }
     }
-  }, [content, shouldDefer])
+  }, [normalizedContent, shouldDefer])
 
   if (!isReady) {
-    return <div className={fallbackClassName}>{content}</div>
+    return <div className={fallbackClassName}>{normalizedContent}</div>
   }
 
-  return <MarkdownRenderer content={content} relatedImages={relatedImages} />
+  return <MarkdownRenderer content={normalizedContent} relatedImages={relatedImages} />
 })

@@ -173,7 +173,9 @@
 .service-desk-streaming-text {
   color: #e2e8f0;
   white-space: pre-wrap;
-  word-break: break-word;
+  word-break: normal;
+  overflow-wrap: break-word;
+  line-break: auto;
   line-height: 1.8;
 }
 
@@ -188,6 +190,9 @@
 .service-desk-markdown {
   color: #e2e8f0;
   line-height: 1.8;
+  word-break: normal;
+  overflow-wrap: break-word;
+  line-break: auto;
 }
 
 .service-desk-markdown > :first-child {

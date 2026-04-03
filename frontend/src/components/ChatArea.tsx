@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DeferredMarkdownRenderer from './markdown/DeferredMarkdownRenderer'
+import { normalizeCJKPunctuationLineBreaks } from './markdown/textCleanup'
 import { usePinnedAutoScroll } from '../hooks/usePinnedAutoScroll'
 import { AppConfig, Conversation, DEFAULT_SUGGESTED_PROMPTS, DocumentItem, KnowledgeBase, MessageFeedbackSummary } from '../App'
 
@@ -414,7 +415,7 @@ const MessageBubble = memo(function MessageBubble({
           </div>
         ) : message.role === 'assistant' ? (
           isReplyStreaming ? (
-            <div className="message-streaming-text">{message.content}</div>
+            <div className="message-streaming-text">{normalizeCJKPunctuationLineBreaks(message.content)}</div>
           ) : (
             <DeferredMarkdownRenderer
               content={message.content}
