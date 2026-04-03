@@ -3600,6 +3600,21 @@
 }
 
 @media (max-width: 768px) {
+  .message.assistant .message-content {
+    padding: 14px 16px;
+  }
+
+  .message-content-markdown {
+    font-size: 13px;
+    line-height: 1.75;
+  }
+
+  .md-inline-code {
+    padding: 0 4px;
+    border-radius: 5px;
+    font-size: 0.82em;
+  }
+
   .md-inline-image-card {
     max-width: 100%;
   }

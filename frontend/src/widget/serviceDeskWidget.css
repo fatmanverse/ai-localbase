@@ -712,6 +712,17 @@
     border-radius: 18px;
   }
 
+  .service-desk-markdown {
+    font-size: 13px;
+    line-height: 1.75;
+  }
+
+  .service-desk-markdown .md-inline-code {
+    padding: 0 4px;
+    border-radius: 5px;
+    font-size: 0.82em;
+  }
+
   .feedback-submit-row,
   .service-desk-composer-footer,
   .service-desk-context-bar {
