@@ -3610,9 +3610,12 @@
   }
 
   .md-inline-code {
-    padding: 0 4px;
-    border-radius: 5px;
-    font-size: 0.82em;
+    padding: 0;
+    border: none;
+    background: transparent;
+    border-radius: 0;
+    font-size: 0.8em;
+    font-weight: 600;
   }
 
   .md-inline-image-card {
