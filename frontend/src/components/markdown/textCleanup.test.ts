@@ -54,6 +54,26 @@ describe('normalizeCJKPunctuationLineBreaks', () => {
     )
   })
 
+  it('合并独立 ascii 冒号到上一行', () => {
+    expect(normalizeCJKPunctuationLineBreaks('核心动态视图权限不可缺\n:\n后续说明')).toBe(
+      '核心动态视图权限不可缺:\n后续说明',
+    )
+  })
+
+  it('恢复被独立反引号拆开的单行代码', () => {
+    expect(normalizeCJKPunctuationLineBreaks('`\nV_$LOG\n`')).toBe('`V_$LOG`')
+  })
+
+  it('保守恢复截图中的权限清单碎裂格式', () => {
+    expect(
+      normalizeCJKPunctuationLineBreaks(
+        '核心动态视图权限不可缺\n:\n`\nV_$LOG\n`\n`\nV_$LOGMNR_CONTENTS\n`\n`\nV_$ARCHIVED_LOG\n`\n等 7 个\n`\nV_$*\n`\n视图需显式授权',
+      ),
+    ).toBe(
+      '核心动态视图权限不可缺:\n`V_$LOG`\n`V_$LOGMNR_CONTENTS`\n`V_$ARCHIVED_LOG`\n等 7 个\n`V_$*`\n视图需显式授权',
+    )
+  })
+
   it('只在下一行较短且像续写时合并', () => {
     expect(normalizeCJKPunctuationLineBreaks('这是第一行：\n补充一句')).toBe('这是第一行：补充一句')
   })
