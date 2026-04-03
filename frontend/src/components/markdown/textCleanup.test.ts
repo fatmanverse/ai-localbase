@@ -72,6 +72,20 @@ describe('normalizeCJKPunctuationLineBreaks', () => {
     )
   })
 
+  it('将单行代码并入前后碎裂的权限说明', () => {
+    expect(
+      normalizeCJKPunctuationLineBreaks(
+        '或显式授权全部 7 个\n`V_$*`\n视图（含\n`V_$LOGMNR_CONTENTS`\n、\n`V_$ARCHIVED_LOG`\n等）',
+      ),
+    ).toBe('或显式授权全部 7 个 `V_$*` 视图（含 `V_$LOGMNR_CONTENTS`、`V_$ARCHIVED_LOG` 等）')
+  })
+
+  it('将单行代码并入后续解释说明', () => {
+    expect(normalizeCJKPunctuationLineBreaks('`ORA-01305`\n错误，且无法绕过')).toBe(
+      '`ORA-01305` 错误，且无法绕过',
+    )
+  })
+
   it('恢复被独立反引号拆开的单行代码', () => {
     expect(normalizeCJKPunctuationLineBreaks('`\nV_$LOG\n`')).toBe('`V_$LOG`')
   })

@@ -8,6 +8,10 @@ const STANDALONE_INLINE_CODE_FENCE = /^`$/
 const INLINE_CODE_CONTENT_HINT = /[A-Za-z0-9_$./-]/
 const SINGLE_LINE_INLINE_CODE = /^`[^`\n]+`$/
 const INLINE_CODE_JOINER = /^(和|或|及|以及)$/
+const EMPHASIS_ONLY_LINE = /^(?:\*\*[^*]+\*\*|__[^_]+__|`[^`]+`)$/
+const INLINE_CODE_SUFFIX_PUNCTUATION = /^[:，。、；：！？）】》」』、,.;!?)]/
+const INLINE_CODE_PREFIX_NO_SPACE = /[（(、，,:：/]$/
+const INLINE_CODE_SUFFIX_MAX_LENGTH = 40
 
 const MARKDOWN_HEADING = /^#{1,6}\s/
 const MARKDOWN_LIST = /^\s*(?:[-*+]\s|\d+[.)、]\s)/
@@ -130,6 +134,62 @@ function isSingleLineInlineCode(line: string): boolean {
   return SINGLE_LINE_INLINE_CODE.test(line.trim())
 }
 
+function looksLikeInlineCodeContextTextLine(line: string): boolean {
+  const trimmed = line.trim()
+
+  if (!trimmed) {
+    return false
+  }
+
+  if (EMPHASIS_ONLY_LINE.test(trimmed)) {
+    return false
+  }
+
+  if (looksStructuredTextLine(trimmed) || isMarkdownBoundaryLine(trimmed, false) || NEW_PARAGRAPH_PREFIX.test(trimmed)) {
+    return false
+  }
+
+  return true
+}
+
+function shouldMergeInlineCodeIntoPreviousLine(line: string): boolean {
+  const trimmed = line.trim()
+
+  if (!looksLikeInlineCodeContextTextLine(trimmed)) {
+    return false
+  }
+
+  if (HARD_SENTENCE_END.test(trimmed) || /[:：]$/.test(trimmed)) {
+    return false
+  }
+
+  if (/[（(、，]$/.test(trimmed)) {
+    return true
+  }
+
+  return trimmed.length <= 28 || /(?:含|如|例如|包括|方案是|替代方案是|全部\s*\d+\s*个|视图|角色|错误码|报错|返回)$/.test(trimmed)
+}
+
+function shouldMergeInlineCodeWithNextLine(line: string): boolean {
+  const trimmed = line.trim()
+
+  if (!looksLikeInlineCodeContextTextLine(trimmed)) {
+    return false
+  }
+
+  return trimmed.length <= INLINE_CODE_SUFFIX_MAX_LENGTH
+}
+
+function appendInlineCodeToText(line: string, inlineCode: string): string {
+  const trimmed = line.trimEnd()
+  return `${trimmed}${INLINE_CODE_PREFIX_NO_SPACE.test(trimmed) ? '' : ' '}${inlineCode}`
+}
+
+function appendTextAfterInlineCode(line: string, suffix: string): string {
+  const trimmed = suffix.trim()
+  return `${line}${INLINE_CODE_SUFFIX_PUNCTUATION.test(trimmed) ? '' : ' '}${trimmed}`
+}
+
 function normalizeParagraphLines(lines: string[]): string[] {
   const normalized: string[] = []
   let mergedDanglingPunctuation = false
@@ -159,6 +219,33 @@ function normalizeParagraphLines(lines: string[]): string[] {
         normalized[previousIndex] += ` ${trimmed} ${nextLine}`
         mergedDanglingPunctuation = true
         index += 1
+        continue
+      }
+    }
+
+    if (isSingleLineInlineCode(trimmed)) {
+      const previousLine = previousIndex >= 0 ? normalized[previousIndex] ?? '' : ''
+      const nextLine = lines[index + 1]?.trim() ?? ''
+      let mergedIntoPrevious = false
+
+      if (previousIndex >= 0 && shouldMergeInlineCodeIntoPreviousLine(previousLine)) {
+        normalized[previousIndex] = appendInlineCodeToText(normalized[previousIndex], trimmed)
+        mergedIntoPrevious = true
+        mergedDanglingPunctuation = true
+      }
+
+      if (nextLine && shouldMergeInlineCodeWithNextLine(nextLine)) {
+        if (mergedIntoPrevious) {
+          normalized[previousIndex] = appendTextAfterInlineCode(normalized[previousIndex], nextLine)
+        } else {
+          normalized.push(appendTextAfterInlineCode(trimmed, nextLine))
+        }
+        mergedDanglingPunctuation = true
+        index += 1
+        continue
+      }
+
+      if (mergedIntoPrevious) {
         continue
       }
     }
