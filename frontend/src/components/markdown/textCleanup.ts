@@ -22,6 +22,8 @@ const CODE_FENCE = /^(`{3,}|~{3,})/
 const URL_LIKE = /^(?:https?:\/\/|ftp:\/\/|file:\/\/)/i
 const PATH_LIKE = /^(?:\/|\.\.?\/|~\/)/
 const OBJECT_LIKE = /^[A-Za-z0-9_-]+(?:[./:][A-Za-z0-9_-]+)+$/
+const UPPER_TECHNICAL_PHRASE = /^(?:[A-Z][A-Z0-9_$-]*)(?:\s+[A-Z][A-Z0-9_$-]*){0,5}$/
+const CODE_LIKE_TOKEN = /^(?:[A-Z]+-\d+|[A-Z0-9_$-]{3,})$/
 
 function getCodeFenceMarker(line: string): string | null {
   return line.trim().match(CODE_FENCE)?.[1] ?? null
@@ -67,9 +69,12 @@ function looksStructuredTextLine(line: string): boolean {
     return true
   }
 
-  return /[_/]/.test(trimmed) && !/[\u4e00-\u9fff]/.test(trimmed)
-}
+  if (UPPER_TECHNICAL_PHRASE.test(trimmed) || CODE_LIKE_TOKEN.test(trimmed)) {
+    return true
+  }
 
+  return /[_/]/.test(trimmed) && !/[一-鿿]/.test(trimmed)
+}
 function isMarkdownBoundaryLine(line: string, insideCodeFence: boolean): boolean {
   const trimmed = line.trim()
 
@@ -204,6 +209,75 @@ function appendTextAfterInlineCode(line: string, suffix: string): string {
   return `${line}${INLINE_CODE_SUFFIX_PUNCTUATION.test(trimmed) ? '' : ' '}${trimmed}`
 }
 
+function shouldMergeStructuredTextIntoPreviousLine(previousLine: string, currentLine: string): boolean {
+  const prev = previousLine.trim()
+  const curr = currentLine.trim()
+
+  if (!prev || !curr || !looksStructuredTextLine(curr)) {
+    return false
+  }
+
+  if (HARD_SENTENCE_END.test(prev)) {
+    return false
+  }
+
+  return /[、,/:：]$/.test(prev) || /(?:含|如|例如|包括|方案是|替代方案是|全部\s*\d+\s*个|视图|角色|错误码|报错|返回|授权|授予|改用|使用|跳过|选择|访问|查看|包含)$/.test(prev)
+}
+
+function appendStructuredTextToLine(line: string, structuredText: string): string {
+  const trimmed = line.trimEnd()
+  const value = structuredText.trim()
+  return `${trimmed}${/[、,/:：]$/.test(trimmed) ? '' : ' '}${value}`
+}
+
+function shouldCollapseLooseStructuredBlankLine(previousLine: string, nextLine: string): boolean {
+  const prev = previousLine.trim()
+  const next = nextLine.trim()
+
+  if (!prev || !next) {
+    return false
+  }
+
+  if (shouldMergeStructuredTextIntoPreviousLine(prev, next)) {
+    return true
+  }
+
+  if (DANGLING_CJK_PUNCTUATION_ONLY.test(next) && (looksStructuredTextLine(prev) || looksLikeInlineCodeContextTextLine(prev))) {
+    return true
+  }
+
+  if (DANGLING_CJK_PUNCTUATION_ONLY.test(prev) && looksStructuredTextLine(next)) {
+    return true
+  }
+
+  return false
+}
+
+function collapseLooseStructuredBlankLines(lines: string[]): string[] {
+  const collapsed: string[] = []
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+
+    if (!line.trim()) {
+      const previousLine = collapsed.length > 0 ? collapsed[collapsed.length - 1] ?? '' : ''
+      let nextIndex = index + 1
+      while (nextIndex < lines.length && !lines[nextIndex].trim()) {
+        nextIndex += 1
+      }
+      const nextLine = nextIndex < lines.length ? lines[nextIndex] ?? '' : ''
+
+      if (previousLine && nextLine && shouldCollapseLooseStructuredBlankLine(previousLine, nextLine)) {
+        continue
+      }
+    }
+
+    collapsed.push(line)
+  }
+
+  return collapsed
+}
+
 function normalizeParagraphLines(lines: string[]): string[] {
   const normalized: string[] = []
   let mergedDanglingPunctuation = false
@@ -268,6 +342,12 @@ function normalizeParagraphLines(lines: string[]): string[] {
       continue
     }
 
+    if (previousIndex >= 0 && trimmed && shouldMergeStructuredTextIntoPreviousLine(normalized[previousIndex], trimmed)) {
+      normalized[previousIndex] = appendStructuredTextToLine(normalized[previousIndex], trimmed)
+      mergedDanglingPunctuation = false
+      continue
+    }
+
     if (
       previousIndex >= 0 &&
       trimmed &&
@@ -291,6 +371,12 @@ function normalizeParagraphLines(lines: string[]): string[] {
       continue
     }
 
+    if (trimmed && line !== trimmed && looksStructuredTextLine(trimmed)) {
+      normalized.push(trimmed)
+      mergedDanglingPunctuation = false
+      continue
+    }
+
     normalized.push(line)
     mergedDanglingPunctuation = false
   }
@@ -303,7 +389,7 @@ export function normalizeCJKPunctuationLineBreaks(content: string): string {
     return content
   }
 
-  const lines = content.split('\n')
+  const lines = collapseLooseStructuredBlankLines(content.split('\n'))
   const normalized: string[] = []
   let paragraphLines: string[] = []
   let activeCodeFence: string | null = null

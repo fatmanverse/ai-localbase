@@ -40,6 +40,42 @@ describe('MarkdownRenderer', () => {
     expect(html).not.toContain('<pre>')
   })
 
+  it('不会把带空行的缩进权限名渲染成代码块', () => {
+    const html = renderToStaticMarkup(
+      <MarkdownRenderer
+        content={[
+          '最小必要权限原则',
+          '',
+          ': LogMiner 用户需授予',
+          '',
+          '    SELECT ANY TABLE',
+          '',
+          '或',
+          '',
+          '按表粒度授权具体采集表',
+          '',
+          ': 必须包含',
+          '',
+          '    V_$DATABASE',
+          '',
+          '、',
+          '',
+          '    V_$LOG',
+          '',
+          '、',
+          '',
+          '    V_$LOGMNR_CONTENTS',
+        ].join('\n')}
+      />,
+    )
+
+    expect(html).not.toContain('md-code-shell')
+    expect(html).not.toContain('<pre>')
+    expect(html).toContain('SELECT ANY TABLE')
+    expect(html).toContain('V_$DATABASE、V_$LOG、V_$LOGMNR_CONTENTS')
+  })
+
+
   it('不会把普通技术说明误改写成表格或列表', () => {
     const html = renderToStaticMarkup(
       <MarkdownRenderer

@@ -92,6 +92,16 @@ describe('normalizeCJKPunctuationLineBreaks', () => {
     ).toBe('应改用 `EXECUTE_CATALOG_ROLE` 或逐个授权 `V_$*` 视图')
   })
 
+  it('收起带空行的缩进技术词，避免渲染成独立代码块', () => {
+    expect(
+      normalizeCJKPunctuationLineBreaks(
+        '最小必要权限原则\n\n: LogMiner 用户需授予\n\n    SELECT ANY TABLE\n\n或\n\n按表粒度授权具体采集表\n\n: 必须包含\n\n    V_$DATABASE\n\n、\n\n    V_$LOG\n\n、\n\n    V_$LOGMNR_CONTENTS',
+      ),
+    ).toBe(
+      '最小必要权限原则\n\n: LogMiner 用户需授予 SELECT ANY TABLE\n\n或\n\n按表粒度授权具体采集表\n\n: 必须包含 V_$DATABASE、V_$LOG、V_$LOGMNR_CONTENTS',
+    )
+  })
+
   it('恢复被独立反引号拆开的单行代码', () => {
     expect(normalizeCJKPunctuationLineBreaks('`\nV_$LOG\n`')).toBe('`V_$LOG`')
   })
