@@ -60,6 +60,18 @@ describe('normalizeCJKPunctuationLineBreaks', () => {
     )
   })
 
+  it('合并带文本的 ascii 冒号前缀行到上一行', () => {
+    expect(normalizeCJKPunctuationLineBreaks('最小化授权可行但需手动补全\n: 若无法授予')).toBe(
+      '最小化授权可行但需手动补全: 若无法授予',
+    )
+  })
+
+  it('将连接词并入相邻的单行代码', () => {
+    expect(normalizeCJKPunctuationLineBreaks('`V_$LOGMNR_CONTENTS`\n和\n`V_$ARCHIVED_LOG`')).toBe(
+      '`V_$LOGMNR_CONTENTS` 和 `V_$ARCHIVED_LOG`',
+    )
+  })
+
   it('恢复被独立反引号拆开的单行代码', () => {
     expect(normalizeCJKPunctuationLineBreaks('`\nV_$LOG\n`')).toBe('`V_$LOG`')
   })

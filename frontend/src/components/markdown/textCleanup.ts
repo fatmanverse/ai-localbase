@@ -6,6 +6,8 @@ const NEW_PARAGRAPH_PREFIX = /^(首先|其次|然后|另外|此外|总结|注意
 const SHORT_CONTINUATION_MAX_LENGTH = 18
 const STANDALONE_INLINE_CODE_FENCE = /^`$/
 const INLINE_CODE_CONTENT_HINT = /[A-Za-z0-9_$./-]/
+const SINGLE_LINE_INLINE_CODE = /^`[^`\n]+`$/
+const INLINE_CODE_JOINER = /^(和|或|及|以及)$/
 
 const MARKDOWN_HEADING = /^#{1,6}\s/
 const MARKDOWN_LIST = /^\s*(?:[-*+]\s|\d+[.)、]\s)/
@@ -124,6 +126,10 @@ function looksLikeStandaloneInlineCodeContent(line: string): boolean {
   return INLINE_CODE_CONTENT_HINT.test(trimmed)
 }
 
+function isSingleLineInlineCode(line: string): boolean {
+  return SINGLE_LINE_INLINE_CODE.test(line.trim())
+}
+
 function normalizeParagraphLines(lines: string[]): string[] {
   const normalized: string[] = []
   let mergedDanglingPunctuation = false
@@ -141,6 +147,18 @@ function normalizeParagraphLines(lines: string[]): string[] {
         normalized.push(`\`${candidateLine}\``)
         mergedDanglingPunctuation = true
         index += 2
+        continue
+      }
+    }
+
+    if (previousIndex >= 0 && INLINE_CODE_JOINER.test(trimmed)) {
+      const previousLine = normalized[previousIndex]?.trim() ?? ''
+      const nextLine = lines[index + 1]?.trim() ?? ''
+
+      if (isSingleLineInlineCode(previousLine) && isSingleLineInlineCode(nextLine)) {
+        normalized[previousIndex] += ` ${trimmed} ${nextLine}`
+        mergedDanglingPunctuation = true
+        index += 1
         continue
       }
     }

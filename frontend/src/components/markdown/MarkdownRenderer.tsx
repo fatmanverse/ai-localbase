@@ -1091,10 +1091,11 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, relatedImages
   )
   const inlineImageOrderMap = useMemo(() => buildInlineImageOrderMap(content), [content])
   const markdownComponents = useMemo(() => ({
-    code({ className, children, ...props }: any) {
-      const codeContent = String(children).replace(/\n$/, '')
+    code({ className, children, node: _node, ...props }: any) {
+      const rawCodeContent = String(children)
+      const codeContent = rawCodeContent.replace(/\n$/, '')
       const language = normalizeCodeLanguage(className, codeContent)
-      const isInline = !className && language === 'text'
+      const isInline = !className && language === 'text' && !rawCodeContent.endsWith('\n')
 
       if (!isInline && className?.includes('language-mermaid')) {
         return <MermaidDiagram chart={codeContent} />
@@ -1119,6 +1120,9 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, relatedImages
           props={props}
         />
       )
+    },
+    pre({ children }: any) {
+      return <>{children}</>
     },
     a({ href, children, ...props }: any) {
       return (
