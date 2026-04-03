@@ -2562,7 +2562,7 @@
 }
 
 .message.assistant .message-content-markdown .md-render-shell > :not(.md-table-shell):not(.md-table-wrap):not(.md-code-shell):not(.md-code-block):not(.md-mermaid):not(.md-mermaid-loading):not(.md-mermaid-fallback):not(.md-render-actions) {
-  max-width: min(100%, 92ch);
+  max-width: 100%;
 }
 
 .message-content-markdown p {
